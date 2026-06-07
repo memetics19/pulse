@@ -50,6 +50,9 @@ func (s *Scheduler) SetChecker(monType string, c checker.Checker) {
 // It checks immediately on start, then at each interval.
 func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
 	interval := time.Duration(mon.IntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
 	s.check(ctx, mon)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -70,6 +73,16 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 	if !ok {
 		log.Printf("scheduler: no checker for type %q (monitor %d)", mon.Type, mon.ID)
 		return
+	}
+
+	// HTTP(S) checks honour the monitor's expected status and keyword, so build
+	// a per-monitor checker instead of using the shared default one.
+	if mon.Type == "http" || mon.Type == "https" {
+		expected := 0
+		if mon.ExpectedStatus != nil {
+			expected = int(*mon.ExpectedStatus)
+		}
+		c = checker.NewHTTP(expected, mon.KeywordCheck)
 	}
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)

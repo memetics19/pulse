@@ -17,6 +17,28 @@ func NewMonitors(q *generated.Queries) *Monitors {
 	return &Monitors{q: q}
 }
 
+// validMonitorTypes is the set of monitor types the scheduler can check.
+var validMonitorTypes = map[string]bool{
+	"http": true, "https": true, "tcp": true, "ping": true,
+	"dns": true, "ssl": true, "infra": true,
+}
+
+// validateMonitorInput returns a human-readable reason when any required field
+// is missing or out of range, or "" when the input is acceptable.
+func validateMonitorInput(url, monType string, intervalSeconds, timeoutSeconds int64) string {
+	switch {
+	case url == "":
+		return "url is required"
+	case !validMonitorTypes[monType]:
+		return "invalid type"
+	case intervalSeconds < 1:
+		return "interval_seconds must be at least 1"
+	case timeoutSeconds < 1:
+		return "timeout_seconds must be at least 1"
+	}
+	return ""
+}
+
 func (m *Monitors) List(w http.ResponseWriter, r *http.Request) {
 	monitors, err := m.q.ListMonitors(r.Context())
 	if err != nil {
@@ -52,6 +74,10 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds, params.TimeoutSeconds); reason != "" {
+		http.Error(w, reason, http.StatusBadRequest)
+		return
+	}
 	monitor, err := m.q.CreateMonitor(r.Context(), params)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -72,6 +98,10 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 	var params generated.UpdateMonitorParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds, params.TimeoutSeconds); reason != "" {
+		http.Error(w, reason, http.StatusBadRequest)
 		return
 	}
 	params.ID = id

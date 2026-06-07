@@ -61,13 +61,25 @@ After setup, the default status page is available on the host that serves Pulse.
 
 ## Importing from Uptime Kuma
 
-If you already track services in Uptime Kuma, the CLI can import monitors and groups from an Uptime Kuma backup file. This is a migration convenience for bringing existing checks into Pulse.
+If you already track services in Uptime Kuma, the CLI imports your monitors and groups from an Uptime Kuma backup file. This is a one-time migration convenience.
+
+### Export the backup file from Uptime Kuma
+
+The import reads a backup file, not a live connection. Uptime Kuma does not provide a REST API for reading monitor configuration, and its API keys only grant access to the Prometheus metrics endpoint, which exposes monitor names and up or down state but not the URL, type, interval, or thresholds. The backup file is the only export that contains the full monitor configuration.
+
+To produce it in Uptime Kuma:
+
+1. Open Uptime Kuma and go to Settings.
+2. Open the Backup section.
+3. Choose Export and save the JSON file (for example `backup.json`).
+
+### Run the import
 
 ```bash
 pulse-cli import uptime-kuma --file backup.json
 ```
 
-The command reads the backup file and creates the corresponding monitors and groups in Pulse.
+The command reads the backup file and creates the corresponding monitors and groups in Pulse. Historical check data is not imported, because Uptime Kuma backups do not include it.
 
 ## Next steps
 
