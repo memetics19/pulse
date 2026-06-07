@@ -78,7 +78,9 @@ func (a *Auth) Setup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not create user", http.StatusInternalServerError)
 		return
 	}
-	a.startSession(w, r, u.ID)
+	if !a.startSession(w, r, u.ID) {
+		return
+	}
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -108,7 +110,9 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	a.startSession(w, r, u.ID)
+	if !a.startSession(w, r, u.ID) {
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -182,18 +186,25 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, userID int64) {
+// startSession creates a session row and sets the session cookie. It returns
+// false (after writing an error response) when the session could not be
+// persisted, so callers must not write a success status in that case.
+func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, userID int64) bool {
 	token, err := auth.NewSessionToken()
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
-		return
+		return false
 	}
-	_ = a.q.CreateSession(r.Context(), generated.CreateSessionParams{
+	if err := a.q.CreateSession(r.Context(), generated.CreateSessionParams{
 		Token:     token,
 		UserID:    userID,
 		ExpiresAt: time.Now().Add(auth.SessionDuration),
-	})
+	}); err != nil {
+		http.Error(w, "could not create session", http.StatusInternalServerError)
+		return false
+	}
 	auth.SetSessionCookie(w, token, a.secure)
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

@@ -113,14 +113,20 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.app.SetDB(conn)
 
-	if token, err := auth.NewSessionToken(); err == nil {
-		_ = q.CreateSession(r.Context(), generated.CreateSessionParams{
-			Token:     token,
-			UserID:    u.ID,
-			ExpiresAt: time.Now().Add(auth.SessionDuration),
-		})
-		auth.SetSessionCookie(w, token, s.secure)
+	token, err := auth.NewSessionToken()
+	if err != nil {
+		http.Error(w, "session error", http.StatusInternalServerError)
+		return
 	}
+	if err := q.CreateSession(r.Context(), generated.CreateSessionParams{
+		Token:     token,
+		UserID:    u.ID,
+		ExpiresAt: time.Now().Add(auth.SessionDuration),
+	}); err != nil {
+		http.Error(w, "could not create session", http.StatusInternalServerError)
+		return
+	}
+	auth.SetSessionCookie(w, token, s.secure)
 
 	w.WriteHeader(http.StatusCreated)
 }
