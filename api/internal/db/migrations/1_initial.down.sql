@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS theme_config;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS incident_updates;
+DROP TABLE IF EXISTS incidents;
+DROP TABLE IF EXISTS infra_metrics_1m;
+DROP TABLE IF EXISTS infra_metrics_raw;
+DROP TABLE IF EXISTS infra_agents;
+DROP TABLE IF EXISTS ssl_checks;
+DROP TABLE IF EXISTS check_results;
+DROP TABLE IF EXISTS monitors;
+DROP TABLE IF EXISTS monitor_groups;

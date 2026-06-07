@@ -1,0 +1,21 @@
+services:
+  pulse:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: pulse:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # SQLite is the default store; the database file lives on the volume.
+      # The first visit shows a setup wizard to create the admin account.
+      SQLITE_PATH: /data/pulse.db
+      # Optional notification channels. Leave unset to disable.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - pulse_data:/data
+    restart: unless-stopped
+
+volumes:
+  pulse_data:

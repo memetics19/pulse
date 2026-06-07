@@ -1,0 +1,38 @@
+# env
+.env
+.env.local
+
+# Go binaries
+api/pulse-api
+worker/pulse-worker
+agent/pulse-agent
+cli/pulse-cli
+
+# Go build cache
+**/*.test
+
+# Data
+data/
+
+# superpowers brainstorm
+.superpowers/
+
+# Node
+ui/node_modules/
+ui/.next/
+
+# OS
+.DS_Store
+
+# Build output
+ui/out/
+bin/
+api/internal/web/dist/*
+!api/internal/web/dist/index.html
+!api/internal/web/dist/admin/
+api/internal/web/dist/admin/*
+!api/internal/web/dist/admin/index.html
+
+# Stale local build outputs (binary names vary by entrypoint)
+api/api
+api/pulse

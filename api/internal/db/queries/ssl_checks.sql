@@ -1,0 +1,1 @@
+-- SSL check queries (used by worker in Plan 2)

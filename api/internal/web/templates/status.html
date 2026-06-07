@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" data-theme="{{.ThemePreset}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.SiteName}}</title>
+  {{if .FaviconURL}}<link rel="icon" href="{{.FaviconURL}}">{{else}}<link rel="icon" href="/static/favicon.svg">{{end}}
+  <link rel="stylesheet" href="/static/public.css">
+  <style>
+    .brand{font-weight:800;font-size:19px;letter-spacing:-.5px;color:#18181b;display:inline-flex;align-items:center;gap:9px}
+    .brand-ring{width:28px;height:28px;border-radius:50%;background:#eef0ff;display:inline-flex;align-items:center;justify-content:center}
+    .brand-wave{stroke:#4f46e5;fill:none}
+    [data-theme="dark"] .brand{color:#f4f4f5}
+    [data-theme="dark"] .brand-ring{background:#1b2030}
+    [data-theme="dark"] .brand-wave{stroke:#818cf8}
+  </style>
+  {{if .CustomCSS}}<style>:root { {{.CustomCSS}} }</style>{{end}}
+</head>
+<body>
+  <nav class="topbar">
+    <a href="/" class="topbar-logo">
+      {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" style="height:28px;max-width:140px;object-fit:contain">
+      {{else}}<span class="brand"><span class="brand-ring"><svg class="brand-wave" width="18" height="15" viewBox="0 0 40 24" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12 h8 l4 -8 5 16 4 -10 3 6 h9"/></svg></span>Pulse</span>{{end}}
+    </a>
+    <div class="topbar-right">
+      <a href="#history" class="nav-link">History</a>
+      <div class="subscribe-wrap">
+        <button id="subscribe-btn" class="nav-link" type="button" aria-haspopup="true" aria-expanded="false">Subscribe</button>
+        <div id="subscribe-pop" class="subscribe-pop" hidden>
+          <div class="sub-title">Subscribe to status updates</div>
+          <p class="sub-desc">Get incidents &amp; maintenance in your feed reader.</p>
+          <a href="/feed.xml" class="sub-feed">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 11a9 9 0 0 1 9 9h2.6A11.6 11.6 0 0 0 4 8.4V11zm0 4.5a4.5 4.5 0 0 1 4.5 4.5H11A7 7 0 0 0 4 13v2.5zM5.5 17a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4z"/></svg>
+            Atom / RSS feed
+          </a>
+        </div>
+      </div>
+      <button id="dark-toggle" class="nav-link" type="button" aria-label="Toggle dark mode">&#9680;</button>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-pill {{.OverallClass}}"><span class="hero-dot"></span>{{.OverallText}}</div>
+    <div class="hero-sub">All times in your local timezone &middot; Updated continuously</div>
+  </div>
+
+  <div class="range-bar">
+    {{range .Ranges}}<a href="/?range={{.Key}}" class="range-opt{{if .Active}} active{{end}}">{{.Label}}</a>{{end}}
+  </div>
+
+  {{range .InProgressMaint}}
+  <div class="maint-banner">
+    <svg class="maint-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z"/></svg>
+    <div>
+      <div class="maint-title">Maintenance in progress · {{.Title}}</div>
+      <div class="maint-meta">{{if .Affected}}Affected: {{range $i,$n := .Affected}}{{if $i}}, {{end}}{{$n}}{{end}} · {{end}}Until <span class="localtime" data-ts="{{.EndISO}}">{{.EndISO}}</span></div>
+      {{if .Description}}<div class="maint-desc">{{.Description}}</div>{{end}}
+    </div>
+  </div>
+  {{end}}
+
+  <main class="wrap">
+    {{if .UpcomingMaint}}
+      <div class="section-label">Scheduled Maintenance</div>
+      {{range .UpcomingMaint}}
+        <article class="maint-card">
+          <div class="inc-title">{{.Title}}</div>
+          <div class="inc-meta"><span class="localtime" data-ts="{{.StartISO}}">{{.StartISO}}</span> – <span class="localtime" data-ts="{{.EndISO}}">{{.EndISO}}</span>{{if .Affected}} · {{range $i,$n := .Affected}}{{if $i}}, {{end}}{{$n}}{{end}}{{end}}</div>
+          {{if .Description}}<div class="maint-desc">{{.Description}}</div>{{end}}
+        </article>
+      {{end}}
+    {{end}}
+    {{if .Groups}}<div class="section-label">Services</div>{{end}}
+    {{range .Groups}}
+      <section class="group-card">
+        <div class="group-title">{{.Name}}</div>
+        {{range .Monitors}}
+          <div class="monitor-row">
+            <div class="monitor-head">
+              <span class="status-dot {{.StatusClass}}"></span>
+              <span class="monitor-name">{{.Name}}</span>
+              <span class="monitor-uptime">{{.UptimePct}}</span>
+            </div>
+            <div class="bars">{{range .Bars}}<span class="bar {{.Class}}" title="{{.Title}}"></span>{{end}}</div>
+            <div class="monitor-meta">avg {{.AvgMs}}</div>
+          </div>
+        {{end}}
+      </section>
+    {{end}}
+
+    {{if .ActiveIncidents}}
+      <div class="section-label">Active Incidents</div>
+      {{range .ActiveIncidents}}
+        <article class="incident-card">
+          <div class="inc-title">{{.Title}}</div>
+          <div class="inc-meta">{{.Status}} &middot; {{.Severity}}</div>
+          {{if .Updates}}<div class="inc-updates">
+            {{range .Updates}}<div class="inc-update"><div class="inc-update-head"><span class="inc-update-status {{.Status}}">{{.Status}}</span><span class="inc-update-time localtime" data-ts="{{.When}}">{{.When}}</span></div><div class="inc-update-msg">{{.Message}}</div></div>{{end}}
+          </div>{{end}}
+        </article>
+      {{end}}
+    {{end}}
+
+    <div id="history" class="section-label">Incident History</div>
+    {{if .PastIncidents}}
+      {{range .PastIncidents}}
+        <article class="incident-card resolved">
+          <div class="inc-title">{{.Title}}</div>
+          <div class="inc-meta">{{.Status}} &middot; {{.Severity}}</div>
+          {{if .Updates}}<div class="inc-updates">
+            {{range .Updates}}<div class="inc-update"><div class="inc-update-head"><span class="inc-update-status {{.Status}}">{{.Status}}</span><span class="inc-update-time localtime" data-ts="{{.When}}">{{.When}}</span></div><div class="inc-update-msg">{{.Message}}</div></div>{{end}}
+          </div>{{end}}
+        </article>
+      {{end}}
+    {{else}}
+      <div class="empty-history">No incidents reported.</div>
+    {{end}}
+
+    <footer class="page-footer">
+      <div class="footer-main">
+        <div class="footer-brand">
+          {{if .Footer.BrandLine}}<div class="footer-brand-line">{{.Footer.BrandLine}}</div>{{end}}
+          {{if .Footer.Tagline}}<div class="footer-tagline">{{.Footer.Tagline}}</div>{{end}}
+        </div>
+        {{if .Footer.Links}}
+          <div class="footer-links">
+            {{range .Footer.Links}}<a href="{{.URL}}" class="footer-link">{{.Label}}</a>{{end}}
+          </div>
+        {{end}}
+      </div>
+      <div class="footer-bottom">
+        <span>{{if .Footer.Copyright}}{{.Footer.Copyright}}{{end}}{{if and .Footer.Copyright (not .Footer.HidePoweredBy)}} &middot; {{end}}{{if not .Footer.HidePoweredBy}}Powered by <a href="https://github.com/memetics19/pulse">Pulse</a>{{if not .Footer.Copyright}} &middot; Open source{{end}}{{end}}</span>
+        <span>All times in your local timezone</span>
+      </div>
+    </footer>
+  </main>
+
+  <script src="/static/public.js" defer></script>
+</body>
+</html>
