@@ -50,5 +50,8 @@ func TestPruner_DeletesOldCheckResults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
-	assert.Equal(t, recentTime.Truncate(time.Second), results[0].CheckedAt.Truncate(time.Second))
+	// Compare instants, not the time.Time struct: the DB round-trips CheckedAt
+	// in UTC while recentTime carries the Local location, so assert.Equal (which
+	// compares the location pointer) would spuriously fail on non-UTC hosts.
+	assert.WithinDuration(t, recentTime, results[0].CheckedAt, time.Second)
 }

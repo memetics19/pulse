@@ -14,7 +14,7 @@ func (c *tcpChecker) Check(ctx context.Context, target string, timeoutSec int64)
 	start := time.Now()
 	d := net.Dialer{Timeout: time.Duration(timeoutSec) * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", target)
-	elapsed := time.Since(start).Milliseconds()
+	elapsed := elapsedMs(start)
 	if err != nil {
 		return Result{Status: "down", ResponseTimeMs: elapsed, ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}

@@ -59,7 +59,7 @@ func (c *httpChecker) attempt(ctx context.Context, client *http.Client, target s
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := client.Do(req)
-	elapsed := time.Since(start).Milliseconds()
+	elapsed := elapsedMs(start)
 	if err != nil {
 		return Result{Status: "down", ResponseTimeMs: elapsed, ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}

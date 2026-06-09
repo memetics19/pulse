@@ -17,7 +17,7 @@ func (c *dnsChecker) Check(ctx context.Context, target string, timeoutSec int64)
 
 	start := time.Now()
 	addrs, err := r.LookupHost(tctx, target)
-	elapsed := time.Since(start).Milliseconds()
+	elapsed := elapsedMs(start)
 
 	if err != nil || len(addrs) == 0 {
 		msg := "no records found"

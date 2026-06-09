@@ -20,7 +20,7 @@ func (c *sslChecker) Check(ctx context.Context, target string, timeoutSec int64)
 
 	start := time.Now()
 	conn, err := dialer.DialContext(ctx, "tcp", target)
-	elapsed := time.Since(start).Milliseconds()
+	elapsed := elapsedMs(start)
 	if err != nil {
 		return Result{Status: "down", ResponseTimeMs: elapsed, ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}
