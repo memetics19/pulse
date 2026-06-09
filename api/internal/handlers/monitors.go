@@ -23,9 +23,15 @@ var validMonitorTypes = map[string]bool{
 	"dns": true, "ssl": true, "infra": true,
 }
 
-// validateMonitorInput returns a human-readable reason when any required field
-// is missing or out of range, or "" when the input is acceptable.
-func validateMonitorInput(url, monType string, intervalSeconds, timeoutSeconds int64) string {
+// defaultTimeoutSeconds is applied when a monitor is created or updated without
+// a timeout (for example by the Uptime Kuma importer, which omits the field).
+const defaultTimeoutSeconds = 30
+
+// validateMonitorInput returns a human-readable reason when a required field is
+// missing or out of range, or "" when the input is acceptable. A zero interval
+// is rejected because it would panic the scheduler's ticker; a missing timeout
+// is defaulted by the caller rather than rejected.
+func validateMonitorInput(url, monType string, intervalSeconds int64) string {
 	switch {
 	case url == "":
 		return "url is required"
@@ -33,8 +39,6 @@ func validateMonitorInput(url, monType string, intervalSeconds, timeoutSeconds i
 		return "invalid type"
 	case intervalSeconds < 1:
 		return "interval_seconds must be at least 1"
-	case timeoutSeconds < 1:
-		return "timeout_seconds must be at least 1"
 	}
 	return ""
 }
@@ -74,9 +78,12 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds, params.TimeoutSeconds); reason != "" {
+	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
 		http.Error(w, reason, http.StatusBadRequest)
 		return
+	}
+	if params.TimeoutSeconds < 1 {
+		params.TimeoutSeconds = defaultTimeoutSeconds
 	}
 	monitor, err := m.q.CreateMonitor(r.Context(), params)
 	if err != nil {
@@ -100,9 +107,12 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds, params.TimeoutSeconds); reason != "" {
+	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
 		http.Error(w, reason, http.StatusBadRequest)
 		return
+	}
+	if params.TimeoutSeconds < 1 {
+		params.TimeoutSeconds = defaultTimeoutSeconds
 	}
 	params.ID = id
 	monitor, err := m.q.UpdateMonitor(r.Context(), params)
