@@ -59,10 +59,14 @@ build) and serves it, plus the docs site, behind Caddy (`deploy/Caddyfile`).
 |---|---|
 | `PULSE_TOKEN` | GHCR push (already configured) |
 | `NETBIRD_SETUP_KEY` | Ephemeral key so the runner joins the managed Netbird network |
-| `SSH_PRIVATE_KEY` | Deploy key authorized on the host |
-| `SSH_HOST_FINGERPRINT` | Host key, to pin the SSH connection |
+| `SSH_PASSWORD` | Password for the deploy user on the host |
 | `DEPLOY_HOST` | `10.2.0.115` |
 | `DEPLOY_USER` | `ubuntu` |
+
+> SSH uses password auth. The host must allow it: set `PasswordAuthentication yes`
+> in `/etc/ssh/sshd_config` and `sudo systemctl restart ssh`. (Key-based auth with
+> `SSH_PRIVATE_KEY` + `SSH_HOST_FINGERPRINT` is more secure if you prefer to switch
+> back.)
 
 ### What the deploy job runs on the host
 
