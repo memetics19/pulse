@@ -15,7 +15,7 @@ test:
 	cd api && go test ./... -count=1
 
 sqlc:
-	cd api && sqlc generate
+	cd api/internal/db && sqlc generate
 
 lint:
 	cd api && golangci-lint run ./...
