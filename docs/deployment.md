@@ -35,8 +35,9 @@ from Conventional Commit messages: `fix:` → patch, `feat:` → minor, `!` /
 ## Homelab host
 
 The status page runs on a private host (`10.2.0.115`) reachable over a
-[Netbird](https://netbird.io) VPN. The deploy job joins the same Netbird
-network from the GitHub runner, then connects over SSH.
+[Netbird](https://netbird.io) VPN (the **managed cloud**, not self-hosted — so
+no management URL is needed). The deploy job joins the same Netbird network from
+the GitHub runner with an ephemeral setup key, then connects over SSH.
 
 ### One-time host setup
 
@@ -57,8 +58,7 @@ build) and serves it, plus the docs site, behind Caddy (`deploy/Caddyfile`).
 | Secret | Purpose |
 |---|---|
 | `PULSE_TOKEN` | GHCR push (already configured) |
-| `NETBIRD_SETUP_KEY` | Ephemeral key so the runner joins the VPN |
-| `NETBIRD_MANAGEMENT_URL` | Only if you self-host Netbird |
+| `NETBIRD_SETUP_KEY` | Ephemeral key so the runner joins the managed Netbird network |
 | `SSH_PRIVATE_KEY` | Deploy key authorized on the host |
 | `SSH_HOST_FINGERPRINT` | Host key, to pin the SSH connection |
 | `DEPLOY_HOST` | `10.2.0.115` |
@@ -72,6 +72,24 @@ docker compose -f deploy/docker-compose.homelab.yml pull
 docker compose -f deploy/docker-compose.homelab.yml up -d
 docker image prune -f
 ```
+
+## Docs deployment
+
+The documentation site (`docs.shreeda.xyz`) deploys to the **same host over the
+same Netbird network**, on its own schedule, via `.github/workflows/deploy-docs.yml`:
+
+- **On pull requests** touching `docs/**` or `mkdocs.yml`, it runs `mkdocs build`
+  to validate the docs (CI gate).
+- **On push to `main`** touching those paths, it joins Netbird, SSHes to the host,
+  `git pull`s, and re-renders the docs:
+  ```sh
+  docker compose -f deploy/docker-compose.homelab.yml run --rm docs-build
+  ```
+  The `docs-build` one-shot writes the static site into the `docs_site` volume,
+  which the already-running Caddy serves live — no Caddy restart needed.
+
+Docs changes therefore ship on merge to `main` without waiting for an app
+release. (App releases also re-render the docs as part of `compose up -d`.)
 
 ## Rollback
 

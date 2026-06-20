@@ -60,12 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Join Netbird VPN
-        env:
-          NB_URL: ${{ secrets.NETBIRD_MANAGEMENT_URL }}
+        # Managed Netbird cloud — uses the default management URL, no self-hosted URL needed.
         run: |
           curl -fsSL https://pkgs.netbird.io/install.sh | sudo sh
-          sudo netbird up --setup-key "${{ secrets.NETBIRD_SETUP_KEY }}" \
-            ${NB_URL:+--management-url "$NB_URL"}
+          sudo netbird up --setup-key "${{ secrets.NETBIRD_SETUP_KEY }}"
           sudo netbird status
       - name: Pull and restart on host over SSH
         uses: appleboy/ssh-action@v1
