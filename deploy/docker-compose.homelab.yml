@@ -1,0 +1,55 @@
+# Homelab deployment: pulls the released image from GHCR (no local build),
+# so `docker compose pull` picks up each new release. Used by the deploy job in
+# .github/workflows/release.yml and for manual runs from the repo root on the host:
+#
+#   docker compose -f deploy/docker-compose.homelab.yml pull
+#   docker compose -f deploy/docker-compose.homelab.yml up -d
+#
+# The caddy and docs-build services read config/markdown from the host's git
+# checkout, so the deploy job runs `git pull` before `compose pull`.
+
+services:
+  pulse:
+    image: ghcr.io/memetics19/pulse:latest
+    environment:
+      SQLITE_PATH: /data/pulse.db
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    # Allow unprivileged ICMP (ping monitors) without privileged mode.
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+    volumes:
+      - pulse_data:/data
+    restart: unless-stopped
+
+  # One-shot: render the Markdown docs into a static site on the docs_site volume.
+  docs-build:
+    image: squidfunk/mkdocs-material:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:ro
+      - docs_site:/site
+    command: build -d /site -f /workspace/mkdocs.yml
+    restart: "no"
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      pulse:
+        condition: service_started
+      docs-build:
+        condition: service_completed_successfully
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - docs_site:/srv/docs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  pulse_data:
+  docs_site:
+  caddy_data:
+  caddy_config:

@@ -4,6 +4,8 @@ Pulse is an open-source, self-hosted status page and monitoring tool. It runs as
 
 Pulse checks your services on a schedule, records uptime and latency, opens incidents when checks fail, and serves public status pages on your own domains. A live example runs at [status.shreeda.xyz](https://status.shreeda.xyz). These docs are hosted at [docs.shreeda.xyz](https://docs.shreeda.xyz).
 
+![Pulse status page](assets/status-page.gif)
+
 ## Highlights
 
 - **Single binary and SQLite.** One Go binary plus one SQLite file. The monitoring worker runs in-process.
@@ -30,4 +32,5 @@ Pulse checks your services on a schedule, records uptime and latency, opens inci
 | [API](api.md) | The REST API base path, API keys and scopes, Bearer usage, curl examples, and the Atom feed. |
 | [Security](security.md) | Password hashing, sessions, TOTP, password reset, and API key handling. |
 | [Architecture](architecture.md) | The single binary, the in-process worker, the embedded admin, SQLite, and host-based page resolution. |
+| [Deployment](deployment.md) | The GHCR image, release-please versioning, and the CI/CD release-and-deploy flow to the homelab. |
 | [Roadmap](roadmap.md) | Planned features that are not yet built. |

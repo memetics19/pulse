@@ -50,7 +50,33 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+
+  # Deploy runs only after the image is built and pushed, so the homelab never
+  # pulls a tag that does not exist yet. The GitHub release + changelog are
+  # created by release-please (see release-please.yml), not here.
+  deploy:
+    name: Deploy to homelab
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Join Netbird VPN
+        env:
+          NB_URL: ${{ secrets.NETBIRD_MANAGEMENT_URL }}
+        run: |
+          curl -fsSL https://pkgs.netbird.io/install.sh | sudo sh
+          sudo netbird up --setup-key "${{ secrets.NETBIRD_SETUP_KEY }}" \
+            ${NB_URL:+--management-url "$NB_URL"}
+          sudo netbird status
+      - name: Pull and restart on host over SSH
+        uses: appleboy/ssh-action@v1
         with:
-          generate_release_notes: true
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          script: |
+            cd ~/pulse
+            git fetch --tags && git pull --ff-only
+            docker compose -f deploy/docker-compose.homelab.yml pull
+            docker compose -f deploy/docker-compose.homelab.yml up -d
+            docker image prune -f
