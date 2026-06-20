@@ -1,0 +1,56 @@
+# Production deployment: the Pulse status page and the documentation site,
+# behind a single Caddy reverse proxy that routes by Host.
+#
+#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+#
+# Run from the repository root so the build context and bind mounts resolve.
+
+services:
+  pulse:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: pulse:latest
+    environment:
+      SQLITE_PATH: /data/pulse.db
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    # Allow unprivileged ICMP (ping monitors) from inside the container.
+    # This is a namespaced sysctl, so no privileged mode is required.
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+    volumes:
+      - pulse_data:/data
+    restart: unless-stopped
+
+  # One-shot: render the Markdown docs into a static site on the docs_site volume.
+  docs-build:
+    image: squidfunk/mkdocs-material:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:ro
+      - docs_site:/site
+    command: build -d /site -f /workspace/mkdocs.yml
+    restart: "no"
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      pulse:
+        condition: service_started
+      docs-build:
+        condition: service_completed_successfully
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - docs_site:/srv/docs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  pulse_data:
+  docs_site:
+  caddy_data:
+  caddy_config:

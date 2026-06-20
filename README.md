@@ -4,6 +4,8 @@ Pulse is an open-source, self-hosted status page and monitoring tool. It ships a
 
 A live status page runs at [status.shreeda.xyz](https://status.shreeda.xyz). The full documentation is at [docs.shreeda.xyz](https://docs.shreeda.xyz).
 
+<!--![Pulse status page](docs/assets/status-page.gif)-->
+
 ## Highlights
 
 - **Single binary and SQLite.** One Go binary plus one SQLite file. The monitoring worker runs in-process.
@@ -48,4 +50,4 @@ Full documentation is at [docs.shreeda.xyz](https://docs.shreeda.xyz). The Markd
 
 ## License
 
-Pulse is open source. See the repository for license details.
+Pulse is released under the MIT License. See [LICENSE.md](LICENSE.md).

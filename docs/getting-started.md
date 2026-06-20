@@ -16,7 +16,7 @@ To serve a public page over HTTPS, you also need a reverse proxy in front of Pul
 Clone the repository and start the container:
 
 ```bash
-git clone https://github.com/your-org/pulse.git
+git clone https://github.com/memetics19/pulse.git
 cd pulse
 docker compose up -d
 ```
@@ -76,10 +76,13 @@ To produce it in Uptime Kuma:
 ### Run the import
 
 ```bash
-pulse-cli import uptime-kuma --file backup.json
+pulse-cli import uptime-kuma \
+  --file backup.json \
+  --server https://status.example.com \
+  --token pulse_live_xxxxxxxx
 ```
 
-The command reads the backup file and creates the corresponding monitors and groups in Pulse. Historical check data is not imported, because Uptime Kuma backups do not include it.
+The command reads the backup file and creates the monitors in Pulse under a single "Imported" group, through the REST API. `--server` is your Pulse base URL and `--token` is an API key with the `monitors:write` scope (create one under Admin → API keys). Historical check data is not imported, because Uptime Kuma backups do not include it.
 
 ## Next steps
 

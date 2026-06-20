@@ -31,7 +31,7 @@ func (h *Overview) Get(w http.ResponseWriter, r *http.Request) {
 	var up, degraded, down int
 	attention := []attentionItem{}
 	for _, m := range monitors {
-		if m.IsActive == 0 {
+		if !m.IsActive {
 			continue
 		}
 		s := status[m.ID]
@@ -49,10 +49,10 @@ func (h *Overview) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// InfraAgent: Name string, IsActive int64, LastSeenAt *time.Time
+	// InfraAgent: Name string, IsActive bool, LastSeenAt *time.Time
 	agents, _ := h.q.ListAgents(ctx)
 	for _, a := range agents {
-		if a.IsActive == 0 || a.LastSeenAt == nil {
+		if !a.IsActive || a.LastSeenAt == nil {
 			continue
 		}
 		if time.Since(*a.LastSeenAt) > 2*time.Minute {

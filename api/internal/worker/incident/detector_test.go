@@ -29,7 +29,7 @@ func TestDetector_IncidentOnSecondConsecutiveDown(t *testing.T) {
 	mon, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
 		Name: "Test API", Url: "http://example.com", Type: "http",
 		IntervalSeconds: 60, TimeoutSeconds: 10,
-		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: 1,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
 		Source: "internal",
 	})
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestDetector_ResetsOnUp(t *testing.T) {
 	mon, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
 		Name: "Test API", Url: "http://example.com", Type: "http",
 		IntervalSeconds: 60, TimeoutSeconds: 10,
-		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: 1,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
 		Source: "internal",
 	})
 	require.NoError(t, err)

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Basic "no slop" gate: staged Go must be gofmt-clean (generated code excluded).
+# Enable once per clone:  git config core.hooksPath .githooks
+files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | grep -v '/internal/generated/')
+[ -z "$files" ] && exit 0
+bad=$(gofmt -l $files 2>/dev/null)
+if [ -n "$bad" ]; then
+  echo "pre-commit: these Go files are not gofmt-formatted:" >&2
+  echo "$bad" >&2
+  echo "Run: gofmt -w <files>" >&2
+  exit 1
+fi
+exit 0

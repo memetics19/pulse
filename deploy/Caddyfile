@@ -1,0 +1,27 @@
+# Pulse reverse proxy.
+#
+# This VM has a private address, so public Let's Encrypt certificates cannot be
+# issued here. Caddy therefore serves plain HTTP and routes by Host. Point
+# status.shreeda.xyz and docs.shreeda.xyz at this host (internal DNS or an
+# /etc/hosts entry). To serve public HTTPS, place a proxy with public DNS in
+# front, or switch these blocks to https:// once the domains resolve publicly.
+
+{
+	auto_https off
+}
+
+# Public status page.
+http://status.shreeda.xyz {
+	reverse_proxy pulse:8080
+}
+
+# Documentation site (static, built by the docs-build service).
+http://docs.shreeda.xyz {
+	root * /srv/docs
+	file_server
+}
+
+# Anything else (for example the raw VM IP) shows the status page.
+http:// {
+	reverse_proxy pulse:8080
+}

@@ -11,7 +11,7 @@ export interface Monitor {
   keyword_check: string
   degraded_threshold_ms: number
   down_threshold_ms: number
-  is_active: number
+  is_active: boolean
   group_id: number | null
   source: string
   external_id: string
@@ -81,7 +81,7 @@ export interface InfraAgent {
   host_label: string
   token: string
   last_seen_at: string | null
-  is_active: number
+  is_active: boolean
   created_at: string
 }
 

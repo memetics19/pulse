@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reject AI co-authorship / attribution in commit messages.
+# Applies to everyone (humans and agents). Enable once per clone:
+#   git config core.hooksPath .githooks
+msg_file="$1"
+if grep -qiE 'co-authored-by|generated with .*(claude|code)|🤖|noreply@anthropic' "$msg_file"; then
+  echo "commit-msg: AI / co-author attribution is not allowed in this repo." >&2
+  echo "Remove Co-Authored-By and 'Generated with ...' lines, then commit again." >&2
+  exit 1
+fi
+exit 0

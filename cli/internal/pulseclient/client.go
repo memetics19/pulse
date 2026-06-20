@@ -78,7 +78,7 @@ type createMonitorRequest struct {
 	KeywordCheck        string `json:"keyword_check"`
 	DegradedThresholdMs int64  `json:"degraded_threshold_ms"`
 	DownThresholdMs     int64  `json:"down_threshold_ms"`
-	IsActive            int64  `json:"is_active"`
+	IsActive            bool   `json:"is_active"`
 	GroupID             int64  `json:"group_id"`
 	Source              string `json:"source"`
 	ExternalID          string `json:"external_id"`
@@ -96,7 +96,7 @@ func (c *Client) CreateMonitor(m uptimekuma.PulseMonitor, groupID int64) error {
 		KeywordCheck:        m.KeywordCheck,
 		DegradedThresholdMs: 1000,
 		DownThresholdMs:     3000,
-		IsActive:            1,
+		IsActive:            true,
 		GroupID:             groupID,
 		Source:              "uptime-kuma",
 		ExternalID:          "",

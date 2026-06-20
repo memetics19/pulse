@@ -27,7 +27,7 @@ func TestScheduler_CallsCheckerAtInterval(t *testing.T) {
 	mon := store.Monitor{
 		ID: 1, Name: "test", Url: "tcp://x.com:80", Type: "tcp",
 		IntervalSeconds: 1, TimeoutSeconds: 5,
-		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: 1,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
 		Source: "internal",
 	}
 
@@ -51,7 +51,7 @@ func TestScheduler_ZeroIntervalDoesNotPanic(t *testing.T) {
 	mon := store.Monitor{
 		ID: 1, Name: "test", Url: "tcp://x.com:80", Type: "tcp",
 		IntervalSeconds: 0, TimeoutSeconds: 5,
-		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: 1,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
 		Source: "internal",
 	}
 

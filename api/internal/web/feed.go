@@ -42,7 +42,7 @@ func (p *Public) Feed(w http.ResponseWriter, r *http.Request) {
 	}
 	pageMonitors := map[int64]bool{}
 	for _, m := range snap.Monitors {
-		if m.IsActive == 0 || m.GroupID == nil {
+		if !m.IsActive || m.GroupID == nil {
 			continue
 		}
 		if allGroups || allow[*m.GroupID] {

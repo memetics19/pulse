@@ -1,0 +1,54 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "deploy/Caddyfile"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+
+# Don't let two docs deploys run at once on the host.
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: mkdocs build
+        run: |
+          docker run --rm -v "$PWD:/docs" squidfunk/mkdocs-material:latest \
+            build -f /docs/mkdocs.yml -d /docs/_site
+
+  deploy:
+    name: Rebuild docs on homelab
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Join Netbird VPN
+        # Managed Netbird cloud — default management URL, no self-hosted URL needed.
+        run: |
+          curl -fsSL https://pkgs.netbird.io/install.sh | sudo sh
+          sudo netbird up --setup-key "${{ secrets.NETBIRD_SETUP_KEY }}"
+          sudo netbird status
+      - name: Rebuild and serve docs over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          # The docs-build one-shot re-renders the markdown into the docs_site
+          # volume; the already-running Caddy serves it live (no restart needed).
+          script: |
+            cd ~/pulse
+            git fetch origin main && git pull --ff-only
+            docker compose -f deploy/docker-compose.homelab.yml run --rm docs-build

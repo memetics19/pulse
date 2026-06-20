@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"embed"
+	"errors"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -39,7 +40,7 @@ func runMigrations(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 	return nil

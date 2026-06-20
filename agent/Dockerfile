@@ -17,7 +17,7 @@ RUN go work sync && go mod download -modfile agent/go.mod
 # Copy full source
 COPY agent/ ./agent/
 COPY api/ ./api/
-COPY worker/ ./worker/
+
 
 # Build the agent binary (CGO disabled → fully static)
 RUN CGO_ENABLED=0 go build -o /pulse-agent ./agent/cmd/agent

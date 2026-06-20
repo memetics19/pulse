@@ -9,3 +9,8 @@ sql:
         out: "../generated"
         emit_json_tags: true
         emit_pointers_for_null_types: true
+        overrides:
+          - column: "monitors.is_active"
+            go_type: "bool"
+          - column: "infra_agents.is_active"
+            go_type: "bool"
