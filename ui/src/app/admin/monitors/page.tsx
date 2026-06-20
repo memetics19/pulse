@@ -9,7 +9,7 @@ import {
 const TYPES = ['http', 'tcp', 'ping', 'dns', 'ssl', 'infra']
 const EMPTY: Partial<Monitor> = {
   name: '', url: '', type: 'http', interval_seconds: 60, timeout_seconds: 10,
-  degraded_threshold_ms: 500, down_threshold_ms: 2000, is_active: 1,
+  degraded_threshold_ms: 500, down_threshold_ms: 2000, is_active: true,
   keyword_check: '', source: 'internal', external_id: '',
 }
 
