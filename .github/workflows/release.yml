@@ -70,8 +70,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          password: ${{ secrets.SSH_PASSWORD }}
           script: |
             cd ~/pulse
             git fetch --tags && git pull --ff-only
