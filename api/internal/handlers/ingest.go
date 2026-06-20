@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -55,7 +56,7 @@ func (h *Ingest) PostMetrics(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.q.UpdateAgentLastSeen(r.Context(), agent.ID); err != nil {
 		// Non-fatal: log but continue
-		_ = err
+		log.Printf("failed to update agent last seen: %v", err)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
