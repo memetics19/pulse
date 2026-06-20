@@ -27,7 +27,7 @@ func TestMonitorsCRUD(t *testing.T) {
 		"timeout_seconds":       10,
 		"degraded_threshold_ms": 500,
 		"down_threshold_ms":     2000,
-		"is_active":             1,
+		"is_active":             true,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/monitors", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

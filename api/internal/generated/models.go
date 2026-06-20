@@ -63,7 +63,7 @@ type InfraAgent struct {
 	HostLabel  string     `json:"host_label"`
 	Token      string     `json:"token"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
-	IsActive   int64      `json:"is_active"`
+	IsActive   bool       `json:"is_active"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
@@ -113,7 +113,7 @@ type Monitor struct {
 	KeywordCheck        string    `json:"keyword_check"`
 	DegradedThresholdMs int64     `json:"degraded_threshold_ms"`
 	DownThresholdMs     int64     `json:"down_threshold_ms"`
-	IsActive            int64     `json:"is_active"`
+	IsActive            bool      `json:"is_active"`
 	GroupID             *int64    `json:"group_id"`
 	Source              string    `json:"source"`
 	ExternalID          string    `json:"external_id"`

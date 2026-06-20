@@ -27,7 +27,7 @@ type CreateMonitorParams struct {
 	KeywordCheck        string `json:"keyword_check"`
 	DegradedThresholdMs int64  `json:"degraded_threshold_ms"`
 	DownThresholdMs     int64  `json:"down_threshold_ms"`
-	IsActive            int64  `json:"is_active"`
+	IsActive            bool   `json:"is_active"`
 	GroupID             *int64 `json:"group_id"`
 	Source              string `json:"source"`
 	ExternalID          string `json:"external_id"`
@@ -254,7 +254,7 @@ type UpdateMonitorParams struct {
 	KeywordCheck        string `json:"keyword_check"`
 	DegradedThresholdMs int64  `json:"degraded_threshold_ms"`
 	DownThresholdMs     int64  `json:"down_threshold_ms"`
-	IsActive            int64  `json:"is_active"`
+	IsActive            bool   `json:"is_active"`
 	GroupID             *int64 `json:"group_id"`
 	ID                  int64  `json:"id"`
 }

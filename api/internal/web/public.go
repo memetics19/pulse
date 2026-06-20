@@ -257,7 +257,7 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) statu
 	pageMonitors := map[int64]bool{}
 	byGroup := make(map[int64][]monitorVM)
 	for _, m := range snap.Monitors {
-		if m.IsActive == 0 || m.GroupID == nil {
+		if !m.IsActive || m.GroupID == nil {
 			continue
 		}
 		if !allowGroup(*m.GroupID) {
