@@ -6,13 +6,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/memetics19/pulse/api/internal/app"
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/handlers"
 	"github.com/memetics19/pulse/api/internal/middleware"
 	"github.com/memetics19/pulse/api/internal/web"
 )
 
-func New(a *app.App, dataDir string) http.Handler {
+func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	q := generated.New(app.LiveDBTX(a))
 	r := chi.NewRouter()
 

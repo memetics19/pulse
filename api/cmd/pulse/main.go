@@ -62,7 +62,7 @@ func main() {
 		}
 	}()
 
-	srv := server.New(a, dataDir)
+	srv := server.New(a, dataDir, cfg)
 	httpSrv := &http.Server{Addr: ":" + cfg.Port, Handler: srv}
 
 	go func() {
