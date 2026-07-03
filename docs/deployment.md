@@ -47,11 +47,19 @@ git clone https://github.com/memetics19/pulse.git ~/pulse
 cd ~/pulse
 # If the GHCR package is private, authenticate once (else make the package public):
 #   echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u memetics19 --password-stdin
+# Homelab monitors target LAN hosts, so relax the SSRF guard on this host:
+echo "PULSE_ALLOW_PRIVATE_MONITORS=true" >> .env
 docker compose -f deploy/docker-compose.homelab.yml up -d
 ```
 
 `deploy/docker-compose.homelab.yml` pulls the `pulse` image from GHCR (no local
 build) and serves it, plus the docs site, behind Caddy (`deploy/Caddyfile`).
+
+> Without `PULSE_ALLOW_PRIVATE_MONITORS=true` in the host's `.env`, HTTP(S)
+> monitors pointing at private addresses (10.x, 192.168.x, …) are rejected —
+> that guard exists to stop monitor URLs probing internal networks (SSRF).
+> See [Configuration](configuration.md) for `PULSE_SECURE_COOKIES` and
+> `PULSE_CORS_ORIGINS` as well.
 
 ### Required GitHub secrets
 

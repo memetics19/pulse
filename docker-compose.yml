@@ -13,6 +13,10 @@ services:
       # Optional notification channels. Leave unset to disable.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      # Mark session cookies Secure when serving over HTTPS.
+      PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
+      # Set to "true" to let monitors target private/LAN addresses (homelab).
+      PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
     volumes:
       - pulse_data:/data
     restart: unless-stopped

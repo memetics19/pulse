@@ -15,6 +15,10 @@ services:
       SQLITE_PATH: /data/pulse.db
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
+      # Homelab monitors target LAN hosts, so the SSRF guard must be relaxed
+      # explicitly (see docs/configuration.md).
+      PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
     # Allow unprivileged ICMP (ping monitors) without privileged mode.
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647
