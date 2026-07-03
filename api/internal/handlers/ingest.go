@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/memetics19/pulse/api/internal/generated"
+	"github.com/memetics19/pulse/api/internal/keyauth"
 )
 
 type Ingest struct {
@@ -33,7 +34,7 @@ func (h *Ingest) PostMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.q.GetAgentByToken(r.Context(), token)
+	agent, err := h.q.GetAgentByTokenHash(r.Context(), keyauth.Hash(token))
 	if err != nil {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
@@ -60,14 +61,4 @@ func (h *Ingest) PostMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *Ingest) PostWebhook(w http.ResponseWriter, r *http.Request) {
-	// Accept any JSON body; just acknowledge receipt
-	var body interface{}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"status": "queued"})
 }

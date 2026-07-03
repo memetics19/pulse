@@ -70,3 +70,22 @@ func TestRequireSessionOrAPIKey(t *testing.T) {
 		t.Fatalf("bad key=%d want 401", rec.Code)
 	}
 }
+
+func TestHasScopeExactMatchOnly(t *testing.T) {
+	cases := []struct {
+		scopes string
+		need   string
+		want   bool
+	}{
+		{`["monitors:read"]`, "monitors:read", true},
+		{`["monitors:readonly"]`, "monitors:read", false}, // substring must not match
+		{`["monitors:read","incidents:write"]`, "incidents:write", true},
+		{`not json`, "monitors:read", false},
+		{`[]`, "monitors:read", false},
+	}
+	for _, c := range cases {
+		if got := hasScope(c.scopes, c.need); got != c.want {
+			t.Errorf("hasScope(%q, %q) = %v, want %v", c.scopes, c.need, got, c.want)
+		}
+	}
+}

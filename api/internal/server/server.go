@@ -6,23 +6,25 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/memetics19/pulse/api/internal/app"
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/handlers"
 	"github.com/memetics19/pulse/api/internal/middleware"
 	"github.com/memetics19/pulse/api/internal/web"
 )
 
-func New(a *app.App, dataDir string) http.Handler {
+func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	q := generated.New(app.LiveDBTX(a))
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(middleware.CORS())
+	r.Use(middleware.MaxBody(1 << 20)) // 1 MiB request body cap
+	r.Use(middleware.CORS(cfg.CORSOrigins))
 	r.Use(middleware.SetupGate(a))
 
 	// Setup wizard (always reachable, even unconfigured)
-	setupH := handlers.NewSetup(a, dataDir, false)
+	setupH := handlers.NewSetup(a, dataDir, cfg.SecureCookies)
 	r.Get("/api/setup/state", setupH.State)
 	r.Post("/api/setup", setupH.Complete)
 
@@ -35,14 +37,13 @@ func New(a *app.App, dataDir string) http.Handler {
 	r.Get("/healthz", handlers.Health)
 	r.Get("/api/status", handlers.NewStatus(q).Get)
 	r.Post("/api/ingest/metrics", handlers.NewIngest(q).PostMetrics)
-	r.Post("/api/ingest/webhook", handlers.NewIngest(q).PostWebhook)
 
 	// Public read-only (status page client-side fetches)
 	r.Get("/api/monitors/{monitorID}/checks", handlers.NewCheckResults(q).List)
 	r.Get("/api/monitors/{monitorID}/checks/uptime", handlers.NewCheckResults(q).Uptime)
 	r.Get("/api/incidents/{incidentID}/updates", handlers.NewIncidentUpdates(q).List)
 
-	authH := handlers.NewAuth(q, false) // secure=false on plain HTTP; Plan 3 (TLS) sets true
+	authH := handlers.NewAuth(q, cfg.SecureCookies)
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/logout", authH.Logout)
 	r.Get("/api/auth/status", authH.Status)
@@ -78,7 +79,7 @@ func New(a *app.App, dataDir string) http.Handler {
 		})
 
 		r.Route("/api/monitors", func(r chi.Router) {
-			h := handlers.NewMonitors(q)
+			h := handlers.NewMonitors(q, cfg.AllowPrivateMonitors)
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Get("/{id}", h.Get)

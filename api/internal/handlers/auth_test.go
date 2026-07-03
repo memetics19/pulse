@@ -142,3 +142,60 @@ func sessionCookieFrom(t *testing.T, cookies []*http.Cookie) *http.Cookie {
 	t.Fatal("no session cookie found")
 	return nil
 }
+
+func TestSessionCookieSecureFlag(t *testing.T) {
+	for _, secure := range []bool{false, true} {
+		db := testutil.NewTestDB(t)
+		q := generated.New(db)
+		h := NewAuth(q, secure)
+
+		body, _ := json.Marshal(map[string]string{"username": "admin", "password": "s3cret-pass"})
+		rec := httptest.NewRecorder()
+		h.Setup(rec, httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader(body)))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("setup = %d, want 201", rec.Code)
+		}
+		cookies := rec.Result().Cookies()
+		if len(cookies) == 0 {
+			t.Fatal("setup should set a session cookie")
+		}
+		if cookies[0].Secure != secure {
+			t.Fatalf("cookie Secure = %v, want %v", cookies[0].Secure, secure)
+		}
+	}
+}
+
+func TestLoginRateLimited(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	h := NewAuth(q, false)
+
+	setup, _ := json.Marshal(map[string]string{"username": "admin", "password": "s3cret-pass"})
+	rec := httptest.NewRecorder()
+	h.Setup(rec, httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader(setup)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup = %d", rec.Code)
+	}
+
+	bad, _ := json.Marshal(map[string]string{"username": "admin", "password": "wrong"})
+	attempt := func(remoteAddr string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(bad))
+		req.RemoteAddr = remoteAddr
+		rec := httptest.NewRecorder()
+		h.Login(rec, req)
+		return rec.Code
+	}
+
+	for i := 0; i < 10; i++ {
+		if code := attempt("203.0.113.7:1000"); code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d = %d, want 401", i+1, code)
+		}
+	}
+	if code := attempt("203.0.113.7:1000"); code != http.StatusTooManyRequests {
+		t.Fatalf("attempt 11 = %d, want 429", code)
+	}
+	// A different client IP has its own bucket.
+	if code := attempt("198.51.100.9:2000"); code != http.StatusUnauthorized {
+		t.Fatalf("other IP = %d, want 401", code)
+	}
+}

@@ -44,7 +44,11 @@ func toView(k generated.ApiKey) apiKeyView {
 }
 
 func (h *APIKeys) List(w http.ResponseWriter, r *http.Request) {
-	keys, _ := h.q.ListAPIKeys(r.Context())
+	keys, err := h.q.ListAPIKeys(r.Context())
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	out := []apiKeyView{}
 	for _, k := range keys {
 		out = append(out, toView(k))

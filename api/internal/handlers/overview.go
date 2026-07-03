@@ -20,8 +20,16 @@ type attentionItem struct {
 func (h *Overview) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	monitors, _ := h.q.ListMonitors(ctx)
-	rows, _ := h.q.LatestStatuses(ctx)
+	monitors, err := h.q.ListMonitors(ctx)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	rows, err := h.q.LatestStatuses(ctx)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 
 	status := make(map[int64]string, len(rows))
 	for _, row := range rows {
@@ -50,7 +58,11 @@ func (h *Overview) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// InfraAgent: Name string, IsActive bool, LastSeenAt *time.Time
-	agents, _ := h.q.ListAgents(ctx)
+	agents, err := h.q.ListAgents(ctx)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	for _, a := range agents {
 		if !a.IsActive || a.LastSeenAt == nil {
 			continue
@@ -63,7 +75,11 @@ func (h *Overview) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	incidents, _ := h.q.ListIncidents(ctx)
+	incidents, err := h.q.ListIncidents(ctx)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	active := []generated.Incident{}
 	for _, i := range incidents {
 		if i.Status != "resolved" {

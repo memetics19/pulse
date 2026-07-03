@@ -79,7 +79,9 @@ export interface InfraAgent {
   id: number
   name: string
   host_label: string
+  /** Plaintext token, present only in the create response; list/get return token_hash. */
   token: string
+  token_hash?: string
   last_seen_at: string | null
   is_active: boolean
   created_at: string

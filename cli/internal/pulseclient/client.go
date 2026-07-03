@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/memetics19/pulse/cli/internal/uptimekuma"
 )
@@ -21,7 +22,7 @@ func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL:    baseURL,
 		token:      token,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
 

@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +42,16 @@ func requiredScope(method, path string) string {
 	return resource + ":write"
 }
 
+// hasScope reports whether the stored JSON scope array contains exactly the
+// needed scope. Malformed scope JSON grants nothing.
+func hasScope(scopesJSON, need string) bool {
+	var scopes []string
+	if err := json.Unmarshal([]byte(scopesJSON), &scopes); err != nil {
+		return false
+	}
+	return slices.Contains(scopes, need)
+}
+
 // RequireSessionOrAPIKey allows a request with a valid session cookie (full
 // access) OR a valid, unrevoked API key holding the scope required for the
 // method+path.
@@ -62,7 +74,7 @@ func RequireSessionOrAPIKey(q *generated.Queries) func(http.Handler) http.Handle
 					return
 				}
 				need := requiredScope(r.Method, r.URL.Path)
-				if need == "" || !strings.Contains(key.Scopes, `"`+need+`"`) {
+				if need == "" || !hasScope(key.Scopes, need) {
 					http.Error(w, "insufficient scope", http.StatusForbidden)
 					return
 				}

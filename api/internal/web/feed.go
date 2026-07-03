@@ -32,7 +32,11 @@ func (p *Public) Feed(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	snap := handlers.Snapshot(r.Context(), p.q)
+	snap, err := handlers.Snapshot(r.Context(), p.q)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 
 	// page's monitor set (nil GroupIDs => all groups)
 	allGroups := rp.GroupIDs == nil

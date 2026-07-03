@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
+	"github.com/memetics19/pulse/api/internal/keyauth"
 )
 
 type Agents struct {
@@ -51,10 +52,12 @@ func (h *Agents) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	token := hex.EncodeToString(tokenBytes)
 
+	// Only the sha256 hash is stored; the plaintext token is returned once
+	// in this response and cannot be recovered afterwards.
 	agent, err := h.q.CreateAgent(r.Context(), generated.CreateAgentParams{
 		Name:      body.Name,
 		HostLabel: body.HostLabel,
-		Token:     token,
+		TokenHash: keyauth.Hash(token),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -62,7 +65,10 @@ func (h *Agents) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(agent)
+	json.NewEncoder(w).Encode(struct {
+		generated.InfraAgent
+		Token string `json:"token"`
+	}{InfraAgent: agent, Token: token})
 }
 
 func (h *Agents) Delete(w http.ResponseWriter, r *http.Request) {

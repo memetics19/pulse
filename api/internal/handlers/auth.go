@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/memetics19/pulse/api/internal/auth"
@@ -10,11 +11,25 @@ import (
 )
 
 type Auth struct {
-	q      *generated.Queries
-	secure bool
+	q       *generated.Queries
+	secure  bool
+	limiter *loginLimiter
 }
 
-func NewAuth(q *generated.Queries, secure bool) *Auth { return &Auth{q: q, secure: secure} }
+func NewAuth(q *generated.Queries, secure bool) *Auth {
+	return &Auth{q: q, secure: secure, limiter: newLoginLimiter()}
+}
+
+// dummyPasswordHash is verified against when the username does not exist, so
+// failed logins take the same time for known and unknown usernames (no user
+// enumeration via timing).
+var dummyPasswordHash = sync.OnceValue(func() string {
+	h, err := auth.HashPassword("pulse-dummy-password-for-timing")
+	if err != nil {
+		return ""
+	}
+	return h
+})
 
 type credentials struct {
 	Username string `json:"username"`
@@ -40,7 +55,14 @@ func (a *Auth) currentUser(r *http.Request) (generated.User, bool) {
 }
 
 func (a *Auth) Status(w http.ResponseWriter, r *http.Request) {
-	n, _ := a.q.CountUsers(r.Context())
+	// A DB error must not fall through to needs_setup=true: reporting an
+	// already-configured instance as needing setup would invite a takeover
+	// attempt via the setup endpoint.
+	n, err := a.q.CountUsers(r.Context())
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	authenticated := false
 	username := ""
 	totpEnabled := false
@@ -58,7 +80,11 @@ func (a *Auth) Status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Auth) Setup(w http.ResponseWriter, r *http.Request) {
-	n, _ := a.q.CountUsers(r.Context())
+	n, err := a.q.CountUsers(r.Context())
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	if n > 0 {
 		http.Error(w, "already set up", http.StatusForbidden)
 		return
@@ -85,6 +111,10 @@ func (a *Auth) Setup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
+	if !a.limiter.allow(clientIP(r)) {
+		http.Error(w, "too many attempts", http.StatusTooManyRequests)
+		return
+	}
 	var c credentials
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -92,6 +122,9 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := a.q.GetUserByUsername(r.Context(), c.Username)
 	if err != nil {
+		// Burn the same hashing cost as a real verification so unknown
+		// usernames are not distinguishable by response time.
+		_, _ = auth.VerifyPassword(c.Password, dummyPasswordHash())
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
