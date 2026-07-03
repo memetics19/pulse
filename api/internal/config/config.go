@@ -12,6 +12,19 @@ type Config struct {
 	SlackWebhookURL string
 	Port            string
 	SecureCookies   bool
+	CORSOrigins     []string
+}
+
+// envList splits the named environment variable on commas, trimming spaces
+// and dropping empty entries.
+func envList(name string) []string {
+	var out []string
+	for _, v := range strings.Split(os.Getenv(name), ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // envBool reports whether the named environment variable is set to a truthy
@@ -36,5 +49,6 @@ func Load() Config {
 		SlackWebhookURL: os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:            port,
 		SecureCookies:   envBool("PULSE_SECURE_COOKIES"),
+		CORSOrigins:     envList("PULSE_CORS_ORIGINS"),
 	}
 }

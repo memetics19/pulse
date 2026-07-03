@@ -12,6 +12,7 @@ Pulse is configured with environment variables. Notification channels are option
 | `RESEND_API_KEY` | (unset) | API key for sending email notifications through Resend. Leave unset to disable email. |
 | `SLACK_WEBHOOK_URL` | (unset) | Slack incoming webhook URL for notifications. Leave unset to disable Slack. |
 | `PULSE_SECURE_COOKIES` | `false` | Set to `true` when Pulse is served over HTTPS to mark session cookies `Secure`. |
+| `PULSE_CORS_ORIGINS` | (unset) | Comma-separated list of origins allowed to call the API cross-origin. Leave unset (the default) to send no CORS headers; the embedded UI is served same-origin and needs none. |
 
 Set these in the `environment` block of `docker-compose.yml` or in your container runtime.
 

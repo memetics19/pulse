@@ -19,7 +19,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(cfg.CORSOrigins))
 	r.Use(middleware.SetupGate(a))
 
 	// Setup wizard (always reachable, even unconfigured)
