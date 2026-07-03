@@ -23,7 +23,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Use(middleware.SetupGate(a))
 
 	// Setup wizard (always reachable, even unconfigured)
-	setupH := handlers.NewSetup(a, dataDir, false)
+	setupH := handlers.NewSetup(a, dataDir, cfg.SecureCookies)
 	r.Get("/api/setup/state", setupH.State)
 	r.Post("/api/setup", setupH.Complete)
 
@@ -43,7 +43,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/api/monitors/{monitorID}/checks/uptime", handlers.NewCheckResults(q).Uptime)
 	r.Get("/api/incidents/{incidentID}/updates", handlers.NewIncidentUpdates(q).List)
 
-	authH := handlers.NewAuth(q, false) // secure=false on plain HTTP; Plan 3 (TLS) sets true
+	authH := handlers.NewAuth(q, cfg.SecureCookies)
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/logout", authH.Logout)
 	r.Get("/api/auth/status", authH.Status)

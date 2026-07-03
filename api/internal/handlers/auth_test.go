@@ -142,3 +142,25 @@ func sessionCookieFrom(t *testing.T, cookies []*http.Cookie) *http.Cookie {
 	t.Fatal("no session cookie found")
 	return nil
 }
+
+func TestSessionCookieSecureFlag(t *testing.T) {
+	for _, secure := range []bool{false, true} {
+		db := testutil.NewTestDB(t)
+		q := generated.New(db)
+		h := NewAuth(q, secure)
+
+		body, _ := json.Marshal(map[string]string{"username": "admin", "password": "s3cret-pass"})
+		rec := httptest.NewRecorder()
+		h.Setup(rec, httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader(body)))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("setup = %d, want 201", rec.Code)
+		}
+		cookies := rec.Result().Cookies()
+		if len(cookies) == 0 {
+			t.Fatal("setup should set a session cookie")
+		}
+		if cookies[0].Secure != secure {
+			t.Fatalf("cookie Secure = %v, want %v", cookies[0].Secure, secure)
+		}
+	}
+}

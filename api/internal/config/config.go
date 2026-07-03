@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Config struct {
 	DatabaseURL     string
@@ -8,6 +11,17 @@ type Config struct {
 	ResendAPIKey    string
 	SlackWebhookURL string
 	Port            string
+	SecureCookies   bool
+}
+
+// envBool reports whether the named environment variable is set to a truthy
+// value ("1", "true", "yes", case-insensitive).
+func envBool(name string) bool {
+	switch strings.ToLower(os.Getenv(name)) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
 }
 
 func Load() Config {
@@ -21,5 +35,6 @@ func Load() Config {
 		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
 		SlackWebhookURL: os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:            port,
+		SecureCookies:   envBool("PULSE_SECURE_COOKIES"),
 	}
 }
