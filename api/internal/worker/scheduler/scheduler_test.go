@@ -32,7 +32,7 @@ func TestScheduler_CallsCheckerAtInterval(t *testing.T) {
 	}
 
 	// nil DB — scheduler should handle nil gracefully when no DB ops needed
-	s := scheduler.New(nil, nil, nil)
+	s := scheduler.New(nil, nil, nil, true)
 	s.SetChecker("tcp", cc)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
@@ -55,7 +55,7 @@ func TestScheduler_ZeroIntervalDoesNotPanic(t *testing.T) {
 		Source: "internal",
 	}
 
-	s := scheduler.New(nil, nil, nil)
+	s := scheduler.New(nil, nil, nil, true)
 	s.SetChecker("tcp", cc)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

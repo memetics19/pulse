@@ -37,7 +37,6 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/healthz", handlers.Health)
 	r.Get("/api/status", handlers.NewStatus(q).Get)
 	r.Post("/api/ingest/metrics", handlers.NewIngest(q).PostMetrics)
-	r.Post("/api/ingest/webhook", handlers.NewIngest(q).PostWebhook)
 
 	// Public read-only (status page client-side fetches)
 	r.Get("/api/monitors/{monitorID}/checks", handlers.NewCheckResults(q).List)
@@ -80,7 +79,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		})
 
 		r.Route("/api/monitors", func(r chi.Router) {
-			h := handlers.NewMonitors(q)
+			h := handlers.NewMonitors(q, cfg.AllowPrivateMonitors)
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Get("/{id}", h.Get)

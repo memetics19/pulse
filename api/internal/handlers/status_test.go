@@ -12,7 +12,10 @@ import (
 func TestSnapshotIncludesStatuses(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := generated.New(db)
-	snap := handlers.Snapshot(context.Background(), q)
+	snap, err := handlers.Snapshot(context.Background(), q)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
 	if snap.Statuses == nil {
 		t.Fatal("Statuses map should be non-nil")
 	}

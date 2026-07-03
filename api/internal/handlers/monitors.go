@@ -7,14 +7,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
+	"github.com/memetics19/pulse/api/internal/netguard"
 )
 
 type Monitors struct {
-	q *generated.Queries
+	q            *generated.Queries
+	allowPrivate bool
 }
 
-func NewMonitors(q *generated.Queries) *Monitors {
-	return &Monitors{q: q}
+func NewMonitors(q *generated.Queries, allowPrivate bool) *Monitors {
+	return &Monitors{q: q, allowPrivate: allowPrivate}
 }
 
 // validMonitorTypes is the set of monitor types the scheduler can check.
@@ -31,7 +33,7 @@ const defaultTimeoutSeconds = 30
 // missing or out of range, or "" when the input is acceptable. A zero interval
 // is rejected because it would panic the scheduler's ticker; a missing timeout
 // is defaulted by the caller rather than rejected.
-func validateMonitorInput(url, monType string, intervalSeconds int64) string {
+func (m *Monitors) validateMonitorInput(url, monType string, intervalSeconds int64) string {
 	switch {
 	case url == "":
 		return "url is required"
@@ -39,6 +41,13 @@ func validateMonitorInput(url, monType string, intervalSeconds int64) string {
 		return "invalid type"
 	case intervalSeconds < 1:
 		return "interval_seconds must be at least 1"
+	}
+	// HTTP(S) targets are fetched by the worker, so reject URLs pointing at
+	// private/internal networks unless explicitly allowed (SSRF guard).
+	if monType == "http" || monType == "https" {
+		if err := netguard.ValidateURL(url, m.allowPrivate); err != nil {
+			return err.Error()
+		}
 	}
 	return ""
 }
@@ -78,7 +87,7 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
+	if reason := m.validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
 		http.Error(w, reason, http.StatusBadRequest)
 		return
 	}
@@ -107,7 +116,7 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if reason := validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
+	if reason := m.validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
 		http.Error(w, reason, http.StatusBadRequest)
 		return
 	}

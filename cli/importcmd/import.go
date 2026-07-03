@@ -31,10 +31,10 @@ func newUptimeKumaCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Path to Uptime Kuma backup JSON (required)")
 	cmd.Flags().StringVarP(&server, "server", "s", "", "Pulse API base URL, e.g. http://localhost:8080 (required)")
-	cmd.Flags().StringVarP(&token, "token", "t", "", "Pulse admin token (required)")
-	cmd.MarkFlagRequired("file")
-	cmd.MarkFlagRequired("server")
-	cmd.MarkFlagRequired("token")
+	cmd.Flags().StringVarP(&token, "token", "t", "", "Pulse API key (required)")
+	cobra.CheckErr(cmd.MarkFlagRequired("file"))
+	cobra.CheckErr(cmd.MarkFlagRequired("server"))
+	cobra.CheckErr(cmd.MarkFlagRequired("token"))
 	return cmd
 }
 

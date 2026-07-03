@@ -13,15 +13,22 @@ type slackSender struct {
 	webhookURL string
 }
 
-// NewSlackSender returns a Slack webhook sender, or a noop if webhookURL is empty.
+// NewSlackSender returns a Slack webhook sender. webhookURL (from the
+// SLACK_WEBHOOK_URL env) is only the fallback: each notification may carry
+// its own webhook_url in its config, so the sender must exist even when the
+// env var is unset.
 func NewSlackSender(webhookURL string) Sender {
-	if webhookURL == "" {
-		return &noopSender{}
-	}
 	return &slackSender{webhookURL: webhookURL}
 }
 
 func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) error {
+	url := cfg["webhook_url"]
+	if url == "" {
+		url = s.webhookURL
+	}
+	if url == "" {
+		return fmt.Errorf("slack: no webhook_url in notification config and SLACK_WEBHOOK_URL is unset")
+	}
 	emoji := map[string]string{
 		"detected":      ":red_circle:",
 		"investigating": ":large_yellow_circle:",
@@ -39,7 +46,7 @@ func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 	body, _ := json.Marshal(payload)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.webhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

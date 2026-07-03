@@ -13,6 +13,7 @@ Pulse is configured with environment variables. Notification channels are option
 | `SLACK_WEBHOOK_URL` | (unset) | Slack incoming webhook URL for notifications. Leave unset to disable Slack. |
 | `PULSE_SECURE_COOKIES` | `false` | Set to `true` when Pulse is served over HTTPS to mark session cookies `Secure`. |
 | `PULSE_CORS_ORIGINS` | (unset) | Comma-separated list of origins allowed to call the API cross-origin. Leave unset (the default) to send no CORS headers; the embedded UI is served same-origin and needs none. |
+| `PULSE_ALLOW_PRIVATE_MONITORS` | `false` | Allow HTTP(S) monitors to target private/internal addresses (loopback, LAN, link-local). **Set to `true` for homelab setups that monitor LAN services.** Off by default so monitor URLs cannot be used to probe the server's internal network (SSRF). |
 
 Set these in the `environment` block of `docker-compose.yml` or in your container runtime.
 

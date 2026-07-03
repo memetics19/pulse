@@ -61,7 +61,7 @@ type InfraAgent struct {
 	ID         int64      `json:"id"`
 	Name       string     `json:"name"`
 	HostLabel  string     `json:"host_label"`
-	Token      string     `json:"token"`
+	TokenHash  string     `json:"token_hash"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	IsActive   bool       `json:"is_active"`
 	CreatedAt  time.Time  `json:"created_at"`

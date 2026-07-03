@@ -50,7 +50,10 @@ func (d *Dispatcher) Notify(ctx context.Context, a Alert, monitorID *int64) {
 			continue
 		}
 		cfg := map[string]string{}
-		json.Unmarshal([]byte(n.ConfigJson), &cfg)
+		if err := json.Unmarshal([]byte(n.ConfigJson), &cfg); err != nil {
+			log.Printf("alerter: notification %d has invalid config: %v", n.ID, err)
+			continue
+		}
 		var sender Sender
 		switch n.Channel {
 		case "email":

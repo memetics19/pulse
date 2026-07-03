@@ -145,7 +145,11 @@ func (p *Public) Get(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	vm := p.buildVM(r.Context(), rng, rp)
+	vm, err := p.buildVM(r.Context(), rng, rp)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	if err := statusTmpl.Execute(w, vm); err != nil {
@@ -173,8 +177,11 @@ func affectsPage(affectedJSON string, pageMonitors map[int64]bool, allGroups boo
 	return false
 }
 
-func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) statusVM {
-	snap := handlers.Snapshot(ctx, p.q)
+func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (statusVM, error) {
+	snap, err := handlers.Snapshot(ctx, p.q)
+	if err != nil {
+		return statusVM{}, err
+	}
 	spec := rangeSpecs[rng]
 	now := time.Now()
 	since := now.AddDate(0, 0, -spec.days)
@@ -353,7 +360,7 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) statu
 		}
 	}
 
-	return vm
+	return vm, nil
 }
 
 // monitorSeries builds uptime bars + uptime% + avg latency for one monitor over [since, now].

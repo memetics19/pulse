@@ -10,23 +10,23 @@ import (
 )
 
 const createAgent = `-- name: CreateAgent :one
-INSERT INTO infra_agents (name, host_label, token) VALUES (?, ?, ?) RETURNING id, name, host_label, token, last_seen_at, is_active, created_at
+INSERT INTO infra_agents (name, host_label, token_hash) VALUES (?, ?, ?) RETURNING id, name, host_label, token_hash, last_seen_at, is_active, created_at
 `
 
 type CreateAgentParams struct {
 	Name      string `json:"name"`
 	HostLabel string `json:"host_label"`
-	Token     string `json:"token"`
+	TokenHash string `json:"token_hash"`
 }
 
 func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (InfraAgent, error) {
-	row := q.db.QueryRowContext(ctx, createAgent, arg.Name, arg.HostLabel, arg.Token)
+	row := q.db.QueryRowContext(ctx, createAgent, arg.Name, arg.HostLabel, arg.TokenHash)
 	var i InfraAgent
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.HostLabel,
-		&i.Token,
+		&i.TokenHash,
 		&i.LastSeenAt,
 		&i.IsActive,
 		&i.CreatedAt,
@@ -44,7 +44,7 @@ func (q *Queries) DeleteAgent(ctx context.Context, id int64) error {
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, name, host_label, token, last_seen_at, is_active, created_at FROM infra_agents WHERE id = ?
+SELECT id, name, host_label, token_hash, last_seen_at, is_active, created_at FROM infra_agents WHERE id = ?
 `
 
 func (q *Queries) GetAgent(ctx context.Context, id int64) (InfraAgent, error) {
@@ -54,7 +54,7 @@ func (q *Queries) GetAgent(ctx context.Context, id int64) (InfraAgent, error) {
 		&i.ID,
 		&i.Name,
 		&i.HostLabel,
-		&i.Token,
+		&i.TokenHash,
 		&i.LastSeenAt,
 		&i.IsActive,
 		&i.CreatedAt,
@@ -62,18 +62,18 @@ func (q *Queries) GetAgent(ctx context.Context, id int64) (InfraAgent, error) {
 	return i, err
 }
 
-const getAgentByToken = `-- name: GetAgentByToken :one
-SELECT id, name, host_label, token, last_seen_at, is_active, created_at FROM infra_agents WHERE token = ?
+const getAgentByTokenHash = `-- name: GetAgentByTokenHash :one
+SELECT id, name, host_label, token_hash, last_seen_at, is_active, created_at FROM infra_agents WHERE token_hash = ?
 `
 
-func (q *Queries) GetAgentByToken(ctx context.Context, token string) (InfraAgent, error) {
-	row := q.db.QueryRowContext(ctx, getAgentByToken, token)
+func (q *Queries) GetAgentByTokenHash(ctx context.Context, tokenHash string) (InfraAgent, error) {
+	row := q.db.QueryRowContext(ctx, getAgentByTokenHash, tokenHash)
 	var i InfraAgent
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.HostLabel,
-		&i.Token,
+		&i.TokenHash,
 		&i.LastSeenAt,
 		&i.IsActive,
 		&i.CreatedAt,
@@ -82,7 +82,7 @@ func (q *Queries) GetAgentByToken(ctx context.Context, token string) (InfraAgent
 }
 
 const listAgents = `-- name: ListAgents :many
-SELECT id, name, host_label, token, last_seen_at, is_active, created_at FROM infra_agents ORDER BY created_at ASC
+SELECT id, name, host_label, token_hash, last_seen_at, is_active, created_at FROM infra_agents ORDER BY created_at ASC
 `
 
 func (q *Queries) ListAgents(ctx context.Context) ([]InfraAgent, error) {
@@ -98,7 +98,7 @@ func (q *Queries) ListAgents(ctx context.Context) ([]InfraAgent, error) {
 			&i.ID,
 			&i.Name,
 			&i.HostLabel,
-			&i.Token,
+			&i.TokenHash,
 			&i.LastSeenAt,
 			&i.IsActive,
 			&i.CreatedAt,

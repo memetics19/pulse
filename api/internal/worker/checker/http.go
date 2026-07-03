@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/memetics19/pulse/api/internal/netguard"
 )
 
 const userAgent = "Pulse/1.0 (+https://github.com/memetics19/pulse)"
@@ -14,19 +17,30 @@ const userAgent = "Pulse/1.0 (+https://github.com/memetics19/pulse)"
 type httpChecker struct {
 	expectedStatus int
 	keyword        string
+	allowPrivate   bool
 }
 
 // NewHTTP creates a checker that GETs the target URL.
 // expectedStatus 0 means "any 2xx is up". keyword "" means no body check.
-func NewHTTP(expectedStatus int, keyword string) Checker {
-	return &httpChecker{expectedStatus: expectedStatus, keyword: keyword}
+// allowPrivate permits targets on private/internal networks (see netguard).
+func NewHTTP(expectedStatus int, keyword string, allowPrivate bool) Checker {
+	return &httpChecker{expectedStatus: expectedStatus, keyword: keyword, allowPrivate: allowPrivate}
 }
 
 // Check performs the request, retrying once on a transient failure (network
 // error or 5xx) before concluding the target is down — this avoids flapping a
 // healthy site to "down" on a single blip.
 func (c *httpChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {
-	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+	timeout := time.Duration(timeoutSec) * time.Second
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: timeout,
+				Control: netguard.DialControl(c.allowPrivate),
+			}).DialContext,
+		},
+	}
 
 	var res Result
 	for attempt := 0; attempt < 2; attempt++ {

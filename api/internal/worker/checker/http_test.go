@@ -16,7 +16,7 @@ func TestHTTPChecker_Up(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := checker.NewHTTP(200, "")
+	c := checker.NewHTTP(200, "", true)
 	result := c.Check(context.Background(), srv.URL, 5)
 	assert.Equal(t, "up", result.Status)
 	assert.Equal(t, 200, result.StatusCode)
@@ -30,7 +30,7 @@ func TestHTTPChecker_Down_WrongStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := checker.NewHTTP(200, "")
+	c := checker.NewHTTP(200, "", true)
 	result := c.Check(context.Background(), srv.URL, 5)
 	assert.Equal(t, "down", result.Status)
 	assert.Equal(t, 503, result.StatusCode)
@@ -42,15 +42,27 @@ func TestHTTPChecker_Down_Keyword(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := checker.NewHTTP(200, "healthy")
+	c := checker.NewHTTP(200, "healthy", true)
 	result := c.Check(context.Background(), srv.URL, 5)
 	assert.Equal(t, "down", result.Status)
 	assert.Contains(t, result.ErrorMessage, "keyword")
 }
 
 func TestHTTPChecker_Down_Unreachable(t *testing.T) {
-	c := checker.NewHTTP(200, "")
+	c := checker.NewHTTP(200, "", true)
 	result := c.Check(context.Background(), "http://localhost:19999", 1)
 	assert.Equal(t, "down", result.Status)
 	assert.NotEmpty(t, result.ErrorMessage)
+}
+
+func TestHTTPChecker_BlocksPrivateTargets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := checker.NewHTTP(200, "", false)
+	result := c.Check(context.Background(), srv.URL, 5)
+	assert.Equal(t, "down", result.Status)
+	assert.Contains(t, result.ErrorMessage, "netguard")
 }

@@ -17,7 +17,7 @@ func TestRollup_AggregatesRawInto1mBucket(t *testing.T) {
 	q := store.New(db)
 
 	agent, err := q.CreateAgent(context.Background(), store.CreateAgentParams{
-		Name: "test-host", HostLabel: "host-1", Token: "tok1",
+		Name: "test-host", HostLabel: "host-1", TokenHash: "tok1",
 	})
 	require.NoError(t, err)
 

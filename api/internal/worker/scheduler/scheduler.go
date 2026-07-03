@@ -16,22 +16,43 @@ import (
 
 // Scheduler manages one goroutine per active monitor.
 type Scheduler struct {
-	db       *sql.DB
-	q        *store.Queries
-	alerter  *alerter.Dispatcher
-	detector *incident.Detector
-	checkers map[string]checker.Checker
-	mu       sync.RWMutex
-	cancel   map[int64]context.CancelFunc
+	db           *sql.DB
+	q            *store.Queries
+	alerter      *alerter.Dispatcher
+	detector     *incident.Detector
+	checkers     map[string]checker.Checker
+	allowPrivate bool
+	mu           sync.RWMutex
+	running      map[int64]runningMonitor
 }
 
-func New(db *sql.DB, a *alerter.Dispatcher, d *incident.Detector) *Scheduler {
+// runningMonitor tracks a live per-monitor goroutine. fingerprint captures
+// the check-relevant fields so reconcile can restart the goroutine when the
+// monitor's configuration changes.
+type runningMonitor struct {
+	cancel      context.CancelFunc
+	fingerprint string
+}
+
+// fingerprint serializes the monitor fields that affect how checks run.
+func fingerprint(m store.Monitor) string {
+	expected := int64(0)
+	if m.ExpectedStatus != nil {
+		expected = *m.ExpectedStatus
+	}
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d",
+		m.Url, m.Type, m.IntervalSeconds, m.TimeoutSeconds,
+		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs)
+}
+
+func New(db *sql.DB, a *alerter.Dispatcher, d *incident.Detector, allowPrivate bool) *Scheduler {
 	s := &Scheduler{
-		db:       db,
-		alerter:  a,
-		detector: d,
-		checkers: map[string]checker.Checker{},
-		cancel:   map[int64]context.CancelFunc{},
+		db:           db,
+		alerter:      a,
+		detector:     d,
+		checkers:     map[string]checker.Checker{},
+		allowPrivate: allowPrivate,
+		running:      map[int64]runningMonitor{},
 	}
 	if db != nil {
 		s.q = store.New(db)
@@ -82,7 +103,7 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 		if mon.ExpectedStatus != nil {
 			expected = int(*mon.ExpectedStatus)
 		}
-		c = checker.NewHTTP(expected, mon.KeywordCheck)
+		c = checker.NewHTTP(expected, mon.KeywordCheck, s.allowPrivate)
 	}
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
@@ -132,22 +153,74 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 	}
 }
 
-// Start loads all active monitors from DB and launches a goroutine for each.
-func (s *Scheduler) Start(ctx context.Context) error {
-	if s.q == nil {
-		return fmt.Errorf("scheduler: no database connection")
-	}
+// reconcileInterval is how often the scheduler re-reads active monitors to
+// pick up creates, updates, and deletes made through the API.
+const reconcileInterval = 30 * time.Second
+
+// reconcile diffs the active monitors in the DB against the running
+// goroutines: it starts missing monitors, restarts changed ones, and cancels
+// removed or deactivated ones.
+func (s *Scheduler) reconcile(ctx context.Context) error {
 	monitors, err := s.q.ListActiveMonitors(ctx)
 	if err != nil {
 		return err
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := make(map[int64]bool, len(monitors))
 	for _, mon := range monitors {
+		seen[mon.ID] = true
+		fp := fingerprint(mon)
+		if cur, ok := s.running[mon.ID]; ok {
+			if cur.fingerprint == fp {
+				continue
+			}
+			cur.cancel() // config changed: restart with fresh settings
+			log.Printf("scheduler: restarting monitor %d (config changed)", mon.ID)
+		}
 		mCtx, cancel := context.WithCancel(ctx)
-		s.mu.Lock()
-		s.cancel[mon.ID] = cancel
-		s.mu.Unlock()
+		s.running[mon.ID] = runningMonitor{cancel: cancel, fingerprint: fp}
 		go s.RunMonitor(mCtx, mon)
 	}
-	log.Printf("scheduler: started %d monitors", len(monitors))
+
+	for id, cur := range s.running {
+		if !seen[id] {
+			cur.cancel()
+			delete(s.running, id)
+			log.Printf("scheduler: stopped monitor %d (deleted or deactivated)", id)
+		}
+	}
+	return nil
+}
+
+// Start launches goroutines for all active monitors, then keeps them in sync
+// with the DB by reconciling every reconcileInterval until ctx is cancelled.
+func (s *Scheduler) Start(ctx context.Context) error {
+	if s.q == nil {
+		return fmt.Errorf("scheduler: no database connection")
+	}
+	if err := s.reconcile(ctx); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	log.Printf("scheduler: started %d monitors", len(s.running))
+	s.mu.RUnlock()
+
+	go func() {
+		tick := time.NewTicker(reconcileInterval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				if err := s.reconcile(ctx); err != nil {
+					log.Printf("scheduler: reconcile: %v", err)
+				}
+			}
+		}
+	}()
 	return nil
 }

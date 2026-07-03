@@ -25,9 +25,9 @@ func Run(ctx context.Context, db *sql.DB, cfg config.Config) error {
 	disp := alerter.NewDispatcher(q, cfg.ResendAPIKey, cfg.SlackWebhookURL)
 	det := incident.NewDetector(q)
 
-	sched := scheduler.New(db, disp, det)
-	sched.SetChecker("http", checker.NewHTTP(0, ""))
-	sched.SetChecker("https", checker.NewHTTP(0, ""))
+	sched := scheduler.New(db, disp, det, cfg.AllowPrivateMonitors)
+	sched.SetChecker("http", checker.NewHTTP(0, "", cfg.AllowPrivateMonitors))
+	sched.SetChecker("https", checker.NewHTTP(0, "", cfg.AllowPrivateMonitors))
 	sched.SetChecker("tcp", checker.NewTCP())
 	sched.SetChecker("dns", checker.NewDNS())
 	sched.SetChecker("ssl", checker.NewSSL())

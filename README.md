@@ -22,6 +22,14 @@ A live status page runs at [status.shreeda.xyz](https://status.shreeda.xyz). The
 
 You need Docker with the Compose plugin.
 
+The interactive installer asks a few questions (port, data directory, HTTPS, homelab LAN monitoring), then pulls the published image and starts Pulse:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/install.sh | sh
+```
+
+Or run from a clone of the repository:
+
 ```bash
 git clone https://github.com/memetics19/pulse.git
 cd pulse

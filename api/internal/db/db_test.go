@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/memetics19/pulse/api/internal/db"
+	"github.com/memetics19/pulse/api/internal/keyauth"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,4 +74,25 @@ func TestOpen(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Ping())
 	conn.Close()
+}
+
+func TestLegacyAgentTokensHashedOnOpen(t *testing.T) {
+	path := t.TempDir() + "/legacy.db"
+
+	conn, err := db.Open(path)
+	require.NoError(t, err)
+	plaintext := "0123456789abcdef0123456789abcdef0123456789abcdef" // 48 hex chars
+	_, err = conn.Exec(`INSERT INTO infra_agents (name, host_label, token_hash) VALUES ('legacy', 'host', ?)`, plaintext)
+	require.NoError(t, err)
+	conn.Close()
+
+	// Reopen: Open must hash the plaintext row in place.
+	conn, err = db.Open(path)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	var stored string
+	require.NoError(t, conn.QueryRow(`SELECT token_hash FROM infra_agents WHERE name = 'legacy'`).Scan(&stored))
+	require.Equal(t, keyauth.Hash(plaintext), stored)
+	require.Len(t, stored, 64)
 }
