@@ -63,7 +63,14 @@ func main() {
 	}()
 
 	srv := server.New(a, dataDir, cfg)
-	httpSrv := &http.Server{Addr: ":" + cfg.Port, Handler: srv}
+	httpSrv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           srv,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	go func() {
 		log.Printf("pulse listening on :%s", cfg.Port)
@@ -74,7 +81,11 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("pulse shutting down")
-	_ = httpSrv.Shutdown(context.Background())
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
 }
 
 // dataDir resolves the directory holding the bootstrap config and SQLite file.
