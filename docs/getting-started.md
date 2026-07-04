@@ -11,9 +11,26 @@ Pulse runs as a single container. The image is a static binary on Alpine with ca
 
 To serve a public page over HTTPS, you also need a reverse proxy in front of Pulse that holds TLS certificates and forwards to port 8080. See [Status pages](status-pages.md) for examples.
 
+## Quick start with the installer
+
+Pulse is a single static binary with the admin UI embedded — no Docker,
+Node.js, or database server required. The installer detects your OS and CPU
+architecture (Linux and macOS, amd64 and arm64), downloads the matching binary,
+verifies its checksum, and installs it to `/usr/local/bin`. It asks a few
+questions (port, data directory, HTTPS, whether monitors may target LAN
+addresses). On Linux with systemd it also installs an auto-starting `pulse`
+service; on macOS it prints the command to run.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/install.sh | sh
+```
+
+Manage the Linux service with `systemctl status pulse`, `journalctl -u pulse -f`,
+and `systemctl restart pulse`.
+
 ## Quick start with Docker Compose
 
-Clone the repository and start the container:
+Alternatively, run it as a container. Clone the repository and start it:
 
 ```bash
 git clone https://github.com/memetics19/pulse.git
@@ -33,6 +50,8 @@ services:
       SQLITE_PATH: /data/pulse.db
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
+      PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
     volumes:
       - pulse_data:/data
     restart: unless-stopped

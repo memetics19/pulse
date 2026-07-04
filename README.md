@@ -20,15 +20,17 @@ A live status page runs at [status.shreeda.xyz](https://status.shreeda.xyz). The
 
 ## Quick start (60 seconds)
 
-You need Docker with the Compose plugin.
-
-The interactive installer asks a few questions (port, data directory, HTTPS, homelab LAN monitoring), then pulls the published image and starts Pulse:
+Pulse is a single static binary — no Docker or runtime dependencies. The
+installer detects your OS and CPU architecture (Linux/macOS, amd64/arm64),
+downloads and checksum-verifies the matching binary, and installs it. It asks a
+few questions (port, data directory, HTTPS, homelab LAN monitoring). On Linux it
+sets up an auto-starting `systemd` service:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/install.sh | sh
 ```
 
-Or run from a clone of the repository:
+Prefer containers? Run it with Docker Compose instead:
 
 ```bash
 git clone https://github.com/memetics19/pulse.git

@@ -34,10 +34,12 @@ from Conventional Commit messages: `fix:` → patch, `feat:` → minor, `!` /
 
 ## Homelab host
 
-The status page runs on a private host (`10.2.0.115`) reachable over a
+The status page runs on a private host reachable only over a
 [Netbird](https://netbird.io) VPN (the **managed cloud**, not self-hosted — so
-no management URL is needed). The deploy job joins the same Netbird network from
-the GitHub runner with an ephemeral setup key, then connects over SSH.
+no management URL is needed). The host's address is a private VPN IP kept in the
+`DEPLOY_HOST` GitHub secret, not published here. The deploy job joins the same
+Netbird network from the GitHub runner with an ephemeral setup key, then
+connects over SSH.
 
 ### One-time host setup
 
@@ -68,8 +70,8 @@ build) and serves it, plus the docs site, behind Caddy (`deploy/Caddyfile`).
 | `PULSE_TOKEN` | GHCR push (already configured) |
 | `NETBIRD_SETUP_KEY` | Ephemeral key so the runner joins the managed Netbird network |
 | `SSH_PASSWORD` | Password for the deploy user on the host |
-| `DEPLOY_HOST` | `10.2.0.115` |
-| `DEPLOY_USER` | `ubuntu` |
+| `DEPLOY_HOST` | Private VPN IP of the deploy host |
+| `DEPLOY_USER` | SSH user on the deploy host |
 
 > SSH uses password auth. The host must allow it: set `PasswordAuthentication yes`
 > in `/etc/ssh/sshd_config` and `sudo systemctl restart ssh`. (Key-based auth with
