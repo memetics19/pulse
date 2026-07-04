@@ -15,6 +15,8 @@ services:
       SQLITE_PATH: /data/pulse.db
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
+      PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
     # Allow unprivileged ICMP (ping monitors) from inside the container.
     # This is a namespaced sysctl, so no privileged mode is required.
     sysctls:
