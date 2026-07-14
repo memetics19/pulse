@@ -202,6 +202,15 @@ therefore rebuilds the legacy group table and preserves group identities in a
 migration sidecar; migration 9 re-up restores those identities and removes the
 sidecar.
 
+Migrations normally use golang-migrate's SQLite transaction wrapping. The two
+migration 9 files carry an explicit marker handled by a focused driver wrapper:
+it disables foreign keys on one connection, runs the marked SQL in its own
+transaction, rolls back on failure, and restores foreign keys on every path.
+Migration 9 preflights duplicate monitor identities before rebuilding tables
+and preserves each rebuilt AUTOINCREMENT table's `sqlite_sequence` high-water.
+Real v8-to-v9, early-collision, late-failure, rollback/re-up, and sequence-reuse
+tests exercise this production driver boundary.
+
 `idempotency_key` protects a submitted apply from duplicate network delivery.
 Repeated delivery returns the stored result. A later intentional rerun with a
 new key is still idempotent at the resource level through source identity and

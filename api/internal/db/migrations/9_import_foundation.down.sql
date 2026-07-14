@@ -1,4 +1,14 @@
-PRAGMA foreign_keys = OFF;
+-- pulse:foreign-keys-off-transaction
+
+CREATE TABLE import_foundation_sequence_state (
+    table_name TEXT PRIMARY KEY,
+    seq        INTEGER NOT NULL
+);
+
+INSERT INTO import_foundation_sequence_state (table_name, seq)
+SELECT name, seq
+FROM sqlite_sequence
+WHERE name IN ('monitors', 'monitor_groups');
 
 CREATE TABLE import_foundation_group_identities (
     group_id    INTEGER PRIMARY KEY,
@@ -66,4 +76,30 @@ ALTER TABLE monitors_old RENAME TO monitors;
 DROP TABLE monitor_groups;
 ALTER TABLE monitor_groups_old RENAME TO monitor_groups;
 
-PRAGMA foreign_keys = ON;
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitors'))
+WHERE name = 'monitors'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitors');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitors', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitors'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitors');
+
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitor_groups'))
+WHERE name = 'monitor_groups'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitor_groups');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitor_groups', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitor_groups'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitor_groups');
+
+DROP TABLE import_foundation_sequence_state;

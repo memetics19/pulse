@@ -1,4 +1,15 @@
-PRAGMA foreign_keys = OFF;
+-- pulse:foreign-keys-off-transaction
+
+CREATE UNIQUE INDEX idx_import_foundation_monitors_preflight
+ON monitors(source, external_id) WHERE external_id <> '';
+
+CREATE TABLE import_foundation_sequence_state (
+    table_name TEXT PRIMARY KEY,
+    seq        INTEGER NOT NULL
+);
+
+INSERT INTO import_foundation_sequence_state (table_name, seq)
+SELECT name, seq FROM sqlite_sequence WHERE name = 'monitors';
 
 CREATE TABLE monitors_new (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,6 +37,21 @@ FROM monitors;
 
 DROP TABLE monitors;
 ALTER TABLE monitors_new RENAME TO monitors;
+
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitors'))
+WHERE name = 'monitors'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitors');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitors', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitors'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitors');
+
+DROP TABLE import_foundation_sequence_state;
 
 CREATE TABLE IF NOT EXISTS import_foundation_group_identities (
     group_id    INTEGER PRIMARY KEY,
@@ -73,5 +99,3 @@ CREATE TABLE import_runs (
     created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at       DATETIME
 );
-
-PRAGMA foreign_keys = ON;

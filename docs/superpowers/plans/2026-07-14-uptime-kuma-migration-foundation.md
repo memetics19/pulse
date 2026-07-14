@@ -38,14 +38,18 @@ Generated files under `api/internal/generated/` are changed only by `make sqlc`.
 ### Task 1: Add import identity, run, and push-token schema
 
 **Files:**
+- Create: `api/internal/db/migration_driver.go`
 - Create: `api/internal/db/migrations/9_import_foundation.up.sql`
 - Create: `api/internal/db/migrations/9_import_foundation.down.sql`
 - Create: `api/internal/db/queries/imports.sql`
 - Create: `api/internal/db/queries/push_tokens.sql`
+- Modify: `api/internal/db/db.go`
 - Modify: `api/internal/db/queries/groups.sql`
 - Modify: `api/internal/db/queries/monitors.sql`
 - Modify: `api/store/store.go`
 - Test: `api/internal/db/db_test.go`
+- Test: `api/internal/db/db_dsn_test.go`
+- Test: `api/internal/db/import_foundation_migration_test.go`
 - Generate: `api/internal/generated/*.sql.go`, `api/internal/generated/models.go`
 
 - [ ] **Step 1: Write the migration test first**
@@ -86,12 +90,34 @@ Run: `cd api && go test ./internal/db -run TestImportFoundationSchema -count=1`
 
 Expected: FAIL because `push` violates the current monitor type check or `import_runs` does not exist.
 
+Add real migration-driver tests starting from embedded migration version 8.
+Cover an early duplicate-monitor identity failure, a late restored-group
+identity failure, down/re-up, and deleted/highest-ID AUTOINCREMENT cases. Failed
+migration 9 attempts must leave the legacy schema and data intact with foreign
+keys enabled, and retry must succeed after the collision is corrected.
+
 - [ ] **Step 3: Create migration 9**
+
+Normal migrations retain golang-migrate's SQLite transaction wrapping. A
+focused driver wrapper recognizes the marker below, disables foreign keys on a
+dedicated connection before beginning its own SQL transaction, rolls back any
+failure, and restores foreign keys on every path.
 
 Create `api/internal/db/migrations/9_import_foundation.up.sql` with the complete migration below:
 
 ```sql
-PRAGMA foreign_keys = OFF;
+-- pulse:foreign-keys-off-transaction
+
+CREATE UNIQUE INDEX idx_import_foundation_monitors_preflight
+ON monitors(source, external_id) WHERE external_id <> '';
+
+CREATE TABLE import_foundation_sequence_state (
+    table_name TEXT PRIMARY KEY,
+    seq        INTEGER NOT NULL
+);
+
+INSERT INTO import_foundation_sequence_state (table_name, seq)
+SELECT name, seq FROM sqlite_sequence WHERE name = 'monitors';
 
 CREATE TABLE monitors_new (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,6 +145,21 @@ FROM monitors;
 
 DROP TABLE monitors;
 ALTER TABLE monitors_new RENAME TO monitors;
+
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitors'))
+WHERE name = 'monitors'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitors');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitors', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitors'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitors');
+
+DROP TABLE import_foundation_sequence_state;
 
 CREATE TABLE IF NOT EXISTS import_foundation_group_identities (
     group_id    INTEGER PRIMARY KEY,
@@ -166,14 +207,22 @@ CREATE TABLE import_runs (
     created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at       DATETIME
 );
-
-PRAGMA foreign_keys = ON;
 ```
 
 Create the down migration to remove imported-only state safely before restoring the original monitor constraint:
 
 ```sql
-PRAGMA foreign_keys = OFF;
+-- pulse:foreign-keys-off-transaction
+
+CREATE TABLE import_foundation_sequence_state (
+    table_name TEXT PRIMARY KEY,
+    seq        INTEGER NOT NULL
+);
+
+INSERT INTO import_foundation_sequence_state (table_name, seq)
+SELECT name, seq
+FROM sqlite_sequence
+WHERE name IN ('monitors', 'monitor_groups');
 
 CREATE TABLE import_foundation_group_identities (
     group_id    INTEGER PRIMARY KEY,
@@ -241,13 +290,44 @@ ALTER TABLE monitors_old RENAME TO monitors;
 DROP TABLE monitor_groups;
 ALTER TABLE monitor_groups_old RENAME TO monitor_groups;
 
-PRAGMA foreign_keys = ON;
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitors'))
+WHERE name = 'monitors'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitors');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitors', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitors'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitors');
+
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitor_groups'))
+WHERE name = 'monitor_groups'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitor_groups');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitor_groups', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitor_groups'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitor_groups');
+
+DROP TABLE import_foundation_sequence_state;
 ```
 
 SQLite lacks conditional `ADD COLUMN`. The downgrade rebuilds the legacy
 five-column `monitor_groups` table and preserves non-default identities in
 `import_foundation_group_identities`; migration 9 re-up restores the identities
 before recreating the unique index, then removes the sidecar.
+
+The marker keeps foreign-key-off table rebuilds atomic without disabling normal
+transaction wrapping for migrations 1-8. The initial monitor identity index is
+a collision preflight before destructive DDL, and the sequence state table
+prevents rebuilt AUTOINCREMENT tables from reusing deleted or push-only IDs.
 
 - [ ] **Step 4: Add source-identity and lifecycle queries**
 

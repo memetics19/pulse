@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/stretchr/testify/require"
 )
@@ -33,12 +32,7 @@ func TestImportFoundationMigrationDownAndUp(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	source, err := iofs.New(migrations, "migrations")
-	require.NoError(t, err)
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{NoTxWrap: true})
-	require.NoError(t, err)
-	migrator, err := migrate.NewWithInstance("iofs", source, "sqlite", driver)
-	require.NoError(t, err)
+	migrator := newTestMigrator(t, db)
 
 	require.NoError(t, migrator.Steps(-1))
 
@@ -110,6 +104,196 @@ func TestImportFoundationMigrationDownAndUp(t *testing.T) {
 	require.Zero(t, count)
 
 	assertSQLiteIntegrity(t, ctx, db)
+}
+
+func TestImportFoundationUpCollisionRollsBack(t *testing.T) {
+	db, migrator := openTestDBAtVersion(t, 8)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO monitors (id, name, url, type, source, external_id)
+		VALUES
+			(10, 'First', 'https://first.example', 'http', 'uptime-kuma', 'monitor:7'),
+			(11, 'Duplicate', 'https://duplicate.example', 'http', 'uptime-kuma', 'monitor:7');
+	`)
+	require.NoError(t, err)
+
+	require.Error(t, migrator.Steps(1))
+	assertLegacyImportFoundationSchema(t, ctx, db, 0)
+	assertSQLiteIntegrity(t, ctx, db)
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM monitors WHERE id IN (10, 11)`).Scan(&count))
+	require.Equal(t, 2, count)
+
+	require.NoError(t, migrator.Force(8))
+	_, err = db.ExecContext(ctx, `UPDATE monitors SET external_id = 'monitor:8' WHERE id = 11`)
+	require.NoError(t, err)
+	require.NoError(t, migrator.Steps(1))
+
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master
+		WHERE name IN ('push_monitor_tokens', 'import_runs',
+		               'idx_monitors_source_external', 'idx_groups_source_external')
+	`).Scan(&count))
+	require.Equal(t, 4, count)
+	assertSQLiteIntegrity(t, ctx, db)
+}
+
+func TestImportFoundationLateFailureRollsBack(t *testing.T) {
+	db, err := Open(t.TempDir() + "/late-failure.db")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	ctx := context.Background()
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO monitor_groups (id, name, source, external_id)
+		VALUES
+			(41, 'First', 'uptime-kuma', 'group:41'),
+			(42, 'Second', 'uptime-kuma', 'group:42');
+	`)
+	require.NoError(t, err)
+
+	migrator := newTestMigrator(t, db)
+	require.NoError(t, migrator.Steps(-1))
+	_, err = db.ExecContext(ctx, `
+		UPDATE import_foundation_group_identities
+		SET external_id = 'group:duplicate'
+		WHERE group_id IN (41, 42)
+	`)
+	require.NoError(t, err)
+
+	require.Error(t, migrator.Steps(1))
+	assertLegacyImportFoundationSchema(t, ctx, db, 1)
+	assertSQLiteIntegrity(t, ctx, db)
+
+	require.NoError(t, migrator.Force(8))
+	_, err = db.ExecContext(ctx, `
+		UPDATE import_foundation_group_identities
+		SET external_id = CASE group_id WHEN 41 THEN 'group:41' ELSE 'group:42' END
+		WHERE group_id IN (41, 42)
+	`)
+	require.NoError(t, err)
+	require.NoError(t, migrator.Steps(1))
+	assertSQLiteIntegrity(t, ctx, db)
+}
+
+func TestImportFoundationPreservesAutoincrementHighWater(t *testing.T) {
+	db, migrator := openTestDBAtVersion(t, 8)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO monitor_groups (id, name) VALUES (42, 'Live group');
+		INSERT INTO monitor_groups (id, name) VALUES (2000, 'Deleted high group');
+		DELETE FROM monitor_groups WHERE id = 2000;
+		INSERT INTO monitors (id, name, url, type, group_id)
+		VALUES (100, 'Live monitor', 'https://example.com', 'http', 42);
+		INSERT INTO monitors (id, name, url, type)
+		VALUES (1000, 'Deleted high monitor', 'https://deleted.example', 'http');
+		DELETE FROM monitors WHERE id = 1000;
+	`)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), sqliteSequence(t, ctx, db, "monitors"))
+	require.Equal(t, int64(2000), sqliteSequence(t, ctx, db, "monitor_groups"))
+
+	require.NoError(t, migrator.Steps(1))
+	require.Equal(t, int64(1000), sqliteSequence(t, ctx, db, "monitors"))
+	require.Equal(t, int64(2000), sqliteSequence(t, ctx, db, "monitor_groups"))
+
+	result, err := db.ExecContext(ctx, `
+		INSERT INTO monitors (name, url, type) VALUES ('After up', 'https://after-up.example', 'http')
+	`)
+	require.NoError(t, err)
+	nextMonitorID, err := result.LastInsertId()
+	require.NoError(t, err)
+	require.Greater(t, nextMonitorID, int64(1000))
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO monitors (id, name, url, type)
+		VALUES (5000, 'Highest push', '', 'push')
+	`)
+	require.NoError(t, err)
+	require.NoError(t, migrator.Steps(-1))
+	require.Equal(t, int64(5000), sqliteSequence(t, ctx, db, "monitors"))
+	require.Equal(t, int64(2000), sqliteSequence(t, ctx, db, "monitor_groups"))
+
+	result, err = db.ExecContext(ctx, `
+		INSERT INTO monitors (name, url, type) VALUES ('After down', 'https://after-down.example', 'http')
+	`)
+	require.NoError(t, err)
+	nextMonitorID, err = result.LastInsertId()
+	require.NoError(t, err)
+	require.Greater(t, nextMonitorID, int64(5000))
+
+	result, err = db.ExecContext(ctx, `INSERT INTO monitor_groups (name) VALUES ('After down')`)
+	require.NoError(t, err)
+	nextGroupID, err := result.LastInsertId()
+	require.NoError(t, err)
+	require.Greater(t, nextGroupID, int64(2000))
+	assertSQLiteIntegrity(t, ctx, db)
+}
+
+func openTestDBAtVersion(t *testing.T, version int) (*sql.DB, *migrate.Migrate) {
+	t.Helper()
+
+	dsn, err := sqliteDSN(t.TempDir() + "/migration.db")
+	require.NoError(t, err)
+	db, err := sql.Open("sqlite", dsn)
+	require.NoError(t, err)
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	migrator := newTestMigrator(t, db)
+	require.NoError(t, migrator.Steps(version))
+	return db, migrator
+}
+
+func newTestMigrator(t *testing.T, db *sql.DB) *migrate.Migrate {
+	t.Helper()
+
+	source, err := iofs.New(migrations, "migrations")
+	require.NoError(t, err)
+	driver, err := newMigrationDriver(db)
+	require.NoError(t, err)
+	migrator, err := migrate.NewWithInstance("iofs", source, "sqlite", driver)
+	require.NoError(t, err)
+	return migrator
+}
+
+func assertLegacyImportFoundationSchema(t *testing.T, ctx context.Context, db *sql.DB, sidecarCount int) {
+	t.Helper()
+
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM pragma_table_info('monitor_groups')
+		WHERE name IN ('source', 'external_id')
+	`).Scan(&count))
+	require.Zero(t, count)
+	var monitorSchema string
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'monitors'
+	`).Scan(&monitorSchema))
+	require.NotContains(t, monitorSchema, "'push'")
+	require.NotContains(t, monitorSchema, "'https'")
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master
+		WHERE name IN ('push_monitor_tokens', 'import_runs',
+		               'idx_monitors_source_external', 'idx_groups_source_external',
+		               'monitors_new', 'monitors_old', 'monitor_groups_old',
+		               'import_foundation_sequence_state')
+	`).Scan(&count))
+	require.Zero(t, count)
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master
+		WHERE name = 'import_foundation_group_identities'
+	`).Scan(&count))
+	require.Equal(t, sidecarCount, count)
+}
+
+func sqliteSequence(t *testing.T, ctx context.Context, db *sql.DB, table string) int64 {
+	t.Helper()
+
+	var sequence int64
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&sequence))
+	return sequence
 }
 
 func assertSQLiteIntegrity(t *testing.T, ctx context.Context, db interface {
