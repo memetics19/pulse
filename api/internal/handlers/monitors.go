@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
-	"github.com/memetics19/pulse/api/internal/netguard"
+	"github.com/memetics19/pulse/api/internal/monitorvalidation"
 )
 
 type Monitors struct {
@@ -19,38 +19,9 @@ func NewMonitors(q *generated.Queries, allowPrivate bool) *Monitors {
 	return &Monitors{q: q, allowPrivate: allowPrivate}
 }
 
-// validMonitorTypes is the set of monitor types the scheduler can check.
-var validMonitorTypes = map[string]bool{
-	"http": true, "https": true, "tcp": true, "ping": true,
-	"dns": true, "ssl": true, "infra": true,
-}
-
 // defaultTimeoutSeconds is applied when a monitor is created or updated without
 // a timeout (for example by the Uptime Kuma importer, which omits the field).
 const defaultTimeoutSeconds = 30
-
-// validateMonitorInput returns a human-readable reason when a required field is
-// missing or out of range, or "" when the input is acceptable. A zero interval
-// is rejected because it would panic the scheduler's ticker; a missing timeout
-// is defaulted by the caller rather than rejected.
-func (m *Monitors) validateMonitorInput(url, monType string, intervalSeconds int64) string {
-	switch {
-	case url == "":
-		return "url is required"
-	case !validMonitorTypes[monType]:
-		return "invalid type"
-	case intervalSeconds < 1:
-		return "interval_seconds must be at least 1"
-	}
-	// HTTP(S) targets are fetched by the worker, so reject URLs pointing at
-	// private/internal networks unless explicitly allowed (SSRF guard).
-	if monType == "http" || monType == "https" {
-		if err := netguard.ValidateURL(url, m.allowPrivate); err != nil {
-			return err.Error()
-		}
-	}
-	return ""
-}
 
 func (m *Monitors) List(w http.ResponseWriter, r *http.Request) {
 	monitors, err := m.q.ListMonitors(r.Context())
@@ -87,7 +58,9 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if reason := m.validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
+	if reason := monitorvalidation.Validate(monitorvalidation.Input{
+		URL: params.Url, Type: params.Type, IntervalSeconds: params.IntervalSeconds,
+	}, m.allowPrivate); reason != "" {
 		http.Error(w, reason, http.StatusBadRequest)
 		return
 	}
@@ -116,7 +89,9 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if reason := m.validateMonitorInput(params.Url, params.Type, params.IntervalSeconds); reason != "" {
+	if reason := monitorvalidation.Validate(monitorvalidation.Input{
+		URL: params.Url, Type: params.Type, IntervalSeconds: params.IntervalSeconds,
+	}, m.allowPrivate); reason != "" {
 		http.Error(w, reason, http.StatusBadRequest)
 		return
 	}

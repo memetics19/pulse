@@ -8,9 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/checker"
-	"github.com/memetics19/pulse/api/internal/worker/incident"
+	"github.com/memetics19/pulse/api/internal/worker/checkresult"
 	"github.com/memetics19/pulse/api/store"
 )
 
@@ -18,8 +17,7 @@ import (
 type Scheduler struct {
 	db           *sql.DB
 	q            *store.Queries
-	alerter      *alerter.Dispatcher
-	detector     *incident.Detector
+	recorder     *checkresult.Recorder
 	checkers     map[string]checker.Checker
 	allowPrivate bool
 	mu           sync.RWMutex
@@ -45,11 +43,10 @@ func fingerprint(m store.Monitor) string {
 		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs)
 }
 
-func New(db *sql.DB, a *alerter.Dispatcher, d *incident.Detector, allowPrivate bool) *Scheduler {
+func New(db *sql.DB, recorder *checkresult.Recorder, allowPrivate bool) *Scheduler {
 	s := &Scheduler{
 		db:           db,
-		alerter:      a,
-		detector:     d,
+		recorder:     recorder,
 		checkers:     map[string]checker.Checker{},
 		allowPrivate: allowPrivate,
 		running:      map[int64]runningMonitor{},
@@ -108,48 +105,23 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
 
-	// Apply latency thresholds on top of checker's own status
-	status := result.Status
-	if status == "up" && result.ResponseTimeMs > mon.DownThresholdMs {
-		status = "down"
-	} else if status == "up" && result.ResponseTimeMs > mon.DegradedThresholdMs {
-		status = "degraded"
-	}
-
-	if s.q == nil {
-		return // nil DB: test mode, skip persistence
+	if s.recorder == nil {
+		return
 	}
 
 	respMs := result.ResponseTimeMs
-	p := store.InsertCheckResultParams{
-		MonitorID:      mon.ID,
-		CheckedAt:      result.CheckedAt,
-		Status:         status,
+	input := checkresult.Input{
+		Status:         result.Status,
 		ResponseTimeMs: &respMs,
 		ErrorMessage:   result.ErrorMessage,
+		CheckedAt:      result.CheckedAt,
 	}
 	if result.StatusCode > 0 {
 		code := int64(result.StatusCode)
-		p.StatusCode = &code
+		input.StatusCode = &code
 	}
-	if _, err := s.q.InsertCheckResult(ctx, p); err != nil {
-		log.Printf("scheduler: insert check result (monitor %d): %v", mon.ID, err)
-	}
-
-	if s.detector != nil {
-		created, err := s.detector.MaybeCreateIncident(ctx, mon.ID, status)
-		if err != nil {
-			log.Printf("scheduler: incident detection (monitor %d): %v", mon.ID, err)
-		}
-		if created && s.alerter != nil {
-			monID := mon.ID
-			s.alerter.Notify(ctx, alerter.Alert{
-				Title:    fmt.Sprintf("%s is down", mon.Name),
-				Status:   "detected",
-				Severity: "major",
-				Message:  result.ErrorMessage,
-			}, &monID)
-		}
+	if err := s.recorder.Record(ctx, mon, input); err != nil {
+		log.Printf("scheduler: record check result (monitor %d): %v", mon.ID, err)
 	}
 }
 

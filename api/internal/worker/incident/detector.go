@@ -4,37 +4,30 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/memetics19/pulse/api/store"
 )
 
-// Detector tracks consecutive down counts per monitor and auto-creates
-// a "detected" incident after 2 consecutive down results.
+// Detector auto-creates an incident after 2 consecutive persisted down results.
 type Detector struct {
-	q    *store.Queries
-	mu   sync.Mutex
-	cons map[int64]int // monitorID → consecutive down count
+	q *store.Queries
 }
 
 func NewDetector(q *store.Queries) *Detector {
-	return &Detector{q: q, cons: make(map[int64]int)}
+	return &Detector{q: q}
 }
 
-// MaybeCreateIncident should be called after every check result is written.
-// Returns true if a new incident was created.
-func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, status string) (bool, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if status != "down" {
-		d.cons[monitorID] = 0
-		return false, nil
+// MaybeCreateIncident must be called after the current check result is
+// persisted. It reads the two latest rows, including that current result, so
+// detection survives worker restarts and is shared across processes. It
+// returns true only when it creates a new incident.
+func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, _ string) (bool, error) {
+	results, err := d.q.LatestTwoCheckResults(ctx, monitorID)
+	if err != nil {
+		return false, fmt.Errorf("list latest check results: %w", err)
 	}
-
-	d.cons[monitorID]++
-	if d.cons[monitorID] < 2 {
+	if len(results) < 2 || results[0].Status != "down" || results[1].Status != "down" {
 		return false, nil
 	}
 

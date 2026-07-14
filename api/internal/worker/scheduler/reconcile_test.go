@@ -20,7 +20,7 @@ func TestReconcileTracksMonitorLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s := New(db, nil, nil, true)
+	s := New(db, nil, true)
 	require.NoError(t, s.reconcile(ctx))
 	s.mu.RLock()
 	_, running := s.running[mon.ID]

@@ -93,3 +93,37 @@ func TestMonitorsCreateRejectsPrivateURL(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "private or internal")
 }
+
+func TestMonitorsCreateAllowsPushWithoutURL(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	h := handlers.NewMonitors(generated.New(db), true)
+
+	body, _ := json.Marshal(map[string]any{
+		"name":             "Heartbeat",
+		"type":             "push",
+		"interval_seconds": 60,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/monitors", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.Create(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+}
+
+func TestMonitorsCreateRejectsTCPURLSyntax(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	h := handlers.NewMonitors(generated.New(db), true)
+
+	body, _ := json.Marshal(map[string]any{
+		"name":             "Database",
+		"url":              "tcp://db:5432",
+		"type":             "tcp",
+		"interval_seconds": 60,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/monitors", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.Create(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "tcp target must be host:port")
+}

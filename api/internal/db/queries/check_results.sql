@@ -11,6 +11,12 @@ LIMIT ?;
 -- name: LatestCheckResult :one
 SELECT * FROM check_results WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1;
 
+-- name: LatestTwoCheckResults :many
+SELECT * FROM check_results
+WHERE monitor_id = ?
+ORDER BY checked_at DESC, id DESC
+LIMIT 2;
+
 -- name: UptimePercent :one
 SELECT
   CAST(SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) * 100 as uptime_pct
