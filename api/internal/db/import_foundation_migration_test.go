@@ -68,6 +68,12 @@ func TestImportFoundationMigrationDownAndUp(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM check_results WHERE monitor_id = 100`).Scan(&count))
 	require.Equal(t, 1, count)
 
+	var downSidecarCount int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master
+		WHERE type = 'table' AND name = 'import_foundation_group_identities'
+	`).Scan(&downSidecarCount))
+
 	assertSQLiteIntegrity(t, ctx, db)
 
 	require.NoError(t, migrator.Steps(1))
@@ -89,6 +95,19 @@ func TestImportFoundationMigrationDownAndUp(t *testing.T) {
 	require.Equal(t, "http", monitorType)
 	require.Equal(t, "https://example.com/health", monitorURL)
 	require.Equal(t, int64(42), groupID)
+
+	var groupSource, groupExternalID string
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT source, external_id FROM monitor_groups WHERE id = 42
+	`).Scan(&groupSource, &groupExternalID))
+	require.Equal(t, "uptime-kuma", groupSource)
+	require.Equal(t, "group:42", groupExternalID)
+	require.Equal(t, 1, downSidecarCount)
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master
+		WHERE type = 'table' AND name = 'import_foundation_group_identities'
+	`).Scan(&count))
+	require.Zero(t, count)
 
 	assertSQLiteIntegrity(t, ctx, db)
 }

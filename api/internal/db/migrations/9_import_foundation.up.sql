@@ -27,14 +27,29 @@ FROM monitors;
 DROP TABLE monitors;
 ALTER TABLE monitors_new RENAME TO monitors;
 
+CREATE TABLE IF NOT EXISTS import_foundation_group_identities (
+    group_id    INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL
+);
+
 ALTER TABLE monitor_groups ADD COLUMN source TEXT NOT NULL DEFAULT 'internal';
 ALTER TABLE monitor_groups ADD COLUMN external_id TEXT NOT NULL DEFAULT '';
+
+UPDATE monitor_groups
+SET source = (SELECT source FROM import_foundation_group_identities
+              WHERE group_id = monitor_groups.id),
+    external_id = (SELECT external_id FROM import_foundation_group_identities
+                   WHERE group_id = monitor_groups.id)
+WHERE id IN (SELECT group_id FROM import_foundation_group_identities);
 
 CREATE UNIQUE INDEX idx_monitors_source_external
 ON monitors(source, external_id) WHERE external_id <> '';
 
 CREATE UNIQUE INDEX idx_groups_source_external
 ON monitor_groups(source, external_id) WHERE external_id <> '';
+
+DROP TABLE import_foundation_group_identities;
 
 CREATE TABLE push_monitor_tokens (
     monitor_id  INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,

@@ -197,6 +197,11 @@ on `(source, external_id)` where `external_id <> ''` enforce identity without
 affecting existing internal resources. Uptime Kuma identities use source IDs,
 for example `group:12` and `monitor:42`.
 
+SQLite has no old-version-safe conditional `ADD COLUMN`. Migration 9 downgrade
+therefore rebuilds the legacy group table and preserves group identities in a
+migration sidecar; migration 9 re-up restores those identities and removes the
+sidecar.
+
 `idempotency_key` protects a submitted apply from duplicate network delivery.
 Repeated delivery returns the stored result. A later intentional rerun with a
 new key is still idempotent at the resource level through source identity and

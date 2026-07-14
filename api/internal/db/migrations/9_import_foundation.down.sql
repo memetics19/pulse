@@ -1,5 +1,16 @@
 PRAGMA foreign_keys = OFF;
 
+CREATE TABLE import_foundation_group_identities (
+    group_id    INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL
+);
+
+INSERT INTO import_foundation_group_identities (group_id, source, external_id)
+SELECT id, source, external_id
+FROM monitor_groups
+WHERE source <> 'internal' OR external_id <> '';
+
 CREATE TABLE monitor_groups_old (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,

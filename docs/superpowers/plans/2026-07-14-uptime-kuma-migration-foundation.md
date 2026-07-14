@@ -120,14 +120,29 @@ FROM monitors;
 DROP TABLE monitors;
 ALTER TABLE monitors_new RENAME TO monitors;
 
+CREATE TABLE IF NOT EXISTS import_foundation_group_identities (
+    group_id    INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL
+);
+
 ALTER TABLE monitor_groups ADD COLUMN source TEXT NOT NULL DEFAULT 'internal';
 ALTER TABLE monitor_groups ADD COLUMN external_id TEXT NOT NULL DEFAULT '';
+
+UPDATE monitor_groups
+SET source = (SELECT source FROM import_foundation_group_identities
+              WHERE group_id = monitor_groups.id),
+    external_id = (SELECT external_id FROM import_foundation_group_identities
+                   WHERE group_id = monitor_groups.id)
+WHERE id IN (SELECT group_id FROM import_foundation_group_identities);
 
 CREATE UNIQUE INDEX idx_monitors_source_external
 ON monitors(source, external_id) WHERE external_id <> '';
 
 CREATE UNIQUE INDEX idx_groups_source_external
 ON monitor_groups(source, external_id) WHERE external_id <> '';
+
+DROP TABLE import_foundation_group_identities;
 
 CREATE TABLE push_monitor_tokens (
     monitor_id  INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
@@ -158,37 +173,81 @@ PRAGMA foreign_keys = ON;
 Create the down migration to remove imported-only state safely before restoring the original monitor constraint:
 
 ```sql
-DELETE FROM monitors WHERE type = 'push';
-DROP TABLE IF EXISTS push_monitor_tokens;
-DROP TABLE IF EXISTS import_runs;
-DROP INDEX IF EXISTS idx_monitors_source_external;
-DROP INDEX IF EXISTS idx_groups_source_external;
-
 PRAGMA foreign_keys = OFF;
-CREATE TABLE monitors_old (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    url TEXT NOT NULL DEFAULT '',
-    type TEXT NOT NULL CHECK(type IN ('http','tcp','ping','dns','ssl','infra')),
-    interval_seconds INTEGER NOT NULL DEFAULT 60,
-    timeout_seconds INTEGER NOT NULL DEFAULT 10,
-    expected_status INTEGER,
-    keyword_check TEXT NOT NULL DEFAULT '',
-    degraded_threshold_ms INTEGER NOT NULL DEFAULT 500,
-    down_threshold_ms INTEGER NOT NULL DEFAULT 2000,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    group_id INTEGER REFERENCES monitor_groups(id) ON DELETE SET NULL,
-    source TEXT NOT NULL DEFAULT 'internal',
-    external_id TEXT NOT NULL DEFAULT '',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+
+CREATE TABLE import_foundation_group_identities (
+    group_id    INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL
 );
-INSERT INTO monitors_old SELECT * FROM monitors;
+
+INSERT INTO import_foundation_group_identities (group_id, source, external_id)
+SELECT id, source, external_id
+FROM monitor_groups
+WHERE source <> 'internal' OR external_id <> '';
+
+CREATE TABLE monitor_groups_old (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    description   TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO monitor_groups_old (id, name, display_order, description, created_at)
+SELECT id, name, display_order, description, created_at
+FROM monitor_groups;
+
+CREATE TABLE monitors_old (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                  TEXT NOT NULL,
+    url                   TEXT NOT NULL DEFAULT '',
+    type                  TEXT NOT NULL CHECK(type IN ('http','tcp','ping','dns','ssl','infra')),
+    interval_seconds      INTEGER NOT NULL DEFAULT 60,
+    timeout_seconds       INTEGER NOT NULL DEFAULT 10,
+    expected_status       INTEGER,
+    keyword_check         TEXT NOT NULL DEFAULT '',
+    degraded_threshold_ms INTEGER NOT NULL DEFAULT 500,
+    down_threshold_ms     INTEGER NOT NULL DEFAULT 2000,
+    is_active             INTEGER NOT NULL DEFAULT 1,
+    group_id              INTEGER REFERENCES monitor_groups(id) ON DELETE SET NULL,
+    source                TEXT NOT NULL DEFAULT 'internal',
+    external_id           TEXT NOT NULL DEFAULT '',
+    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO monitors_old
+SELECT id, name, url, CASE type WHEN 'https' THEN 'http' ELSE type END,
+       interval_seconds, timeout_seconds, expected_status, keyword_check,
+       degraded_threshold_ms, down_threshold_ms, is_active, group_id, source,
+       external_id, created_at
+FROM monitors
+WHERE type <> 'push';
+
+DELETE FROM check_results
+WHERE monitor_id IN (SELECT id FROM monitors WHERE type = 'push');
+DELETE FROM ssl_checks
+WHERE monitor_id IN (SELECT id FROM monitors WHERE type = 'push');
+DELETE FROM notifications
+WHERE monitor_id IN (SELECT id FROM monitors WHERE type = 'push');
+
+DROP TABLE push_monitor_tokens;
+DROP TABLE import_runs;
+DROP INDEX idx_monitors_source_external;
+DROP INDEX idx_groups_source_external;
+
 DROP TABLE monitors;
 ALTER TABLE monitors_old RENAME TO monitors;
+DROP TABLE monitor_groups;
+ALTER TABLE monitor_groups_old RENAME TO monitor_groups;
+
 PRAGMA foreign_keys = ON;
 ```
 
-SQLite cannot remove the two new `monitor_groups` columns in-place; the down migration intentionally leaves them as backward-compatible columns.
+SQLite lacks conditional `ADD COLUMN`. The downgrade rebuilds the legacy
+five-column `monitor_groups` table and preserves non-default identities in
+`import_foundation_group_identities`; migration 9 re-up restores the identities
+before recreating the unique index, then removes the sidecar.
 
 - [ ] **Step 4: Add source-identity and lifecycle queries**
 
