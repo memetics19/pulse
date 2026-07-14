@@ -16,7 +16,7 @@ import (
 var migrations embed.FS
 
 func Open(sqlitePath string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", sqlitePath+"?_journal_mode=WAL&_foreign_keys=on")
+	conn, err := sql.Open("sqlite", sqlitePath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func runMigrations(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	driver, err := sqlite.WithInstance(conn, &sqlite.Config{})
+	driver, err := sqlite.WithInstance(conn, &sqlite.Config{NoTxWrap: true})
 	if err != nil {
 		return err
 	}
