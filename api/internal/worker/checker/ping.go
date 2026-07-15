@@ -4,15 +4,20 @@ import (
 	"context"
 	"time"
 
+	"github.com/memetics19/pulse/api/internal/netguard"
 	probing "github.com/prometheus-community/pro-bing"
 )
 
-type pingChecker struct{}
+type pingChecker struct{ allowPrivate bool }
 
-func NewPing() Checker { return &pingChecker{} }
+func NewPing(allowPrivate bool) Checker { return &pingChecker{allowPrivate: allowPrivate} }
 
 func (c *pingChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {
-	pinger, err := probing.NewPinger(target)
+	ip, err := netguard.ResolveAllowedIP(ctx, target, c.allowPrivate)
+	if err != nil {
+		return Result{Status: "down", ErrorMessage: err.Error(), CheckedAt: time.Now()}
+	}
+	pinger, err := probing.NewPinger(ip.String())
 	if err != nil {
 		return Result{Status: "down", ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}

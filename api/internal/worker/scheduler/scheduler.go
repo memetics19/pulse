@@ -173,6 +173,9 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	if s.q == nil {
 		return fmt.Errorf("scheduler: no database connection")
 	}
+	if s.recorder == nil {
+		return fmt.Errorf("scheduler: no check result recorder")
+	}
 	if err := s.reconcile(ctx); err != nil {
 		return err
 	}

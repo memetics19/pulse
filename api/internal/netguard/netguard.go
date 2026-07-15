@@ -4,6 +4,7 @@
 package netguard
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -69,6 +70,16 @@ func ValidateURL(raw string, allowPrivate bool) error {
 	if host == "" {
 		return fmt.Errorf("url has no host")
 	}
+	return ValidateHost(host, allowPrivate)
+}
+
+// ValidateHost performs a best-effort validation of a direct connection host.
+// A lookup failure is allowed because the target may be temporarily
+// unresolvable; runtime checks must call ResolveAllowedIP or DialControl.
+func ValidateHost(host string, allowPrivate bool) error {
+	if host == "" {
+		return fmt.Errorf("target has no host")
+	}
 	if allowPrivate {
 		return nil
 	}
@@ -88,4 +99,40 @@ func ValidateURL(raw string, allowPrivate bool) error {
 		}
 	}
 	return nil
+}
+
+// ValidateHostPort validates the host portion of a direct TCP/TLS target.
+func ValidateHostPort(target string, allowPrivate bool) error {
+	host, port, err := net.SplitHostPort(target)
+	if err != nil || host == "" || port == "" {
+		return fmt.Errorf("target must be host:port")
+	}
+	return ValidateHost(host, allowPrivate)
+}
+
+// ResolveAllowedIP resolves host for a runtime check, rejects forbidden
+// results, and returns one concrete IP so callers do not re-resolve the name.
+func ResolveAllowedIP(ctx context.Context, host string, allowPrivate bool) (net.IP, error) {
+	if host == "" {
+		return nil, fmt.Errorf("target has no host")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !allowPrivate && IsForbiddenIP(ip) {
+			return nil, fmt.Errorf("%s is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", ip)
+		}
+		return ip, nil
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("resolve %s: no addresses", host)
+	}
+	for _, ip := range ips {
+		if !allowPrivate && IsForbiddenIP(ip) {
+			return nil, fmt.Errorf("%s resolves to private or internal address %s (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", host, ip)
+		}
+	}
+	return ips[0], nil
 }

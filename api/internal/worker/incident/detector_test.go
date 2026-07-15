@@ -130,6 +130,30 @@ func TestDetector_RequiresLatestTwoPersistedResultsToBeDown(t *testing.T) {
 	assert.True(t, created)
 }
 
+func TestDetector_SuppressesAutomaticIncidentWhenManualIncidentIsActive(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q)
+	now := time.Now()
+	_, err := q.CreateIncident(context.Background(), store.CreateIncidentParams{
+		Title: "Manual investigation", Severity: "minor",
+		AffectedMonitorIds: "[" + stringID(mon.ID) + "]", StartedAt: now,
+		Source: "internal", ExternalID: "",
+	})
+	require.NoError(t, err)
+	insertResult(t, q, mon.ID, "down", now.Add(time.Second))
+	insertResult(t, q, mon.ID, "down", now.Add(2*time.Second))
+
+	created, err := incident.NewDetector(q).MaybeCreateIncident(context.Background(), mon.ID, "down")
+
+	require.NoError(t, err)
+	assert.False(t, created)
+	incidents, err := q.ListActiveIncidents(context.Background())
+	require.NoError(t, err)
+	require.Len(t, incidents, 1)
+	assert.Equal(t, "internal", incidents[0].Source)
+}
+
 func stringID(id int64) string {
 	return fmt.Sprintf("%d", id)
 }

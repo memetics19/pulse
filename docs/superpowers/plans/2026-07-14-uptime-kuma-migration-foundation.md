@@ -575,6 +575,34 @@ git add api/internal/monitorvalidation api/internal/worker/checkresult api/inter
 git commit -m "refactor(worker): share monitor validation and result recording"
 ```
 
+#### Task 2 safety amendment (approved 2026-07-15)
+
+The shared recorder is a transaction boundary, not just a code-extraction
+boundary. Before Task 3, Task 2 also includes:
+
+- migration 10, with a partial unique index on unresolved automatic monitor
+  incidents identified by `source = 'monitor'` and `external_id = monitor ID`;
+- an atomic `CreateAutoIncident` query whose uniqueness conflict means another
+  process created the incident and alert first;
+- one SQLite transaction covering result insertion, latest-two evaluation,
+  active incident and maintenance reads, and automatic incident insertion;
+- alert dispatch only after commit, with transport failures retaining the
+  dispatcher's non-retryable log-only behavior;
+- validation of recorder status and receipt timestamp, and safe handler
+  defaults of 500 ms degraded / 2000 ms down when omitted;
+- a startup error when a database-backed scheduler lacks a recorder;
+- private-network validation for TCP, SSL, and ping targets, plus runtime
+  `DialControl` enforcement for TCP/TLS and concrete allowed-IP selection for
+  ping; and
+- a check-result index on `(monitor_id, checked_at DESC, id DESC)` matching the
+  latest-two query.
+
+Tests use two independent SQLite connections/recorders to prove one incident
+and one alert, triggers/table removal to prove rollback on DB-side detection
+failures, and CRUD/checker coverage for private-target rejection. SQLite uses a
+bounded busy timeout so concurrent accepted heartbeats wait for the writer
+rather than failing immediately with `SQLITE_BUSY`.
+
 ### Task 3: Add secure push creation, heartbeat, and rotation APIs
 
 **Files:**

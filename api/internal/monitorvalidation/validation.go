@@ -41,6 +41,23 @@ func Validate(in Input, allowPrivate bool) string {
 		if err != nil || host == "" || port == "" {
 			return "tcp target must be host:port"
 		}
+		if err := netguard.ValidateHostPort(in.URL, allowPrivate); err != nil {
+			return err.Error()
+		}
+	}
+	if in.Type == "ssl" {
+		host, port, err := net.SplitHostPort(in.URL)
+		if err != nil || host == "" || port == "" {
+			return "ssl target must be host:port"
+		}
+		if err := netguard.ValidateHostPort(in.URL, allowPrivate); err != nil {
+			return err.Error()
+		}
+	}
+	if in.Type == "ping" {
+		if err := netguard.ValidateHost(in.URL, allowPrivate); err != nil {
+			return err.Error()
+		}
 	}
 	if in.Type == "http" || in.Type == "https" {
 		if err := netguard.ValidateURL(in.URL, allowPrivate); err != nil {

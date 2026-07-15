@@ -231,6 +231,37 @@ values or push tokens.
 
 ## Native push monitor behavior
 
+### Shared recorder safety boundary
+
+Scheduled checks and push heartbeats call the same recorder. The recorder
+validates the result status and server receipt timestamp, applies monitor
+latency thresholds, and performs result persistence plus incident evaluation
+inside one SQLite transaction. The transaction includes the latest-two-result
+read, active-incident suppression, maintenance suppression, and automatic
+incident insertion. A database-side evaluation failure rolls back the result,
+so a retry cannot duplicate an already committed heartbeat row after a 5xx.
+
+Automatic monitor incidents use `source = 'monitor'` and the decimal monitor
+ID as `external_id`. A partial unique index permits at most one unresolved
+automatic incident for that identity. The detector still suppresses creation
+when any active incident, including a manual incident, affects the monitor;
+the unique index is the final cross-process guard when automatic requests race.
+Only the transaction that inserts the incident dispatches an alert, and it does
+so after commit. Alert transport remains non-retryable from the heartbeat's
+perspective and is logged by the dispatcher.
+
+Monitor CRUD supplies the schema defaults (500 ms degraded and 2000 ms down)
+when threshold fields are omitted or zero. This prevents a positive push ping
+from being classified down solely because generated request parameters use
+zero values.
+
+Direct connection monitors apply private-network policy both at CRUD time and
+at execution time. TCP and TLS use the dial-time address guard after DNS
+resolution. Ping resolves on every check, rejects forbidden results, and gives
+the pinger a concrete allowed IP so the pinger cannot independently re-resolve
+the hostname to a private address. DNS monitors only perform name lookup and
+are not treated as direct connection targets.
+
 ### Storage and lifecycle
 
 `push` becomes a valid monitor type. Push monitors are allowed to have an empty

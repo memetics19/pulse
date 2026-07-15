@@ -2,6 +2,7 @@ package checkresult
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -19,19 +20,26 @@ type Input struct {
 }
 
 type Recorder struct {
-	q        *store.Queries
+	db       *sql.DB
 	detector *incident.Detector
 	alerter  *alerter.Dispatcher
 }
 
-func New(q *store.Queries, d *incident.Detector, a *alerter.Dispatcher) *Recorder {
-	return &Recorder{q: q, detector: d, alerter: a}
+func New(db *sql.DB, d *incident.Detector, a *alerter.Dispatcher) *Recorder {
+	return &Recorder{db: db, detector: d, alerter: a}
 }
 
 // Record applies monitor thresholds, persists the current result, then runs
 // incident detection. Persistence must happen first because Detector reads the
 // two latest rows and expects the current result to be among them.
 func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) error {
+	if in.Status != "up" && in.Status != "down" && in.Status != "degraded" {
+		return fmt.Errorf("status must be one of up, down, degraded")
+	}
+	if in.CheckedAt.IsZero() {
+		return fmt.Errorf("checked_at is required")
+	}
+
 	status := in.Status
 	if status == "up" && in.ResponseTimeMs != nil {
 		if *in.ResponseTimeMs > monitor.DownThresholdMs {
@@ -41,7 +49,14 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		}
 	}
 
-	_, err := r.q.InsertCheckResult(ctx, store.InsertCheckResultParams{
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin check result transaction: %w", err)
+	}
+	defer tx.Rollback()
+	q := store.New(tx)
+
+	_, err = q.InsertCheckResult(ctx, store.InsertCheckResultParams{
 		MonitorID:      monitor.ID,
 		CheckedAt:      in.CheckedAt,
 		Status:         status,
@@ -54,11 +69,17 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 	}
 
 	if r.detector == nil {
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit check result transaction: %w", err)
+		}
 		return nil
 	}
-	created, err := r.detector.MaybeCreateIncident(ctx, monitor.ID, status)
+	created, err := r.detector.MaybeCreateIncidentWithQueries(ctx, q, monitor.ID)
 	if err != nil {
 		return fmt.Errorf("detect incident for monitor %d: %w", monitor.ID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit check result transaction: %w", err)
 	}
 	if created && r.alerter != nil {
 		monitorID := monitor.ID

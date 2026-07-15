@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -37,7 +39,7 @@ func TestRecorder_PersistsSuppliedResultFields(t *testing.T) {
 	q := store.New(db)
 	mon := createMonitor(t, q, "Fields API")
 	checkedAt := time.Date(2026, time.July, 14, 10, 30, 0, 0, time.UTC)
-	r := checkresult.New(q, incident.NewDetector(q), nil)
+	r := checkresult.New(db, incident.NewDetector(q), nil)
 
 	err := r.Record(context.Background(), mon, checkresult.Input{
 		Status: "up", ResponseTimeMs: int64Ptr(125), StatusCode: int64Ptr(204),
@@ -73,7 +75,7 @@ func TestRecorder_AppliesLatencyThresholdsOnlyToUpResults(t *testing.T) {
 			db := testutil.NewTestDB(t)
 			q := store.New(db)
 			mon := createMonitor(t, q, tt.name)
-			r := checkresult.New(q, incident.NewDetector(q), nil)
+			r := checkresult.New(db, incident.NewDetector(q), nil)
 
 			err := r.Record(context.Background(), mon, checkresult.Input{
 				Status: tt.status, ResponseTimeMs: int64Ptr(tt.responseMs), CheckedAt: time.Now(),
@@ -92,7 +94,7 @@ func TestRecorder_TwoDownResultsCreateOneIncident(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
 	mon := createMonitor(t, q, "Incident API")
-	r := checkresult.New(q, incident.NewDetector(q), nil)
+	r := checkresult.New(db, incident.NewDetector(q), nil)
 	now := time.Now()
 
 	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{Status: "down", CheckedAt: now}))
@@ -129,7 +131,7 @@ func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r := checkresult.New(q, incident.NewDetector(q), alerter.NewDispatcher(q, "", ""))
+	r := checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, "", ""))
 	now := time.Now()
 
 	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
@@ -145,4 +147,143 @@ func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 	assert.Equal(t, int64(1), hits.Load())
 	require.Len(t, texts, 1)
 	assert.Equal(t, ":red_circle: *[detected]* Recorder API is down\nsecond failure", texts[0])
+}
+
+func TestRecorder_RejectsInvalidInputBeforePersistence(t *testing.T) {
+	tests := []struct {
+		name  string
+		input checkresult.Input
+		want  string
+	}{
+		{
+			name:  "invalid status",
+			input: checkresult.Input{Status: "unknown", CheckedAt: time.Now()},
+			want:  "status must be one of up, down, degraded",
+		},
+		{
+			name:  "missing checked at",
+			input: checkresult.Input{Status: "up"},
+			want:  "checked_at is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := testutil.NewTestDB(t)
+			q := store.New(db)
+			mon := createMonitor(t, q, tt.name)
+			r := checkresult.New(db, incident.NewDetector(q), nil)
+
+			err := r.Record(context.Background(), mon, tt.input)
+
+			require.EqualError(t, err, tt.want)
+			results, queryErr := q.LatestTwoCheckResults(context.Background(), mon.ID)
+			require.NoError(t, queryErr)
+			assert.Empty(t, results)
+		})
+	}
+}
+
+func TestRecorder_RollsBackResultWhenMaintenanceQueryFails(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q, "Maintenance failure")
+	r := checkresult.New(db, incident.NewDetector(q), nil)
+	now := time.Now()
+	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
+		Status: "down", CheckedAt: now,
+	}))
+	_, err := db.ExecContext(context.Background(), `DROP TABLE maintenance_windows`)
+	require.NoError(t, err)
+
+	err = r.Record(context.Background(), mon, checkresult.Input{
+		Status: "down", CheckedAt: now.Add(time.Second),
+	})
+
+	require.ErrorContains(t, err, "list active maintenance")
+	results, queryErr := q.LatestTwoCheckResults(context.Background(), mon.ID)
+	require.NoError(t, queryErr)
+	require.Len(t, results, 1, "failed incident evaluation must roll back the current result")
+}
+
+func TestRecorder_RollsBackResultWhenIncidentInsertFails(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q, "Incident failure")
+	r := checkresult.New(db, incident.NewDetector(q), nil)
+	now := time.Now()
+	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
+		Status: "down", CheckedAt: now,
+	}))
+	_, err := db.ExecContext(context.Background(), `
+		CREATE TRIGGER fail_incident_insert
+		BEFORE INSERT ON incidents
+		BEGIN
+			SELECT RAISE(FAIL, 'forced incident insert failure');
+		END`)
+	require.NoError(t, err)
+
+	err = r.Record(context.Background(), mon, checkresult.Input{
+		Status: "down", CheckedAt: now.Add(time.Second),
+	})
+
+	require.ErrorContains(t, err, "create auto incident")
+	results, queryErr := q.LatestTwoCheckResults(context.Background(), mon.ID)
+	require.NoError(t, queryErr)
+	require.Len(t, results, 1, "failed incident creation must roll back the current result")
+}
+
+func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
+	var alertHits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		alertHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	path := filepath.Join(t.TempDir(), "concurrent.db")
+	db1, err := store.Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db1.Close()) })
+	db2, err := store.Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db2.Close()) })
+	q1, q2 := store.New(db1), store.New(db2)
+	mon := createMonitor(t, q1, "Concurrent API")
+	_, err = q1.CreateNotification(context.Background(), store.CreateNotificationParams{
+		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
+	})
+	require.NoError(t, err)
+	r1 := checkresult.New(db1, incident.NewDetector(q1), alerter.NewDispatcher(q1, "", ""))
+	r2 := checkresult.New(db2, incident.NewDetector(q2), alerter.NewDispatcher(q2, "", ""))
+	now := time.Now()
+	require.NoError(t, r1.Record(context.Background(), mon, checkresult.Input{
+		Status: "down", CheckedAt: now,
+	}))
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for i, recorder := range []*checkresult.Recorder{r1, r2} {
+		wg.Add(1)
+		go func(offset int, r *checkresult.Recorder) {
+			defer wg.Done()
+			<-start
+			errs <- r.Record(context.Background(), mon, checkresult.Input{
+				Status: "down", CheckedAt: now.Add(time.Duration(offset+1) * time.Second),
+			})
+		}(i, recorder)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for recordErr := range errs {
+		require.NoError(t, recordErr)
+	}
+
+	incidents, err := q1.ListActiveIncidents(context.Background())
+	require.NoError(t, err)
+	require.Len(t, incidents, 1)
+	assert.Equal(t, "monitor", incidents[0].Source)
+	assert.Equal(t, int64(1), alertHits.Load())
 }

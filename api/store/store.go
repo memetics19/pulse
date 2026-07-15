@@ -25,7 +25,7 @@ type DBTX = generated.DBTX
 type Queries = generated.Queries
 
 // New creates a new Queries instance backed by the given database connection.
-func New(db *sql.DB) *Queries {
+func New(db DBTX) *Queries {
 	return generated.New(db)
 }
 
@@ -137,6 +137,9 @@ type CreateIncidentUpdateParams = generated.CreateIncidentUpdateParams
 
 // CreateIncidentParams is the public alias for the generated parameter type.
 type CreateIncidentParams = generated.CreateIncidentParams
+
+// CreateAutoIncidentParams is the parameter type for atomic monitor incidents.
+type CreateAutoIncidentParams = generated.CreateAutoIncidentParams
 
 // UpdateIncidentRCAParams is the public alias for the generated parameter type.
 type UpdateIncidentRCAParams = generated.UpdateIncidentRCAParams

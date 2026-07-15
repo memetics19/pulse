@@ -2,7 +2,10 @@ package incident
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +26,14 @@ func NewDetector(q *store.Queries) *Detector {
 // detection survives worker restarts and is shared across processes. It
 // returns true only when it creates a new incident.
 func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, _ string) (bool, error) {
-	results, err := d.q.LatestTwoCheckResults(ctx, monitorID)
+	return d.MaybeCreateIncidentWithQueries(ctx, d.q, monitorID)
+}
+
+// MaybeCreateIncidentWithQueries evaluates and creates an incident using the
+// supplied query scope. Recorder passes transaction-scoped queries so result
+// persistence and the database incident decision commit or roll back together.
+func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.Queries, monitorID int64) (bool, error) {
+	results, err := q.LatestTwoCheckResults(ctx, monitorID)
 	if err != nil {
 		return false, fmt.Errorf("list latest check results: %w", err)
 	}
@@ -32,9 +42,9 @@ func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, _ s
 	}
 
 	// Check if there's already an active incident for this monitor
-	incidents, err := d.q.ListActiveIncidents(ctx)
+	incidents, err := q.ListActiveIncidents(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("list active incidents: %w", err)
 	}
 	monIDStr := fmt.Sprintf("%d", monitorID)
 	for _, inc := range incidents {
@@ -44,29 +54,32 @@ func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, _ s
 	}
 
 	// Suppress auto-incidents for monitors under an active maintenance window.
-	if mws, err := d.q.ListActiveMaintenance(ctx); err == nil {
-		for _, mw := range mws {
-			if containsMonitorID(mw.AffectedMonitorIds, monIDStr) {
-				return false, nil
-			}
+	mws, err := q.ListActiveMaintenance(ctx)
+	if err != nil {
+		return false, fmt.Errorf("list active maintenance: %w", err)
+	}
+	for _, mw := range mws {
+		if containsMonitorID(mw.AffectedMonitorIds, monIDStr) {
+			return false, nil
 		}
 	}
 
 	name := fmt.Sprintf("Monitor %d", monitorID)
-	if mon, err := d.q.GetMonitor(ctx, monitorID); err == nil && mon.Name != "" {
+	if mon, err := q.GetMonitor(ctx, monitorID); err == nil && mon.Name != "" {
 		name = mon.Name
 	}
 
-	_, err = d.q.CreateIncident(ctx, store.CreateIncidentParams{
+	_, err = q.CreateAutoIncident(ctx, store.CreateAutoIncidentParams{
 		Title:              fmt.Sprintf("%s is down", name),
-		Severity:           "major",
 		AffectedMonitorIds: fmt.Sprintf("[%d]", monitorID),
 		StartedAt:          time.Now(),
-		Source:             "internal",
-		ExternalID:         "",
+		ExternalID:         strconv.FormatInt(monitorID, 10),
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("create auto incident: %w", err)
 	}
 	return true, nil
 }

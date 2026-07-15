@@ -73,6 +73,39 @@ func TestValidate(t *testing.T) {
 			allowPrivate: true,
 			want:         `url scheme must be http or https, got "ftp"`,
 		},
+		{
+			name:         "tcp rejects a private target",
+			input:        monitorvalidation.Input{URL: "127.0.0.1:5432", Type: "tcp", IntervalSeconds: 60},
+			allowPrivate: false,
+			want:         "127.0.0.1 is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)",
+		},
+		{
+			name:         "tcp permits a private target when configured",
+			input:        monitorvalidation.Input{URL: "127.0.0.1:5432", Type: "tcp", IntervalSeconds: 60},
+			allowPrivate: true,
+		},
+		{
+			name:         "ssl rejects a private target",
+			input:        monitorvalidation.Input{URL: "127.0.0.1:443", Type: "ssl", IntervalSeconds: 60},
+			allowPrivate: false,
+			want:         "127.0.0.1 is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)",
+		},
+		{
+			name:         "ssl permits a private target when configured",
+			input:        monitorvalidation.Input{URL: "127.0.0.1:443", Type: "ssl", IntervalSeconds: 60},
+			allowPrivate: true,
+		},
+		{
+			name:         "ping rejects a private target",
+			input:        monitorvalidation.Input{URL: "127.0.0.1", Type: "ping", IntervalSeconds: 60},
+			allowPrivate: false,
+			want:         "127.0.0.1 is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)",
+		},
+		{
+			name:         "ping permits a private target when configured",
+			input:        monitorvalidation.Input{URL: "127.0.0.1", Type: "ping", IntervalSeconds: 60},
+			allowPrivate: true,
+		},
 	}
 
 	for _, tt := range tests {

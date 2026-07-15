@@ -91,7 +91,7 @@ func TestSchedulerRecordsEachCheckExactlyOnce(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	recorder := checkresult.New(q, incident.NewDetector(q), nil)
+	recorder := checkresult.New(db, incident.NewDetector(q), nil)
 	s := scheduler.New(db, recorder, true)
 	s.SetChecker("tcp", &countingChecker{})
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -103,4 +103,13 @@ func TestSchedulerRecordsEachCheckExactlyOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, "up", results[0].Status)
+}
+
+func TestSchedulerStartRejectsNilRecorder(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	s := scheduler.New(db, nil, true)
+
+	err := s.Start(context.Background())
+
+	require.EqualError(t, err, "scheduler: no check result recorder")
 }

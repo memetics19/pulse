@@ -25,15 +25,15 @@ func Run(ctx context.Context, db *sql.DB, cfg config.Config) error {
 
 	disp := alerter.NewDispatcher(q, cfg.ResendAPIKey, cfg.SlackWebhookURL)
 	det := incident.NewDetector(q)
-	recorder := checkresult.New(q, det, disp)
+	recorder := checkresult.New(db, det, disp)
 
 	sched := scheduler.New(db, recorder, cfg.AllowPrivateMonitors)
 	sched.SetChecker("http", checker.NewHTTP(0, "", cfg.AllowPrivateMonitors))
 	sched.SetChecker("https", checker.NewHTTP(0, "", cfg.AllowPrivateMonitors))
-	sched.SetChecker("tcp", checker.NewTCP())
+	sched.SetChecker("tcp", checker.NewTCP(cfg.AllowPrivateMonitors))
 	sched.SetChecker("dns", checker.NewDNS())
-	sched.SetChecker("ssl", checker.NewSSL())
-	sched.SetChecker("ping", checker.NewPing())
+	sched.SetChecker("ssl", checker.NewSSL(cfg.AllowPrivateMonitors))
+	sched.SetChecker("ping", checker.NewPing(cfg.AllowPrivateMonitors))
 
 	if err := sched.Start(ctx); err != nil {
 		return err

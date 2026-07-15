@@ -55,6 +55,7 @@ func sqliteDSN(sqlitePath string) (string, error) {
 	options := parsed.Query()
 	options.Add("_pragma", "journal_mode(WAL)")
 	options.Add("_pragma", "foreign_keys(1)")
+	options.Add("_pragma", "busy_timeout(5000)")
 	parsed.RawQuery = options.Encode()
 	return parsed.String(), nil
 }

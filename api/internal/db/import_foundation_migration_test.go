@@ -11,12 +11,10 @@ import (
 )
 
 func TestImportFoundationMigrationDownAndUp(t *testing.T) {
-	db, err := Open(t.TempDir() + "/round-trip.db")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	db, migrator := openTestDBAtVersion(t, 9)
 	ctx := context.Background()
 
-	_, err = db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO monitor_groups (id, name, source, external_id)
 		VALUES (42, 'Imported group', 'uptime-kuma', 'group:42');
 		INSERT INTO monitors (id, name, url, type, group_id, source, external_id)
@@ -31,8 +29,6 @@ func TestImportFoundationMigrationDownAndUp(t *testing.T) {
 		VALUES ('uptime-kuma', '1.23.16', 'input-hash', 'request-1', 'fail', 'completed');
 	`)
 	require.NoError(t, err)
-
-	migrator := newTestMigrator(t, db)
 
 	require.NoError(t, migrator.Steps(-1))
 
@@ -140,12 +136,10 @@ func TestImportFoundationUpCollisionRollsBack(t *testing.T) {
 }
 
 func TestImportFoundationLateFailureRollsBack(t *testing.T) {
-	db, err := Open(t.TempDir() + "/late-failure.db")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	db, migrator := openTestDBAtVersion(t, 9)
 	ctx := context.Background()
 
-	_, err = db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO monitor_groups (id, name, source, external_id)
 		VALUES
 			(41, 'First', 'uptime-kuma', 'group:41'),
@@ -153,7 +147,6 @@ func TestImportFoundationLateFailureRollsBack(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	migrator := newTestMigrator(t, db)
 	require.NoError(t, migrator.Steps(-1))
 	_, err = db.ExecContext(ctx, `
 		UPDATE import_foundation_group_identities
