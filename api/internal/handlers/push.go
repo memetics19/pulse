@@ -48,23 +48,27 @@ func (h *Push) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status := r.URL.Query().Get("status")
+	query := r.URL.Query()
+	status := query.Get("status")
 	if status == "" {
 		status = "up"
 	}
-	if status != "up" && status != "down" && status != "degraded" {
+	if status != "up" && status != "down" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid status"})
 		return
 	}
-	message := r.URL.Query().Get("msg")
+	message := query.Get("msg")
+	if message == "" {
+		message = "OK"
+	}
 	if !utf8.ValidString(message) || len(message) > maxPushMessageBytes {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid message"})
 		return
 	}
 
 	var ping *int64
-	if r.URL.Query().Has("ping") {
-		parsed, err := strconv.ParseInt(r.URL.Query().Get("ping"), 10, 64)
+	if rawPing := query.Get("ping"); rawPing != "" {
+		parsed, err := strconv.ParseInt(rawPing, 10, 64)
 		if err != nil || parsed < 0 || parsed > maxPushPing {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid ping"})
 			return

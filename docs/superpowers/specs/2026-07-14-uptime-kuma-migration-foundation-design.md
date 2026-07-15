@@ -275,10 +275,16 @@ persisted. Imported Uptime Kuma push tokens are hashed during the transaction.
 New or rotated tokens are returned once. Rotation replaces the stored hash and
 immediately invalidates the previous token. Token management requires the
 normal monitor write scope or an admin session. Creating a push monitor through
-`POST /api/monitors` returns the new token and complete push URL once. Imported
-tokens are accepted and hashed but are not echoed back. The authenticated
-`POST /api/monitors/{id}/push-token/rotate` endpoint returns a replacement token
-and URL once.
+`POST /api/monitors` returns `push_token` and the complete `push_url` once;
+omitted `is_active` defaults to true while an explicit false remains inactive.
+The authenticated `POST /api/monitors/{id}/push-token/rotate` endpoint returns
+a replacement `{token,push_url}` once. Imported tokens are accepted and hashed
+but are not echoed back.
+
+Monitor updates may change fields within the current push/non-push category,
+but cannot change a monitor type to or from `push`. Such transitions require
+delete and recreate so a credential is neither missing nor left dormant for
+later accidental reactivation.
 
 ### Compatible heartbeat endpoint
 
@@ -292,10 +298,12 @@ POST /api/push/{token}?status=up&msg=OK&ping=123
 The endpoint is public because the high-entropy token is the credential. It:
 
 - hashes the supplied token and looks up an active push monitor;
-- accepts only `up` or `down` status;
-- defaults the message to `OK` and limits its UTF-8 encoding to 1,024 bytes;
+- accepts only `up` or `down` status and defaults an omitted status to `up`;
+- defaults an omitted or empty message to `OK` and limits its UTF-8 encoding to
+  1,024 bytes;
 - accepts an optional finite ping value from 0 through 100,000,000,000
-  milliseconds, matching the upstream compatibility bound;
+  milliseconds, matching the upstream compatibility bound; an omitted or empty
+  `ping` is recorded without a response time;
 - records receipt time on the server;
 - writes a standard check result and invokes the shared incident/alert flow; and
 - returns the same not-found response for missing, invalid, inactive, and
@@ -350,7 +358,8 @@ field with an "Expected heartbeat every" interval control, and displays the
 new endpoint once after creation. Existing push monitors show only the stored
 token prefix and a rotation action because Pulse cannot recover hashed tokens.
 The rotation confirmation warns that the previous endpoint stops working
-immediately.
+immediately. Editing does not offer conversion to or from `Push`; users delete
+and recreate a monitor when changing across that credential boundary.
 
 ## Error handling
 

@@ -665,9 +665,11 @@ require.Equal(t, "up", latest.Status)
 require.Equal(t, int64(12), *latest.ResponseTimeMs)
 ```
 
-Add cases for POST, invalid status, ping above `100000000000`, message over 1024
-bytes, unknown token, inactive monitor, non-push monitor, and rotation invalidating
-the old hash.
+Add cases for POST, `degraded`/other invalid status, ping above
+`100000000000`, empty ping, message over 1024 bytes, default `OK` message,
+unknown token, inactive monitor, non-push monitor, and rotation invalidating the
+old hash. Create a minimal push monitor, replay its exact returned `push_url`,
+and assert it records `up` with no response time.
 
 Add a request-logging test that captures the logger output for
 `/api/push/abcdefghij?msg=secret` and asserts neither `abcdefghij` nor `secret`
@@ -683,10 +685,13 @@ func (h *Push) Rotate(w http.ResponseWriter, r *http.Request)
 ```
 
 Heartbeat validates before lookup, hashes the path token, loads token and monitor,
-requires `monitor.Type == "push" && monitor.IsActive`, parses status/message/ping,
-and records through `checkresult.Recorder`. Every credential lookup failure returns
-the same `404 {"error":"push monitor not found"}`. Rotation verifies monitor type,
-generates and upserts a token, and returns `{token,push_url}` once.
+requires `monitor.Type == "push" && monitor.IsActive`, accepts only `up` or
+`down` (default `up`), defaults omitted/empty `msg` to `OK`, and treats
+omitted/empty `ping` as no response time before parsing a non-empty bounded
+value. It records through `checkresult.Recorder`. Every credential lookup
+failure returns the same `404 {"error":"push monitor not found"}`. Rotation
+verifies monitor type, generates and upserts a token, and returns
+`{token,push_url}` once.
 
 - [ ] **Step 6: Generate a token on normal push-monitor creation**
 
@@ -706,7 +711,10 @@ type monitorCreateResponse struct {
 For `type == "push"`, begin a transaction, create the monitor through
 `generated.New(tx)`, generate/upsert the credential, commit, and return the
 one-time values. Roll back on every error. For every other type, keep the JSON
-monitor fields unchanged and omit push fields.
+monitor fields unchanged and omit push fields. Decode `is_active` through a
+pointer so omission uses the schema-compatible active default while explicit
+false remains inactive. Reject updates that change a monitor type to or from
+`push`; delete/recreate is required to cross the credential boundary.
 
 Build `push_url` from the request's scheme/host, honoring a single
 `X-Forwarded-Proto` value of `http` or `https`, and append
@@ -857,6 +865,8 @@ In the monitor page:
 - add `push` to `TYPES`;
 - hide URL, timeout, latency, and keyword controls for push;
 - relabel interval as `Expected heartbeat every (s)`;
+- do not offer type conversion to or from `push` while editing; require
+  delete/recreate for that transition;
 - capture `push_url` from create/rotate responses in one-time reveal state;
 - show `Rotate token` only while editing a push monitor; and
 - require a confirmation click before rotation.

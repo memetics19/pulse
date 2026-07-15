@@ -71,10 +71,18 @@ func (m *Monitors) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
-	var params generated.CreateMonitorParams
-	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+	var request struct {
+		generated.CreateMonitorParams
+		IsActive *bool `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	params := request.CreateMonitorParams
+	params.IsActive = true
+	if request.IsActive != nil {
+		params.IsActive = *request.IsActive
 	}
 	if reason := monitorvalidation.Validate(monitorvalidation.Input{
 		URL: params.Url, Type: params.Type, IntervalSeconds: params.IntervalSeconds,
@@ -172,10 +180,10 @@ func (m *Monitors) RotatePushToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		PushToken string `json:"push_token"`
-		PushURL   string `json:"push_url"`
+		Token   string `json:"token"`
+		PushURL string `json:"push_url"`
 	}{
-		PushToken: token, PushURL: pushURL(r, token),
+		Token: token, PushURL: pushURL(r, token),
 	})
 }
 
@@ -201,9 +209,20 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	existing, err := m.q.GetMonitor(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "monitor not found"})
+		return
+	}
 	var params generated.UpdateMonitorParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if existing.Type != params.Type && (existing.Type == "push" || params.Type == "push") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "push monitor type cannot be changed; delete and recreate the monitor",
+		})
 		return
 	}
 	if reason := monitorvalidation.Validate(monitorvalidation.Input{

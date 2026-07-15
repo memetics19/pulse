@@ -97,12 +97,39 @@ func TestPushHeartbeatPOSTUsesQueryParametersAndDefaultsStatus(t *testing.T) {
 	assert.Nil(t, result.ResponseTimeMs)
 }
 
+func TestPushHeartbeatDefaultsOmittedOrEmptyMessageToOK(t *testing.T) {
+	for _, query := range []string{"", "?msg="} {
+		t.Run(query, func(t *testing.T) {
+			f := newPushFixture(t, "push", true)
+			rec := f.request(t, http.MethodGet, query)
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			result, err := f.q.LatestCheckResult(t.Context(), f.monitor.ID)
+			require.NoError(t, err)
+			assert.Equal(t, "up", result.Status)
+			assert.Equal(t, "OK", result.ErrorMessage)
+			assert.Nil(t, result.ResponseTimeMs)
+		})
+	}
+}
+
+func TestPushHeartbeatTreatsEmptyPingAsOmitted(t *testing.T) {
+	f := newPushFixture(t, "push", true)
+	rec := f.request(t, http.MethodGet, "?ping=")
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	result, err := f.q.LatestCheckResult(t.Context(), f.monitor.ID)
+	require.NoError(t, err)
+	assert.Nil(t, result.ResponseTimeMs)
+}
+
 func TestPushHeartbeatRejectsInvalidParametersWithoutPersistence(t *testing.T) {
 	tests := []struct {
 		name  string
 		query string
 	}{
 		{name: "status", query: "?status=unknown"},
+		{name: "degraded status", query: "?status=degraded"},
 		{name: "negative ping", query: "?ping=-1"},
 		{name: "non-number ping", query: "?ping=fast"},
 		{name: "excessive ping", query: "?ping=100000000001"},

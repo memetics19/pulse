@@ -231,6 +231,69 @@ func TestMonitorsCreatePushAtomicallyReturnsOneTimeCredential(t *testing.T) {
 	assert.Zero(t, storedPlaintext)
 }
 
+func TestMonitorsCreateMinimalPushDefaultsActiveAndReturnedURLWorks(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	monitors := handlers.NewMonitors(q, func() *sql.DB { return db }, true)
+	pushHandler := handlers.NewPush(q, checkresult.New(db, incident.NewDetector(store.New(db)), nil))
+	r := chi.NewRouter()
+	r.Post("/api/monitors", monitors.Create)
+	r.Get("/api/push/{token}", pushHandler.Heartbeat)
+	createReq := httptest.NewRequest(http.MethodPost, "http://pulse.example/api/monitors",
+		bytes.NewBufferString(`{"name":"Heartbeat","type":"push","interval_seconds":60}`))
+	createReq.Host = "pulse.example"
+	createRec := httptest.NewRecorder()
+
+	r.ServeHTTP(createRec, createReq)
+
+	require.Equal(t, http.StatusCreated, createRec.Code, createRec.Body.String())
+	var created struct {
+		generated.Monitor
+		PushURL string `json:"push_url"`
+	}
+	require.NoError(t, json.NewDecoder(createRec.Body).Decode(&created))
+	assert.True(t, created.IsActive)
+	require.NotEmpty(t, created.PushURL)
+
+	heartbeatReq := httptest.NewRequest(http.MethodGet, created.PushURL, nil)
+	heartbeatRec := httptest.NewRecorder()
+	r.ServeHTTP(heartbeatRec, heartbeatReq)
+	require.Equal(t, http.StatusOK, heartbeatRec.Code, heartbeatRec.Body.String())
+	result, err := q.LatestCheckResult(t.Context(), created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "up", result.Status)
+	assert.Equal(t, "OK", result.ErrorMessage)
+	assert.Nil(t, result.ResponseTimeMs)
+}
+
+func TestMonitorsCreatePushPreservesExplicitInactive(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	monitors := handlers.NewMonitors(q, func() *sql.DB { return db }, true)
+	pushHandler := handlers.NewPush(q, checkresult.New(db, incident.NewDetector(store.New(db)), nil))
+	r := chi.NewRouter()
+	r.Post("/api/monitors", monitors.Create)
+	r.Get("/api/push/{token}", pushHandler.Heartbeat)
+	createReq := httptest.NewRequest(http.MethodPost, "http://pulse.example/api/monitors",
+		bytes.NewBufferString(`{"name":"Heartbeat","type":"push","interval_seconds":60,"is_active":false}`))
+	createReq.Host = "pulse.example"
+	createRec := httptest.NewRecorder()
+
+	r.ServeHTTP(createRec, createReq)
+
+	require.Equal(t, http.StatusCreated, createRec.Code, createRec.Body.String())
+	var created struct {
+		generated.Monitor
+		PushURL string `json:"push_url"`
+	}
+	require.NoError(t, json.NewDecoder(createRec.Body).Decode(&created))
+	assert.False(t, created.IsActive)
+	heartbeatReq := httptest.NewRequest(http.MethodGet, created.PushURL, nil)
+	heartbeatRec := httptest.NewRecorder()
+	r.ServeHTTP(heartbeatRec, heartbeatReq)
+	assert.Equal(t, http.StatusNotFound, heartbeatRec.Code)
+}
+
 func TestMonitorsCreatePushRollsBackMonitorWhenCredentialInsertFails(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	_, err := db.Exec(`
@@ -325,13 +388,17 @@ func TestMonitorsRotatePushTokenInvalidatesOldTokenAndDeleteCascades(t *testing.
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	var rotated struct {
-		PushToken string `json:"push_token"`
-		PushURL   string `json:"push_url"`
-	}
+	var rotated map[string]any
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&rotated))
-	require.True(t, pushauth.ValidToken(rotated.PushToken))
-	assert.NotEqual(t, f.token, rotated.PushToken)
+	require.Len(t, rotated, 2)
+	rotatedToken, ok := rotated["token"].(string)
+	require.True(t, ok)
+	pushURL, ok := rotated["push_url"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, pushURL)
+	assert.NotContains(t, rotated, "push_token")
+	require.True(t, pushauth.ValidToken(rotatedToken))
+	assert.NotEqual(t, f.token, rotatedToken)
 
 	oldReq := httptest.NewRequest(http.MethodGet, "/api/push/"+f.token, nil)
 	oldRec := httptest.NewRecorder()
@@ -339,7 +406,7 @@ func TestMonitorsRotatePushTokenInvalidatesOldTokenAndDeleteCascades(t *testing.
 	assert.Equal(t, http.StatusNotFound, oldRec.Code)
 	assert.Equal(t, "{\"error\":\"push monitor not found\"}\n", oldRec.Body.String())
 
-	newReq := httptest.NewRequest(http.MethodGet, "/api/push/"+rotated.PushToken, nil)
+	newReq := httptest.NewRequest(http.MethodGet, "/api/push/"+rotatedToken, nil)
 	newRec := httptest.NewRecorder()
 	r.ServeHTTP(newRec, newReq)
 	assert.Equal(t, http.StatusOK, newRec.Code, newRec.Body.String())
@@ -376,4 +443,111 @@ func TestMonitorsRotatePushTokenRejectsInvalidOrNonPushMonitor(t *testing.T) {
 			assert.Equal(t, tt.want, rec.Code, rec.Body.String())
 		})
 	}
+}
+
+func TestMonitorsUpdateRejectsPushToNonPushAndPreservesCredential(t *testing.T) {
+	f := newPushFixture(t, "push", true)
+	h := handlers.NewMonitors(f.q, func() *sql.DB { return f.db }, true)
+	r := chi.NewRouter()
+	r.Put("/api/monitors/{id}", h.Update)
+	body := bytes.NewBufferString(`{
+		"name":"converted","url":"https://example.com","type":"http",
+		"interval_seconds":60,"timeout_seconds":30,"is_active":true
+	}`)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/monitors/%d", f.monitor.ID), body)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	stored, err := f.q.GetMonitor(t.Context(), f.monitor.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "push", stored.Type)
+	assert.Equal(t, f.monitor.Name, stored.Name)
+	credential, err := f.q.GetPushTokenByMonitor(t.Context(), f.monitor.ID)
+	require.NoError(t, err)
+	assert.Equal(t, pushauth.HashToken(f.token), credential.TokenHash)
+}
+
+func TestMonitorsUpdateRejectsNonPushToPushWithoutCreatingCredential(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	monitor, err := q.CreateMonitor(t.Context(), generated.CreateMonitorParams{
+		Name: "website", Url: "https://example.com", Type: "http", IntervalSeconds: 60,
+		TimeoutSeconds: 30, DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
+	})
+	require.NoError(t, err)
+	h := handlers.NewMonitors(q, func() *sql.DB { return db }, true)
+	r := chi.NewRouter()
+	r.Put("/api/monitors/{id}", h.Update)
+	body := bytes.NewBufferString(`{
+		"name":"converted","type":"push","interval_seconds":60,
+		"timeout_seconds":30,"is_active":true
+	}`)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/monitors/%d", monitor.ID), body)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	stored, err := q.GetMonitor(t.Context(), monitor.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "http", stored.Type)
+	assert.Equal(t, monitor.Name, stored.Name)
+	assert.Equal(t, monitor.Url, stored.Url)
+	_, err = q.GetPushTokenByMonitor(t.Context(), monitor.ID)
+	assert.ErrorIs(t, err, sql.ErrNoRows)
+}
+
+func TestMonitorsUpdateAllowsSamePushType(t *testing.T) {
+	f := newPushFixture(t, "push", true)
+	h := handlers.NewMonitors(f.q, func() *sql.DB { return f.db }, true)
+	r := chi.NewRouter()
+	r.Put("/api/monitors/{id}", h.Update)
+	body := bytes.NewBufferString(`{
+		"name":"renamed","type":"push","interval_seconds":90,
+		"timeout_seconds":30,"is_active":true
+	}`)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/monitors/%d", f.monitor.ID), body)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	stored, err := f.q.GetMonitor(t.Context(), f.monitor.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "push", stored.Type)
+	assert.Equal(t, "renamed", stored.Name)
+	credential, err := f.q.GetPushTokenByMonitor(t.Context(), f.monitor.ID)
+	require.NoError(t, err)
+	assert.Equal(t, pushauth.HashToken(f.token), credential.TokenHash)
+}
+
+func TestMonitorsUpdateAllowsSameNonPushType(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	monitor, err := q.CreateMonitor(t.Context(), generated.CreateMonitorParams{
+		Name: "website", Url: "https://example.com", Type: "http", IntervalSeconds: 60,
+		TimeoutSeconds: 30, DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
+	})
+	require.NoError(t, err)
+	h := handlers.NewMonitors(q, func() *sql.DB { return db }, true)
+	r := chi.NewRouter()
+	r.Put("/api/monitors/{id}", h.Update)
+	body := bytes.NewBufferString(`{
+		"name":"renamed","url":"https://example.com/health","type":"http",
+		"interval_seconds":90,"timeout_seconds":30,"is_active":true
+	}`)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/monitors/%d", monitor.ID), body)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	stored, err := q.GetMonitor(t.Context(), monitor.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "http", stored.Type)
+	assert.Equal(t, "renamed", stored.Name)
 }
