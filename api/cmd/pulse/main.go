@@ -45,46 +45,73 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// Run the worker once the app is configured (now, or after setup completes).
-	go func() {
-		for {
-			if a.Configured() {
-				if err := worker.Run(ctx, a.DB(), cfg); err != nil {
-					log.Printf("worker stopped: %v", err)
-				}
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(2 * time.Second):
-			}
-		}
-	}()
+	if err := serve(ctx, a, dataDir, cfg); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	srv := server.New(a, dataDir, cfg)
+// serve runs the monitoring worker and the HTTP server until ctx is cancelled,
+// then gracefully shuts the server down. It returns a non-nil error only if the
+// server fails to start.
+func serve(ctx context.Context, a *app.App, dataDir string, cfg config.Config) error {
+	go runWorker(ctx, a, cfg)
+
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           srv,
+		Handler:           server.New(a, dataDir, cfg),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
+	errc := make(chan error, 1)
 	go func() {
 		log.Printf("pulse listening on :%s", cfg.Port)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			errc <- err
 		}
 	}()
 
-	<-ctx.Done()
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+	}
 	log.Println("pulse shutting down")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+	return httpSrv.Shutdown(shutdownCtx)
+}
+
+// runWorker runs the worker once the app is configured (now, or after setup
+// completes). If worker.Run returns an error (e.g. a transient DB error at
+// startup), it retries with backoff instead of leaving monitoring permanently
+// dead while the process still looks healthy — /healthz reflects the worker's
+// liveness. It returns when ctx is cancelled.
+func runWorker(ctx context.Context, a *app.App, cfg config.Config) {
+	backoff := time.Second
+	for {
+		if a.Configured() {
+			if err := worker.Run(ctx, a.DB(), cfg, a.MarkWorkerAlive); err != nil {
+				log.Printf("worker stopped: %v; retrying in %s", err, backoff)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+				if backoff < 30*time.Second {
+					backoff *= 2
+				}
+				continue
+			}
+			return // clean shutdown (ctx cancelled)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 

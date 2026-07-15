@@ -3,17 +3,16 @@ package handlers
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"net/http"
 
 	"github.com/memetics19/pulse/api/internal/generated"
 )
 
-type Status struct{ q *generated.Queries }
-
-func NewStatus(q *generated.Queries) *Status { return &Status{q: q} }
-
+// StatusResponse is the internal snapshot shared by the server-rendered status
+// page and the Atom feed. It is NOT serialized to any public HTTP endpoint —
+// it carries raw monitor models (target URLs, thresholds). The public
+// GET /api/status endpoint uses a page-scoped, sanitized shape instead
+// (see web.Public.StatusJSON).
 type StatusResponse struct {
 	Groups    []generated.MonitorGroup `json:"groups"`
 	Monitors  []generated.Monitor      `json:"monitors"`
@@ -65,14 +64,4 @@ func Snapshot(ctx context.Context, q *generated.Queries) (StatusResponse, error)
 		Incidents: incidents, Theme: theme,
 		Statuses: statuses,
 	}, nil
-}
-
-func (h *Status) Get(w http.ResponseWriter, r *http.Request) {
-	snap, err := Snapshot(r.Context(), h.q)
-	if err != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(snap)
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func TestSSLChecker_ValidCert(t *testing.T) {
-	c := checker.NewSSL()
+	c := checker.NewSSL(true)
 	result := c.Check(context.Background(), "example.com:443", 10)
 	assert.Equal(t, "up", result.Status)
 	assert.Empty(t, result.ErrorMessage)
@@ -17,7 +17,7 @@ func TestSSLChecker_ValidCert(t *testing.T) {
 }
 
 func TestSSLChecker_InvalidHost(t *testing.T) {
-	c := checker.NewSSL()
+	c := checker.NewSSL(true)
 	result := c.Check(context.Background(), "127.0.0.1:19997", 1)
 	assert.Equal(t, "down", result.Status)
 	assert.NotEmpty(t, result.ErrorMessage)

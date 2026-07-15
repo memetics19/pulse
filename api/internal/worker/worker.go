@@ -18,20 +18,23 @@ import (
 )
 
 // Run starts the monitor scheduler plus the rollup/pruner loop and blocks
-// until ctx is cancelled.
-func Run(ctx context.Context, db *sql.DB, cfg config.Config) error {
+// until ctx is cancelled. beat, if non-nil, is called after each successful
+// reconcile so the caller can track worker liveness (see /healthz).
+func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error {
 	q := store.New(db)
 
 	disp := alerter.NewDispatcher(q, cfg.ResendAPIKey, cfg.SlackWebhookURL)
 	det := incident.NewDetector(q)
 
 	sched := scheduler.New(db, disp, det, cfg.AllowPrivateMonitors)
+	if beat != nil {
+		sched.SetHeartbeat(beat)
+	}
 	sched.SetChecker("http", checker.NewHTTP(0, "", cfg.AllowPrivateMonitors))
-	sched.SetChecker("https", checker.NewHTTP(0, "", cfg.AllowPrivateMonitors))
-	sched.SetChecker("tcp", checker.NewTCP())
-	sched.SetChecker("dns", checker.NewDNS())
-	sched.SetChecker("ssl", checker.NewSSL())
-	sched.SetChecker("ping", checker.NewPing())
+	sched.SetChecker("tcp", checker.NewTCP(cfg.AllowPrivateMonitors))
+	sched.SetChecker("dns", checker.NewDNS(cfg.AllowPrivateMonitors))
+	sched.SetChecker("ssl", checker.NewSSL(cfg.AllowPrivateMonitors))
+	sched.SetChecker("ping", checker.NewPing(cfg.AllowPrivateMonitors))
 
 	if err := sched.Start(ctx); err != nil {
 		return err

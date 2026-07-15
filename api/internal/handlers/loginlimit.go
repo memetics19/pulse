@@ -3,6 +3,7 @@ package handlers
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -62,13 +63,40 @@ func (l *loginLimiter) allow(ip string) bool {
 	return true
 }
 
-// clientIP extracts the remote IP, ignoring proxy headers: Pulse cannot know
-// whether a trustworthy proxy set them, and honoring them would let attackers
-// spoof fresh rate-limit buckets.
-func clientIP(r *http.Request) string {
+// clientIP returns the address used to key the login rate limiter. Proxy
+// headers are ignored by default (an attacker could spoof them to mint fresh
+// buckets). Only when the immediate peer is a configured trusted proxy is
+// X-Forwarded-For consulted: it is walked right-to-left and the first address
+// that is not itself a trusted proxy is treated as the real client, so a single
+// proxy IP doesn't collapse every visitor into one shared bucket.
+func clientIP(r *http.Request, trusted []*net.IPNet) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if len(trusted) == 0 || !ipInAny(host, trusted) {
+		return host
+	}
+	parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip := strings.TrimSpace(parts[i])
+		if ip != "" && !ipInAny(ip, trusted) {
+			return ip
+		}
 	}
 	return host
+}
+
+// ipInAny reports whether ipStr parses to an IP contained in one of nets.
+func ipInAny(ipStr string, nets []*net.IPNet) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

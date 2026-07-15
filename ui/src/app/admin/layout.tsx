@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { authStatus, authSetup, authLogin, authLogout, type AuthStatus } from '@/lib/api'
+import { ConfirmProvider } from '@/components/ConfirmDialog'
 
 const NAV = [
   { href: '/admin',               label: 'Overview' },
@@ -143,7 +144,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           Sign out{status.username ? ` (${status.username})` : ''}
         </button>
       </aside>
-      <div className="admin-content">{children}</div>
+      <div className="admin-content">
+        <ConfirmProvider>{children}</ConfirmProvider>
+      </div>
     </div>
   )
 }

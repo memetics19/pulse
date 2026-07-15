@@ -42,7 +42,8 @@ export default function AgentsPage() {
           <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--up)' }}>Agent registered! Copy the token &mdash; it won&apos;t be shown again.</div>
           <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, wordBreak: 'break-all', display: 'block' }}>{newAgent.token}</code>
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
-            Run: <code>pulse-agent --server https://your-domain --token {newAgent.token}</code>
+            Run (pass the token via env var so it isn&apos;t exposed in the process list):
+            <code style={{ display: 'block', marginTop: 4 }}>PULSE_AGENT_TOKEN={newAgent.token} pulse-agent --server https://your-domain</code>
           </div>
         </div>
       )}

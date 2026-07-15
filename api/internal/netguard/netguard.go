@@ -52,6 +52,40 @@ func DialControl(allowPrivate bool) func(network, address string, c syscall.RawC
 	}
 }
 
+// ValidateTarget rejects a non-HTTP monitor target (used by tcp/ssl/dns/ping)
+// that points at a forbidden IP. The target may be "host:port" (tcp/ssl) or a
+// bare host (dns/ping). Like ValidateURL it is a best-effort API-time check:
+// DialControl remains the enforcement point at connect time, and an
+// unresolvable host is not rejected (it may be temporarily down).
+func ValidateTarget(target string, allowPrivate bool) error {
+	if allowPrivate {
+		return nil
+	}
+	host := target
+	if h, _, err := net.SplitHostPort(target); err == nil {
+		host = h
+	}
+	if host == "" {
+		return fmt.Errorf("target has no host")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if IsForbiddenIP(ip) {
+			return fmt.Errorf("%s is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", ip)
+		}
+		return nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil // unresolvable now; DialControl guards the actual connection
+	}
+	for _, ip := range ips {
+		if IsForbiddenIP(ip) {
+			return fmt.Errorf("%s resolves to private or internal address %s (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", host, ip)
+		}
+	}
+	return nil
+}
+
 // ValidateURL rejects monitor URLs that are malformed, use a non-HTTP scheme,
 // or resolve to a forbidden IP. It is a best-effort early check for a clear
 // API error; DialControl remains the enforcement point at connect time.

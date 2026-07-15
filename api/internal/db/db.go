@@ -16,11 +16,23 @@ import (
 var migrations embed.FS
 
 func Open(sqlitePath string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", sqlitePath+"?_journal_mode=WAL&_foreign_keys=on")
+	// modernc.org/sqlite uses the _pragma=name(value) DSN syntax (not the
+	// mattn-style _journal_mode=WAL). WAL lets readers run concurrently with the
+	// single writer; busy_timeout makes a contending connection wait rather than
+	// fail with "database is locked". foreign_keys is per-connection, so it must
+	// be in the DSN to apply to every pooled connection.
+	dsn := "file:" + sqlitePath +
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	conn.SetMaxOpenConns(1)
+	// With WAL + busy_timeout, multiple connections are safe: readers (status
+	// page, API GETs) no longer serialize behind the writer as they did under the
+	// old single-connection pool. SQLite still allows only one writer at a time,
+	// which busy_timeout serializes safely.
+	conn.SetMaxOpenConns(8)
+	conn.SetMaxIdleConns(8)
 	if err := runMigrations(conn); err != nil {
 		conn.Close()
 		return nil, err

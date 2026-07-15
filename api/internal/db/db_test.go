@@ -96,3 +96,27 @@ func TestLegacyAgentTokensHashedOnOpen(t *testing.T) {
 	require.Equal(t, keyauth.Hash(plaintext), stored)
 	require.Len(t, stored, 64)
 }
+
+func TestOpenAppliesWALAndForeignKeys(t *testing.T) {
+	conn, err := db.Open(t.TempDir() + "/pragmas.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	var journal string
+	if err := conn.QueryRow(`PRAGMA journal_mode`).Scan(&journal); err != nil {
+		t.Fatalf("read journal_mode: %v", err)
+	}
+	if journal != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", journal)
+	}
+
+	var fk int
+	if err := conn.QueryRow(`PRAGMA foreign_keys`).Scan(&fk); err != nil {
+		t.Fatalf("read foreign_keys: %v", err)
+	}
+	if fk != 1 {
+		t.Fatalf("foreign_keys = %d, want 1", fk)
+	}
+}

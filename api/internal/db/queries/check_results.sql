@@ -12,8 +12,11 @@ LIMIT ?;
 SELECT * FROM check_results WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1;
 
 -- name: UptimePercent :one
+-- COUNT(*)=0 (no checks in range) would divide by zero → NULL; COALESCE keeps
+-- the result a non-null REAL (100.0 = "no failures observed") so it scans into
+-- float64 rather than erroring. NULLIF avoids the divide-by-zero itself.
 SELECT
-  CAST(SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) * 100 as uptime_pct
+  COALESCE(CAST(SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) * 100, 100.0) as uptime_pct
 FROM check_results
 WHERE monitor_id = ? AND checked_at >= ?;
 
