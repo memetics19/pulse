@@ -318,10 +318,10 @@ characters with at least 192 bits of entropy.
 ### Missed heartbeat detection
 
 Push monitors do not run a network checker. The scheduler runs a watchdog whose
-first deadline is monitor creation plus `interval_seconds` and whose subsequent
-deadline is the last heartbeat receipt plus `interval_seconds` plus a five-second
-network-jitter allowance. Once a deadline is missed, it records a down result
-through the shared check recorder. A later valid heartbeat records recovery.
+deadline is monitor creation, or the last persisted heartbeat/result receipt,
+plus `interval_seconds` and a five-second network-jitter allowance. Once a
+deadline is missed, it records a down result through the shared check recorder.
+A later valid heartbeat records recovery.
 
 Scheduler reconciliation starts, updates, and stops push watchdogs when monitor
 configuration or active state changes, just as it manages polling monitors.

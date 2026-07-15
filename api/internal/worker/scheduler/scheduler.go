@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -13,11 +14,41 @@ import (
 	"github.com/memetics19/pulse/api/store"
 )
 
+type clock interface {
+	Now() time.Time
+	NewTimer(time.Duration) timer
+}
+
+type timer interface {
+	C() <-chan time.Time
+	Stop() bool
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+func (realClock) NewTimer(d time.Duration) timer {
+	return realTimer{Timer: time.NewTimer(d)}
+}
+
+type realTimer struct {
+	*time.Timer
+}
+
+func (t realTimer) C() <-chan time.Time { return t.Timer.C }
+
+const (
+	pushDeadlineGrace = 5 * time.Second
+	pushRetryDelay    = time.Second
+)
+
 // Scheduler manages one goroutine per active monitor.
 type Scheduler struct {
 	db           *sql.DB
 	q            *store.Queries
 	recorder     *checkresult.Recorder
+	clock        clock
 	checkers     map[string]checker.Checker
 	allowPrivate bool
 	mu           sync.RWMutex
@@ -47,6 +78,7 @@ func New(db *sql.DB, recorder *checkresult.Recorder, allowPrivate bool) *Schedul
 	s := &Scheduler{
 		db:           db,
 		recorder:     recorder,
+		clock:        realClock{},
 		checkers:     map[string]checker.Checker{},
 		allowPrivate: allowPrivate,
 		running:      map[int64]runningMonitor{},
@@ -64,9 +96,15 @@ func (s *Scheduler) SetChecker(monType string, c checker.Checker) {
 	s.checkers[monType] = c
 }
 
-// RunMonitor runs a single monitor in a loop until ctx is cancelled.
-// It checks immediately on start, then at each interval.
+// RunMonitor runs a single monitor until ctx is cancelled. Polling monitors
+// check immediately and then at each interval; push monitors wait for heartbeat
+// deadlines instead.
 func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
+	if mon.Type == "push" {
+		s.runPushMonitor(ctx, mon)
+		return
+	}
+
 	interval := time.Duration(mon.IntervalSeconds) * time.Second
 	if interval <= 0 {
 		interval = 60 * time.Second
@@ -81,6 +119,105 @@ func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
 		case <-ticker.C:
 			s.check(ctx, mon)
 		}
+	}
+}
+
+func (s *Scheduler) runPushMonitor(ctx context.Context, mon store.Monitor) {
+	if s.q == nil {
+		log.Printf("scheduler: push watchdog has no database connection (monitor %d)", mon.ID)
+		return
+	}
+	if s.recorder == nil {
+		log.Printf("scheduler: push watchdog has no check result recorder (monitor %d)", mon.ID)
+		return
+	}
+
+	interval := time.Duration(mon.IntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		base := mon.CreatedAt
+		latest, err := s.q.LatestCheckResult(ctx, mon.ID)
+		switch {
+		case err == nil:
+			base = latest.CheckedAt
+		case errors.Is(err, sql.ErrNoRows):
+		case ctx.Err() != nil:
+			return
+		default:
+			log.Printf("scheduler: load latest push result (monitor %d): %v", mon.ID, err)
+			if !s.wait(ctx, pushRetryDelay) {
+				return
+			}
+			continue
+		}
+
+		deadline := base.Add(interval + pushDeadlineGrace)
+		wait := deadline.Sub(s.clock.Now())
+		if wait < 0 {
+			wait = 0
+		}
+		if !s.wait(ctx, wait) {
+			return
+		}
+
+		latest, err = s.q.LatestCheckResult(ctx, mon.ID)
+		switch {
+		case err == nil && latest.CheckedAt.After(base):
+			continue
+		case err == nil:
+		case errors.Is(err, sql.ErrNoRows):
+		case ctx.Err() != nil:
+			return
+		default:
+			log.Printf("scheduler: reload latest push result (monitor %d): %v", mon.ID, err)
+			if !s.wait(ctx, pushRetryDelay) {
+				return
+			}
+			continue
+		}
+
+		now := s.clock.Now()
+		if now.Before(deadline) {
+			continue
+		}
+		if err := s.recorder.Record(ctx, mon, checkresult.Input{
+			Status:       "down",
+			ErrorMessage: "no heartbeat received before deadline",
+			CheckedAt:    now,
+		}); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("scheduler: record missed push heartbeat (monitor %d): %v", mon.ID, err)
+			if !s.wait(ctx, pushRetryDelay) {
+				return
+			}
+		}
+	}
+}
+
+func (s *Scheduler) wait(ctx context.Context, d time.Duration) bool {
+	t := s.clock.NewTimer(d)
+	select {
+	case <-ctx.Done():
+		if !t.Stop() {
+			select {
+			case <-t.C():
+			default:
+			}
+		}
+		return false
+	case <-t.C():
+		return true
 	}
 }
 
