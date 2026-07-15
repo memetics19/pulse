@@ -1,22 +1,26 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/monitorvalidation"
+	pushauth "github.com/memetics19/pulse/api/internal/push"
 )
 
 type Monitors struct {
 	q            *generated.Queries
+	db           func() *sql.DB
 	allowPrivate bool
 }
 
-func NewMonitors(q *generated.Queries, allowPrivate bool) *Monitors {
-	return &Monitors{q: q, allowPrivate: allowPrivate}
+func NewMonitors(q *generated.Queries, db func() *sql.DB, allowPrivate bool) *Monitors {
+	return &Monitors{q: q, db: db, allowPrivate: allowPrivate}
 }
 
 // defaultTimeoutSeconds is applied when a monitor is created or updated without
@@ -79,6 +83,10 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyMonitorDefaults(&params.TimeoutSeconds, &params.DegradedThresholdMs, &params.DownThresholdMs)
+	if params.Type == "push" {
+		m.createPush(w, r, params)
+		return
+	}
 	monitor, err := m.q.CreateMonitor(r.Context(), params)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -87,6 +95,103 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(monitor)
+}
+
+type monitorCreateResponse struct {
+	generated.Monitor
+	PushToken string `json:"push_token,omitempty"`
+	PushURL   string `json:"push_url,omitempty"`
+}
+
+func (m *Monitors) createPush(w http.ResponseWriter, r *http.Request, params generated.CreateMonitorParams) {
+	if m.db == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database unavailable"})
+		return
+	}
+	db := m.db()
+	if db == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database unavailable"})
+		return
+	}
+	tx, err := db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create monitor"})
+		return
+	}
+	defer tx.Rollback()
+	q := generated.New(tx)
+	monitor, err := q.CreateMonitor(r.Context(), params)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create monitor"})
+		return
+	}
+	token, err := pushauth.GenerateToken()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create push credential"})
+		return
+	}
+	if _, err := q.UpsertPushToken(r.Context(), generated.UpsertPushTokenParams{
+		MonitorID: monitor.ID, TokenHash: pushauth.HashToken(token), Prefix: pushauth.Prefix(token),
+	}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create push credential"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create monitor"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, monitorCreateResponse{
+		Monitor: monitor, PushToken: token, PushURL: pushURL(r, token),
+	})
+}
+
+func (m *Monitors) RotatePushToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	monitor, err := m.q.GetMonitor(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "monitor not found"})
+		return
+	}
+	if monitor.Type != "push" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "monitor is not a push monitor"})
+		return
+	}
+	token, err := pushauth.GenerateToken()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not rotate push credential"})
+		return
+	}
+	if _, err := m.q.UpsertPushToken(r.Context(), generated.UpsertPushTokenParams{
+		MonitorID: id, TokenHash: pushauth.HashToken(token), Prefix: pushauth.Prefix(token),
+	}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not rotate push credential"})
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		PushToken string `json:"push_token"`
+		PushURL   string `json:"push_url"`
+	}{
+		PushToken: token, PushURL: pushURL(r, token),
+	})
+}
+
+func pushURL(r *http.Request, token string) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	forwarded := r.Header.Values("X-Forwarded-Proto")
+	if len(forwarded) == 1 && (forwarded[0] == "http" || forwarded[0] == "https") {
+		scheme = forwarded[0]
+	}
+	return (&url.URL{
+		Scheme: scheme, Host: r.Host, Path: "/api/push/" + token,
+		RawQuery: "status=up&msg=OK&ping=",
+	}).String()
 }
 
 func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
