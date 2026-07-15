@@ -2,6 +2,58 @@
 
 Pulse is built to run as a single process with a single data file. This page describes how the parts fit together.
 
+## Overview
+
+```mermaid
+flowchart TB
+    subgraph binary["pulse (single Go binary)"]
+        direction TB
+        HTTP["chi HTTP server<br/>REST API · public pages · embedded admin SPA"]
+        subgraph worker["in-process worker"]
+            SCHED["scheduler<br/>1 goroutine per monitor"]
+            CHK["checkers<br/>http · tcp · dns · ssl · ping"]
+            DET["incident detector"]
+            ALERT["alerter<br/>email · slack"]
+            LOOP["rollup · pruner · maintenance"]
+        end
+        SCHED --> CHK
+        SCHED --> DET
+        DET --> ALERT
+    end
+    DB[("SQLite (WAL)")]
+    AGENT["pulse-agent<br/>host metrics"]
+    USER["operator / API client"]
+    VISITOR["public visitor"]
+
+    HTTP <--> DB
+    worker <--> DB
+    AGENT -- "POST /api/ingest/metrics" --> HTTP
+    USER -- "REST + session / API key" --> HTTP
+    VISITOR -- "status page (Host-routed)" --> HTTP
+    CHK -- "netguard-gated dials" --> TARGETS["monitored targets"]
+    ALERT --> CHANNELS["email · slack webhook"]
+```
+
+## Check lifecycle
+
+```mermaid
+flowchart TD
+    START([interval tick]) --> RUN["checker.Check<br/>(shared transport, netguard-gated dial)"]
+    RUN --> THRESH{"apply latency<br/>thresholds"}
+    THRESH -->|"resp > down threshold"| DOWN[status = down]
+    THRESH -->|"resp > degraded threshold"| DEG[status = degraded]
+    THRESH -->|otherwise| UP[status = up]
+    DOWN --> WRITE
+    DEG --> WRITE
+    UP --> WRITE["INSERT check_results"]
+    WRITE --> DETECT{"2 consecutive<br/>down?"}
+    DETECT -->|no| DONE([wait next tick])
+    DETECT -->|"yes, no active incident,<br/>not in maintenance"| INC["open incident"]
+    INC --> NOTIFY["alerter → email / slack"]
+    NOTIFY --> DONE
+    DETECT -->|"suppressed"| DONE
+```
+
 ## Single binary
 
 Pulse ships as one Go binary. The Docker image is a static binary on Alpine with ca-certificates. There is no separate database server, Node.js runtime, or reverse proxy required to run it. You may still place a reverse proxy in front of Pulse to terminate TLS for custom domains. See [Status pages](status-pages.md).

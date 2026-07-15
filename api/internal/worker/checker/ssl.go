@@ -6,16 +6,24 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/memetics19/pulse/api/internal/netguard"
 )
 
-type sslChecker struct{}
+type sslChecker struct{ allowPrivate bool }
 
-func NewSSL() Checker { return &sslChecker{} }
+// NewSSL creates a TLS certificate-expiry checker. allowPrivate permits targets
+// on private/internal networks; otherwise the dial is rejected by netguard on
+// the resolved IP (SSRF guard).
+func NewSSL(allowPrivate bool) Checker { return &sslChecker{allowPrivate: allowPrivate} }
 
 func (c *sslChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {
 	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: time.Duration(timeoutSec) * time.Second},
-		Config:    &tls.Config{},
+		NetDialer: &net.Dialer{
+			Timeout: time.Duration(timeoutSec) * time.Second,
+			Control: netguard.DialControl(c.allowPrivate),
+		},
+		Config: &tls.Config{},
 	}
 
 	start := time.Now()

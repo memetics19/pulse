@@ -2,8 +2,10 @@
 import { useState, useEffect } from 'react'
 import type { Notification } from '@/lib/types'
 import { adminListNotifications, adminCreateNotification, adminDeleteNotification } from '@/lib/api'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 export default function NotificationsPage() {
+  const confirm = useConfirm()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [modal,   setModal]   = useState(false)
   const [channel, setChannel] = useState<'email' | 'slack'>('email')
@@ -25,6 +27,11 @@ export default function NotificationsPage() {
   }
 
   async function del(id: number) {
+    const ok = await confirm({
+      title: 'Delete notification?',
+      message: 'This channel will stop receiving alerts. This cannot be undone.',
+    })
+    if (!ok) return
     await adminDeleteNotification(id)
     setNotifications(p => p.filter(n => n.id !== id))
   }

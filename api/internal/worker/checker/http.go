@@ -14,6 +14,38 @@ import (
 
 const userAgent = "Pulse/1.0 (+https://github.com/memetics19/pulse)"
 
+// Shared HTTP transports, built once and reused across every check. A transport
+// pools and reuses connections; building a fresh one per check (as the code
+// used to) both leaked idle connections/goroutines — a discarded transport does
+// not close them on GC — and inflated latency by re-paying the TCP+TLS handshake
+// every time. There is one transport per allowPrivate value because the netguard
+// dial guard is baked into the dialer's Control hook; allowPrivate is
+// process-wide config, so two transports cover every monitor.
+var (
+	sharedTransportPublic  = newSharedTransport(false)
+	sharedTransportPrivate = newSharedTransport(true)
+)
+
+func newSharedTransport(allowPrivate bool) *http.Transport {
+	return &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 30 * time.Second, // safety cap; the per-check context deadline is tighter
+			Control: netguard.DialControl(allowPrivate),
+		}).DialContext,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     90 * time.Second,
+		ForceAttemptHTTP2:   true,
+	}
+}
+
+func sharedTransport(allowPrivate bool) *http.Transport {
+	if allowPrivate {
+		return sharedTransportPrivate
+	}
+	return sharedTransportPublic
+}
+
 type httpChecker struct {
 	expectedStatus int
 	keyword        string
@@ -32,19 +64,17 @@ func NewHTTP(expectedStatus int, keyword string, allowPrivate bool) Checker {
 // healthy site to "down" on a single blip.
 func (c *httpChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {
 	timeout := time.Duration(timeoutSec) * time.Second
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: timeout,
-				Control: netguard.DialControl(c.allowPrivate),
-			}).DialContext,
-		},
+	if timeout <= 0 {
+		timeout = 30 * time.Second // never leave the request without a deadline
 	}
+	// One client per Check is fine — it's a thin wrapper; the shared transport
+	// underneath is what pools connections. Per-monitor timeout is enforced by a
+	// context deadline per attempt (client.Timeout can't live on a shared client).
+	client := &http.Client{Transport: sharedTransport(c.allowPrivate)}
 
 	var res Result
 	for attempt := 0; attempt < 2; attempt++ {
-		res = c.attempt(ctx, client, target)
+		res = c.attempt(ctx, client, target, timeout)
 		if res.Status == "up" {
 			return res
 		}
@@ -64,9 +94,14 @@ func (c *httpChecker) Check(ctx context.Context, target string, timeoutSec int64
 	return res
 }
 
-func (c *httpChecker) attempt(ctx context.Context, client *http.Client, target string) Result {
+func (c *httpChecker) attempt(ctx context.Context, client *http.Client, target string, timeout time.Duration) Result {
+	// The per-attempt deadline replaces the old per-client Timeout, which can't
+	// live on the shared client. Cancel fires after the body is read below.
+	actx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	start := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	req, err := http.NewRequestWithContext(actx, http.MethodGet, target, nil)
 	if err != nil {
 		return Result{Status: "down", ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}

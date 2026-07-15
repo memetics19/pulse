@@ -1,3 +1,11 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    "no-alert": "error",
+    "no-restricted-globals": [
+      "error",
+      { "name": "confirm", "message": "Use the shared useConfirm() dialog instead of the native confirm()." },
+      { "name": "prompt", "message": "Use an in-app form/dialog instead of the native prompt()." }
+    ]
+  }
 }

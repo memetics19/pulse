@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { listApiKeys, createApiKey, revokeApiKey, type ApiKey } from '@/lib/api'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const ALL_SCOPES = [
   'monitors:read',
@@ -23,6 +24,7 @@ function fmtDate(iso: string | null): string {
 }
 
 export default function ApiKeysPage() {
+  const confirm = useConfirm()
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
@@ -34,8 +36,6 @@ export default function ApiKeysPage() {
   // Revealed key (shown once)
   const [revealedKey, setRevealedKey] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  // Inline revoke confirm: stores the id pending confirmation
-  const [revokeConfirm, setRevokeConfirm] = useState<number | null>(null)
 
   const load = useCallback(() => {
     listApiKeys()
@@ -101,10 +101,16 @@ export default function ApiKeysPage() {
     }
   }
 
-  async function handleRevoke(id: number) {
-    await revokeApiKey(id)
-    setRevokeConfirm(null)
-    setKeys(prev => prev.filter(k => k.id !== id))
+  async function handleRevoke(k: ApiKey) {
+    const ok = await confirm({
+      title: `Revoke "${k.name}"?`,
+      message: 'Any client using this key loses access immediately. This cannot be undone.',
+      confirmLabel: 'Revoke',
+      requireText: k.name, // type-to-confirm: this action is irreversible
+    })
+    if (!ok) return
+    await revokeApiKey(k.id)
+    setKeys(prev => prev.filter(x => x.id !== k.id))
   }
 
   return (
@@ -191,33 +197,13 @@ export default function ApiKeysPage() {
                   <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtDate(k.last_used_at)}</td>
                   <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtDate(k.created_at)}</td>
                   <td>
-                    {revokeConfirm === k.id ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 12, color: 'var(--down)', fontWeight: 500 }}>Revoke?</span>
-                        <button
-                          className="btn danger"
-                          style={{ padding: '4px 10px', fontSize: 12 }}
-                          onClick={() => handleRevoke(k.id)}
-                        >
-                          Yes
-                        </button>
-                        <button
-                          className="btn"
-                          style={{ padding: '4px 10px', fontSize: 12 }}
-                          onClick={() => setRevokeConfirm(null)}
-                        >
-                          Cancel
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        className="btn danger"
-                        style={{ padding: '4px 10px', fontSize: 12 }}
-                        onClick={() => setRevokeConfirm(k.id)}
-                      >
-                        Revoke
-                      </button>
-                    )}
+                    <button
+                      className="btn danger"
+                      style={{ padding: '4px 10px', fontSize: 12 }}
+                      onClick={() => handleRevoke(k)}
+                    >
+                      Revoke
+                    </button>
                   </td>
                 </tr>
               ))}

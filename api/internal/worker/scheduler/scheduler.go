@@ -22,9 +22,14 @@ type Scheduler struct {
 	detector     *incident.Detector
 	checkers     map[string]checker.Checker
 	allowPrivate bool
+	beat         func() // called after each successful reconcile (worker liveness)
 	mu           sync.RWMutex
 	running      map[int64]runningMonitor
 }
+
+// SetHeartbeat registers a callback invoked after every successful reconcile,
+// letting /healthz observe that the worker loop is alive.
+func (s *Scheduler) SetHeartbeat(beat func()) { s.beat = beat }
 
 // runningMonitor tracks a live per-monitor goroutine. fingerprint captures
 // the check-relevant fields so reconcile can restart the goroutine when the
@@ -96,9 +101,10 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 		return
 	}
 
-	// HTTP(S) checks honour the monitor's expected status and keyword, so build
-	// a per-monitor checker instead of using the shared default one.
-	if mon.Type == "http" || mon.Type == "https" {
+	// HTTP checks honour the monitor's expected status and keyword, so build a
+	// per-monitor checker instead of using the shared default one. (http covers
+	// https URLs; there is no separate "https" type — the schema forbids it.)
+	if mon.Type == "http" {
 		expected := 0
 		if mon.ExpectedStatus != nil {
 			expected = int(*mon.ExpectedStatus)
@@ -108,12 +114,15 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
 
-	// Apply latency thresholds on top of checker's own status
+	// Apply latency thresholds on top of the checker's own status. Record why the
+	// status was overridden so the UI shows a reason rather than a bare "down".
 	status := result.Status
 	if status == "up" && result.ResponseTimeMs > mon.DownThresholdMs {
 		status = "down"
+		result.ErrorMessage = fmt.Sprintf("response time %dms exceeded down threshold %dms", result.ResponseTimeMs, mon.DownThresholdMs)
 	} else if status == "up" && result.ResponseTimeMs > mon.DegradedThresholdMs {
 		status = "degraded"
+		result.ErrorMessage = fmt.Sprintf("response time %dms exceeded degraded threshold %dms", result.ResponseTimeMs, mon.DegradedThresholdMs)
 	}
 
 	if s.q == nil {
@@ -191,6 +200,9 @@ func (s *Scheduler) reconcile(ctx context.Context) error {
 			delete(s.running, id)
 			log.Printf("scheduler: stopped monitor %d (deleted or deactivated)", id)
 		}
+	}
+	if s.beat != nil {
+		s.beat()
 	}
 	return nil
 }

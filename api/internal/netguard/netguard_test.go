@@ -76,3 +76,58 @@ func TestValidateURL(t *testing.T) {
 		t.Errorf("allowPrivate should permit loopback URL: %v", err)
 	}
 }
+
+func TestValidateTarget(t *testing.T) {
+	cases := []struct {
+		target  string
+		wantErr bool
+	}{
+		{"127.0.0.1:6379", true},     // loopback host:port
+		{"10.0.0.5:5432", true},      // RFC1918 host:port
+		{"169.254.169.254:80", true}, // cloud metadata
+		{"192.168.1.1", true},        // bare private IP
+		{"[::1]:443", true},          // IPv6 loopback host:port
+		{"", true},                   // no host
+		{"8.8.8.8:53", false},        // public host:port
+		{"1.1.1.1", false},           // public bare IP
+		{"this-domain-should-not-exist-pulse.invalid:80", false}, // unresolvable → dial guard covers
+	}
+	for _, c := range cases {
+		err := ValidateTarget(c.target, false)
+		if (err != nil) != c.wantErr {
+			t.Errorf("ValidateTarget(%q) error = %v, wantErr %v", c.target, err, c.wantErr)
+		}
+	}
+	if err := ValidateTarget("127.0.0.1:22", true); err != nil {
+		t.Errorf("allowPrivate should permit loopback target: %v", err)
+	}
+}
+
+func TestDialControlEdges(t *testing.T) {
+	allow := DialControl(true)
+	if err := allow("tcp", "127.0.0.1:80", nil); err != nil {
+		t.Errorf("allowPrivate should permit: %v", err)
+	}
+	deny := DialControl(false)
+	if err := deny("tcp", "not-an-address", nil); err == nil {
+		t.Error("malformed address should error")
+	}
+	if err := deny("tcp", "example.com:80", nil); err == nil {
+		t.Error("non-IP host (unresolved literal) should error")
+	}
+	if err := deny("tcp", "8.8.8.8:53", nil); err != nil {
+		t.Errorf("public IP should be allowed: %v", err)
+	}
+}
+
+func TestValidateURLEdges(t *testing.T) {
+	if err := ValidateURL("://bad", false); err == nil {
+		t.Error("malformed URL should error")
+	}
+	if err := ValidateURL("ftp://example.com", false); err == nil {
+		t.Error("non-http scheme should error")
+	}
+	if err := ValidateURL("http://", false); err == nil {
+		t.Error("missing host should error")
+	}
+}

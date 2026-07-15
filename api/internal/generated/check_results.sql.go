@@ -154,8 +154,11 @@ func (q *Queries) PruneCheckResults(ctx context.Context, checkedAt time.Time) er
 }
 
 const uptimePercent = `-- name: UptimePercent :one
+-- COUNT(*)=0 (no checks in range) would divide by zero → NULL; COALESCE keeps
+-- the result a non-null REAL (100.0 = "no failures observed") so it scans into
+-- float64 rather than erroring. NULLIF avoids the divide-by-zero itself.
 SELECT
-  CAST(SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) * 100 as uptime_pct
+  COALESCE(CAST(SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) * 100, 100.0) as uptime_pct
 FROM check_results
 WHERE monitor_id = ? AND checked_at >= ?
 `
@@ -165,9 +168,9 @@ type UptimePercentParams struct {
 	CheckedAt time.Time `json:"checked_at"`
 }
 
-func (q *Queries) UptimePercent(ctx context.Context, arg UptimePercentParams) (int64, error) {
+func (q *Queries) UptimePercent(ctx context.Context, arg UptimePercentParams) (float64, error) {
 	row := q.db.QueryRowContext(ctx, uptimePercent, arg.MonitorID, arg.CheckedAt)
-	var uptime_pct int64
+	var uptime_pct float64
 	err := row.Scan(&uptime_pct)
 	return uptime_pct, err
 }

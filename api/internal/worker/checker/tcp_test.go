@@ -22,13 +22,13 @@ func TestTCPChecker_Up(t *testing.T) {
 		}
 	}()
 
-	c := checker.NewTCP()
+	c := checker.NewTCP(true)
 	result := c.Check(context.Background(), ln.Addr().String(), 5)
 	assert.Equal(t, "up", result.Status)
 }
 
 func TestTCPChecker_Down(t *testing.T) {
-	c := checker.NewTCP()
+	c := checker.NewTCP(true)
 	result := c.Check(context.Background(), "127.0.0.1:19998", 1)
 	assert.Equal(t, "down", result.Status)
 }
