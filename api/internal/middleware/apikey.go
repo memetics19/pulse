@@ -15,6 +15,9 @@ import (
 // requiredScope maps a request to the scope an API key must hold. Returns ""
 // when API keys may NOT access the path (session-only: key management, auth, setup).
 func requiredScope(method, path string) string {
+	if path == "/api/imports" || strings.HasPrefix(path, "/api/imports/") {
+		return "imports:write"
+	}
 	var resource string
 	switch {
 	case strings.HasPrefix(path, "/api/monitors"), strings.HasPrefix(path, "/api/groups"):

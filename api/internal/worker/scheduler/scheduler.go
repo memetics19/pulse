@@ -3,23 +3,52 @@ package scheduler
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
-	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/checker"
-	"github.com/memetics19/pulse/api/internal/worker/incident"
+	"github.com/memetics19/pulse/api/internal/worker/checkresult"
 	"github.com/memetics19/pulse/api/store"
+)
+
+type clock interface {
+	Now() time.Time
+	NewTimer(time.Duration) timer
+}
+
+type timer interface {
+	C() <-chan time.Time
+	Stop() bool
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+func (realClock) NewTimer(d time.Duration) timer {
+	return realTimer{Timer: time.NewTimer(d)}
+}
+
+type realTimer struct {
+	*time.Timer
+}
+
+func (t realTimer) C() <-chan time.Time { return t.Timer.C }
+
+const (
+	pushDeadlineGrace = 5 * time.Second
+	pushRetryDelay    = time.Second
 )
 
 // Scheduler manages one goroutine per active monitor.
 type Scheduler struct {
 	db           *sql.DB
 	q            *store.Queries
-	alerter      *alerter.Dispatcher
-	detector     *incident.Detector
+	recorder     *checkresult.Recorder
+	clock        clock
 	checkers     map[string]checker.Checker
 	allowPrivate bool
 	mu           sync.RWMutex
@@ -45,11 +74,11 @@ func fingerprint(m store.Monitor) string {
 		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs)
 }
 
-func New(db *sql.DB, a *alerter.Dispatcher, d *incident.Detector, allowPrivate bool) *Scheduler {
+func New(db *sql.DB, recorder *checkresult.Recorder, allowPrivate bool) *Scheduler {
 	s := &Scheduler{
 		db:           db,
-		alerter:      a,
-		detector:     d,
+		recorder:     recorder,
+		clock:        realClock{},
 		checkers:     map[string]checker.Checker{},
 		allowPrivate: allowPrivate,
 		running:      map[int64]runningMonitor{},
@@ -67,9 +96,15 @@ func (s *Scheduler) SetChecker(monType string, c checker.Checker) {
 	s.checkers[monType] = c
 }
 
-// RunMonitor runs a single monitor in a loop until ctx is cancelled.
-// It checks immediately on start, then at each interval.
+// RunMonitor runs a single monitor until ctx is cancelled. Polling monitors
+// check immediately and then at each interval; push monitors wait for heartbeat
+// deadlines instead.
 func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
+	if mon.Type == "push" {
+		s.runPushMonitor(ctx, mon)
+		return
+	}
+
 	interval := time.Duration(mon.IntervalSeconds) * time.Second
 	if interval <= 0 {
 		interval = 60 * time.Second
@@ -84,6 +119,105 @@ func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
 		case <-ticker.C:
 			s.check(ctx, mon)
 		}
+	}
+}
+
+func (s *Scheduler) runPushMonitor(ctx context.Context, mon store.Monitor) {
+	if s.q == nil {
+		log.Printf("scheduler: push watchdog has no database connection (monitor %d)", mon.ID)
+		return
+	}
+	if s.recorder == nil {
+		log.Printf("scheduler: push watchdog has no check result recorder (monitor %d)", mon.ID)
+		return
+	}
+
+	interval := time.Duration(mon.IntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		base := mon.CreatedAt
+		latest, err := s.q.LatestCheckResult(ctx, mon.ID)
+		switch {
+		case err == nil:
+			base = latest.CheckedAt
+		case errors.Is(err, sql.ErrNoRows):
+		case ctx.Err() != nil:
+			return
+		default:
+			log.Printf("scheduler: load latest push result (monitor %d): %v", mon.ID, err)
+			if !s.wait(ctx, pushRetryDelay) {
+				return
+			}
+			continue
+		}
+
+		deadline := base.Add(interval + pushDeadlineGrace)
+		wait := deadline.Sub(s.clock.Now())
+		if wait < 0 {
+			wait = 0
+		}
+		if !s.wait(ctx, wait) {
+			return
+		}
+
+		latest, err = s.q.LatestCheckResult(ctx, mon.ID)
+		switch {
+		case err == nil && latest.CheckedAt.After(base):
+			continue
+		case err == nil:
+		case errors.Is(err, sql.ErrNoRows):
+		case ctx.Err() != nil:
+			return
+		default:
+			log.Printf("scheduler: reload latest push result (monitor %d): %v", mon.ID, err)
+			if !s.wait(ctx, pushRetryDelay) {
+				return
+			}
+			continue
+		}
+
+		now := s.clock.Now()
+		if now.Before(deadline) {
+			continue
+		}
+		if err := s.recorder.Record(ctx, mon, checkresult.Input{
+			Status:       "down",
+			ErrorMessage: "no heartbeat received before deadline",
+			CheckedAt:    now,
+		}); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("scheduler: record missed push heartbeat (monitor %d): %v", mon.ID, err)
+			if !s.wait(ctx, pushRetryDelay) {
+				return
+			}
+		}
+	}
+}
+
+func (s *Scheduler) wait(ctx context.Context, d time.Duration) bool {
+	t := s.clock.NewTimer(d)
+	select {
+	case <-ctx.Done():
+		if !t.Stop() {
+			select {
+			case <-t.C():
+			default:
+			}
+		}
+		return false
+	case <-t.C():
+		return true
 	}
 }
 
@@ -108,48 +242,23 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
 
-	// Apply latency thresholds on top of checker's own status
-	status := result.Status
-	if status == "up" && result.ResponseTimeMs > mon.DownThresholdMs {
-		status = "down"
-	} else if status == "up" && result.ResponseTimeMs > mon.DegradedThresholdMs {
-		status = "degraded"
-	}
-
-	if s.q == nil {
-		return // nil DB: test mode, skip persistence
+	if s.recorder == nil {
+		return
 	}
 
 	respMs := result.ResponseTimeMs
-	p := store.InsertCheckResultParams{
-		MonitorID:      mon.ID,
-		CheckedAt:      result.CheckedAt,
-		Status:         status,
+	input := checkresult.Input{
+		Status:         result.Status,
 		ResponseTimeMs: &respMs,
 		ErrorMessage:   result.ErrorMessage,
+		CheckedAt:      result.CheckedAt,
 	}
 	if result.StatusCode > 0 {
 		code := int64(result.StatusCode)
-		p.StatusCode = &code
+		input.StatusCode = &code
 	}
-	if _, err := s.q.InsertCheckResult(ctx, p); err != nil {
-		log.Printf("scheduler: insert check result (monitor %d): %v", mon.ID, err)
-	}
-
-	if s.detector != nil {
-		created, err := s.detector.MaybeCreateIncident(ctx, mon.ID, status)
-		if err != nil {
-			log.Printf("scheduler: incident detection (monitor %d): %v", mon.ID, err)
-		}
-		if created && s.alerter != nil {
-			monID := mon.ID
-			s.alerter.Notify(ctx, alerter.Alert{
-				Title:    fmt.Sprintf("%s is down", mon.Name),
-				Status:   "detected",
-				Severity: "major",
-				Message:  result.ErrorMessage,
-			}, &monID)
-		}
+	if err := s.recorder.Record(ctx, mon, input); err != nil {
+		log.Printf("scheduler: record check result (monitor %d): %v", mon.ID, err)
 	}
 }
 
@@ -200,6 +309,9 @@ func (s *Scheduler) reconcile(ctx context.Context) error {
 func (s *Scheduler) Start(ctx context.Context) error {
 	if s.q == nil {
 		return fmt.Errorf("scheduler: no database connection")
+	}
+	if s.recorder == nil {
+		return fmt.Errorf("scheduler: no check result recorder")
 	}
 	if err := s.reconcile(ctx); err != nil {
 		return err

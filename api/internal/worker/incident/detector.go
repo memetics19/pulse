@@ -2,46 +2,49 @@ package incident
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/memetics19/pulse/api/store"
 )
 
-// Detector tracks consecutive down counts per monitor and auto-creates
-// a "detected" incident after 2 consecutive down results.
+// Detector auto-creates an incident after 2 consecutive persisted down results.
 type Detector struct {
-	q    *store.Queries
-	mu   sync.Mutex
-	cons map[int64]int // monitorID → consecutive down count
+	q *store.Queries
 }
 
 func NewDetector(q *store.Queries) *Detector {
-	return &Detector{q: q, cons: make(map[int64]int)}
+	return &Detector{q: q}
 }
 
-// MaybeCreateIncident should be called after every check result is written.
-// Returns true if a new incident was created.
-func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, status string) (bool, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// MaybeCreateIncident must be called after the current check result is
+// persisted. It reads the two latest rows, including that current result, so
+// detection survives worker restarts and is shared across processes. It
+// returns true only when it creates a new incident.
+func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, _ string) (bool, error) {
+	return d.MaybeCreateIncidentWithQueries(ctx, d.q, monitorID)
+}
 
-	if status != "down" {
-		d.cons[monitorID] = 0
-		return false, nil
+// MaybeCreateIncidentWithQueries evaluates and creates an incident using the
+// supplied query scope. Recorder passes transaction-scoped queries so result
+// persistence and the database incident decision commit or roll back together.
+func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.Queries, monitorID int64) (bool, error) {
+	results, err := q.LatestTwoCheckResults(ctx, monitorID)
+	if err != nil {
+		return false, fmt.Errorf("list latest check results: %w", err)
 	}
-
-	d.cons[monitorID]++
-	if d.cons[monitorID] < 2 {
+	if len(results) < 2 || results[0].Status != "down" || results[1].Status != "down" {
 		return false, nil
 	}
 
 	// Check if there's already an active incident for this monitor
-	incidents, err := d.q.ListActiveIncidents(ctx)
+	incidents, err := q.ListActiveIncidents(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("list active incidents: %w", err)
 	}
 	monIDStr := fmt.Sprintf("%d", monitorID)
 	for _, inc := range incidents {
@@ -51,29 +54,32 @@ func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, sta
 	}
 
 	// Suppress auto-incidents for monitors under an active maintenance window.
-	if mws, err := d.q.ListActiveMaintenance(ctx); err == nil {
-		for _, mw := range mws {
-			if containsMonitorID(mw.AffectedMonitorIds, monIDStr) {
-				return false, nil
-			}
+	mws, err := q.ListActiveMaintenance(ctx)
+	if err != nil {
+		return false, fmt.Errorf("list active maintenance: %w", err)
+	}
+	for _, mw := range mws {
+		if containsMonitorID(mw.AffectedMonitorIds, monIDStr) {
+			return false, nil
 		}
 	}
 
 	name := fmt.Sprintf("Monitor %d", monitorID)
-	if mon, err := d.q.GetMonitor(ctx, monitorID); err == nil && mon.Name != "" {
+	if mon, err := q.GetMonitor(ctx, monitorID); err == nil && mon.Name != "" {
 		name = mon.Name
 	}
 
-	_, err = d.q.CreateIncident(ctx, store.CreateIncidentParams{
+	_, err = q.CreateAutoIncident(ctx, store.CreateAutoIncidentParams{
 		Title:              fmt.Sprintf("%s is down", name),
-		Severity:           "major",
 		AffectedMonitorIds: fmt.Sprintf("[%d]", monitorID),
 		StartedAt:          time.Now(),
-		Source:             "internal",
-		ExternalID:         "",
+		ExternalID:         strconv.FormatInt(monitorID, 10),
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("create auto incident: %w", err)
 	}
 	return true, nil
 }

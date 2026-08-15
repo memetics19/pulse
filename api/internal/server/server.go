@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -11,13 +14,17 @@ import (
 	"github.com/memetics19/pulse/api/internal/handlers"
 	"github.com/memetics19/pulse/api/internal/middleware"
 	"github.com/memetics19/pulse/api/internal/web"
+	"github.com/memetics19/pulse/api/internal/worker/alerter"
+	"github.com/memetics19/pulse/api/internal/worker/checkresult"
+	"github.com/memetics19/pulse/api/internal/worker/incident"
+	"github.com/memetics19/pulse/api/store"
 )
 
 func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	q := generated.New(app.LiveDBTX(a))
 	r := chi.NewRouter()
 
-	r.Use(chimiddleware.Logger)
+	r.Use(middleware.RequestLogger(os.Stdout))
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.MaxBody(1 << 20)) // 1 MiB request body cap
 	r.Use(middleware.CORS(cfg.CORSOrigins))
@@ -37,6 +44,9 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/healthz", handlers.Health)
 	r.Get("/api/status", handlers.NewStatus(q).Get)
 	r.Post("/api/ingest/metrics", handlers.NewIngest(q).PostMetrics)
+	pushH := handlers.NewPush(q, &livePushRecorder{app: a, cfg: cfg})
+	r.Get("/api/push/{token}", pushH.Heartbeat)
+	r.Post("/api/push/{token}", pushH.Heartbeat)
 
 	// Public read-only (status page client-side fetches)
 	r.Get("/api/monitors/{monitorID}/checks", handlers.NewCheckResults(q).List)
@@ -79,12 +89,13 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		})
 
 		r.Route("/api/monitors", func(r chi.Router) {
-			h := handlers.NewMonitors(q, cfg.AllowPrivateMonitors)
+			h := handlers.NewMonitors(q, a.DB, cfg.AllowPrivateMonitors)
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Get("/{id}", h.Get)
 			r.Put("/{id}", h.Update)
 			r.Delete("/{id}", h.Delete)
+			r.Post("/{id}/push-token/rotate", h.RotatePushToken)
 		})
 
 		r.Route("/api/incidents", func(r chi.Router) {
@@ -151,4 +162,20 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/favicon.ico", assets.ServeHTTP)
 
 	return r
+}
+
+type livePushRecorder struct {
+	app *app.App
+	cfg config.Config
+}
+
+func (r *livePushRecorder) Record(ctx context.Context, monitor store.Monitor, in checkresult.Input) error {
+	db := r.app.DB()
+	if db == nil {
+		return fmt.Errorf("database unavailable")
+	}
+	q := store.New(db)
+	dispatcher := alerter.NewDispatcher(q, r.cfg.ResendAPIKey, r.cfg.SlackWebhookURL)
+	detector := incident.NewDetector(q)
+	return checkresult.New(db, detector, dispatcher).Record(ctx, monitor, in)
 }

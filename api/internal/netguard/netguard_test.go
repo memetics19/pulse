@@ -1,6 +1,7 @@
 package netguard
 
 import (
+	"context"
 	"net"
 	"testing"
 )
@@ -74,5 +75,36 @@ func TestValidateURL(t *testing.T) {
 
 	if err := ValidateURL("http://127.0.0.1/x", true); err != nil {
 		t.Errorf("allowPrivate should permit loopback URL: %v", err)
+	}
+}
+
+func TestValidateConnectionTargets(t *testing.T) {
+	if err := ValidateHost("127.0.0.1", false); err == nil {
+		t.Fatal("private ping host should be rejected")
+	}
+	if err := ValidateHostPort("127.0.0.1:443", false); err == nil {
+		t.Fatal("private TCP/SSL target should be rejected")
+	}
+	if err := ValidateHost("127.0.0.1", true); err != nil {
+		t.Fatalf("allowPrivate should permit private host: %v", err)
+	}
+	if err := ValidateHostPort("127.0.0.1:443", true); err != nil {
+		t.Fatalf("allowPrivate should permit private host:port: %v", err)
+	}
+}
+
+func TestResolveAllowedIP(t *testing.T) {
+	ip, err := ResolveAllowedIP(context.Background(), "93.184.216.34", false)
+	if err != nil {
+		t.Fatalf("public literal rejected: %v", err)
+	}
+	if got := ip.String(); got != "93.184.216.34" {
+		t.Fatalf("resolved IP = %q", got)
+	}
+	if _, err := ResolveAllowedIP(context.Background(), "127.0.0.1", false); err == nil {
+		t.Fatal("private literal should be rejected")
+	}
+	if _, err := ResolveAllowedIP(context.Background(), "localhost", false); err == nil {
+		t.Fatal("hostname resolving privately should be rejected")
 	}
 }

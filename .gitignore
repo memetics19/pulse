@@ -16,6 +16,7 @@ data/
 
 # superpowers brainstorm
 .superpowers/
+.worktrees/
 
 # Node
 ui/node_modules/

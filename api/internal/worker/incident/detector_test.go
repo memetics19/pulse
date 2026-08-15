@@ -2,6 +2,7 @@ package incident_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,81 +13,147 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDetector_NoIncidentOnFirstDown(t *testing.T) {
+func createMonitor(t *testing.T, q *store.Queries) store.Monitor {
+	t.Helper()
+	mon, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
+		Name: "Test API", Url: "http://example.com", Type: "http",
+		IntervalSeconds: 60, TimeoutSeconds: 10,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
+		Source: "internal",
+	})
+	require.NoError(t, err)
+	return mon
+}
+
+func insertResult(t *testing.T, q *store.Queries, monitorID int64, status string, checkedAt time.Time) {
+	t.Helper()
+	_, err := q.InsertCheckResult(context.Background(), store.InsertCheckResultParams{
+		MonitorID: monitorID, Status: status, CheckedAt: checkedAt,
+	})
+	require.NoError(t, err)
+}
+
+func TestDetector_NoIncidentOnFirstPersistedDown(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
-	d := incident.NewDetector(q)
+	mon := createMonitor(t, q)
+	insertResult(t, q, mon.ID, "down", time.Now())
 
-	created, err := d.MaybeCreateIncident(context.Background(), 42, "down")
+	created, err := incident.NewDetector(q).MaybeCreateIncident(context.Background(), mon.ID, "down")
+
 	require.NoError(t, err)
 	assert.False(t, created)
 }
 
-func TestDetector_IncidentOnSecondConsecutiveDown(t *testing.T) {
+func TestDetector_UsesPersistedResultsAcrossDetectorRestarts(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
+	mon := createMonitor(t, q)
+	now := time.Now()
 
-	mon, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
-		Name: "Test API", Url: "http://example.com", Type: "http",
-		IntervalSeconds: 60, TimeoutSeconds: 10,
-		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
-		Source: "internal",
-	})
+	insertResult(t, q, mon.ID, "down", now)
+	created, err := incident.NewDetector(q).MaybeCreateIncident(context.Background(), mon.ID, "down")
 	require.NoError(t, err)
+	assert.False(t, created)
 
-	d := incident.NewDetector(q)
-
-	created1, err := d.MaybeCreateIncident(context.Background(), mon.ID, "down")
+	// A fresh detector represents another process or a worker restart. The
+	// persisted result sequence, not detector memory, must drive detection.
+	insertResult(t, q, mon.ID, "down", now.Add(time.Second))
+	created, err = incident.NewDetector(q).MaybeCreateIncident(context.Background(), mon.ID, "down")
 	require.NoError(t, err)
-	assert.False(t, created1, "first down should not create incident")
-
-	created2, err := d.MaybeCreateIncident(context.Background(), mon.ID, "down")
-	require.NoError(t, err)
-	assert.True(t, created2, "second consecutive down should create incident")
-
-	// Third down — incident already active, should NOT create duplicate
-	created3, err := d.MaybeCreateIncident(context.Background(), mon.ID, "down")
-	require.NoError(t, err)
-	assert.False(t, created3, "should not create duplicate incident")
+	assert.True(t, created)
 }
 
-func TestSuppressDuringMaintenance(t *testing.T) {
+func TestDetector_DoesNotDuplicateActiveIncident(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
-	// active maintenance covering monitor 7
-	_, _ = q.CreateMaintenance(context.Background(), store.CreateMaintenanceParams{
-		Title: "mw", Status: "in_progress", AffectedMonitorIds: "[7]",
-		StartsAt: time.Now().Add(-time.Hour), EndsAt: time.Now().Add(time.Hour),
-	})
+	mon := createMonitor(t, q)
+	now := time.Now()
 	d := incident.NewDetector(q)
-	// two consecutive downs would normally create an incident on the 2nd
-	_, _ = d.MaybeCreateIncident(context.Background(), 7, "down")
-	created, err := d.MaybeCreateIncident(context.Background(), 7, "down")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if created {
-		t.Fatal("incident must be suppressed while monitor 7 is under active maintenance")
-	}
+
+	insertResult(t, q, mon.ID, "down", now)
+	created, err := d.MaybeCreateIncident(context.Background(), mon.ID, "down")
+	require.NoError(t, err)
+	assert.False(t, created)
+
+	insertResult(t, q, mon.ID, "down", now.Add(time.Second))
+	created, err = d.MaybeCreateIncident(context.Background(), mon.ID, "down")
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	insertResult(t, q, mon.ID, "down", now.Add(2*time.Second))
+	created, err = d.MaybeCreateIncident(context.Background(), mon.ID, "down")
+	require.NoError(t, err)
+	assert.False(t, created)
+
+	incidents, err := q.ListActiveIncidents(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, incidents, 1)
 }
 
-func TestDetector_ResetsOnUp(t *testing.T) {
+func TestDetector_SuppressesIncidentDuringMaintenance(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
-
-	mon, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
-		Name: "Test API", Url: "http://example.com", Type: "http",
-		IntervalSeconds: 60, TimeoutSeconds: 10,
-		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true,
-		Source: "internal",
+	mon := createMonitor(t, q)
+	now := time.Now()
+	_, err := q.CreateMaintenance(context.Background(), store.CreateMaintenanceParams{
+		Title: "mw", Status: "in_progress", AffectedMonitorIds: "[" + stringID(mon.ID) + "]",
+		StartsAt: now.Add(-time.Hour), EndsAt: now.Add(time.Hour),
 	})
 	require.NoError(t, err)
 
+	insertResult(t, q, mon.ID, "down", now)
+	insertResult(t, q, mon.ID, "down", now.Add(time.Second))
+	created, err := incident.NewDetector(q).MaybeCreateIncident(context.Background(), mon.ID, "down")
+
+	require.NoError(t, err)
+	assert.False(t, created)
+}
+
+func TestDetector_RequiresLatestTwoPersistedResultsToBeDown(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q)
+	now := time.Now()
 	d := incident.NewDetector(q)
 
-	d.MaybeCreateIncident(context.Background(), mon.ID, "down")                 // 1st down
-	d.MaybeCreateIncident(context.Background(), mon.ID, "up")                   // reset counter
-	created, err := d.MaybeCreateIncident(context.Background(), mon.ID, "down") // 1st down again
+	insertResult(t, q, mon.ID, "down", now)
+	insertResult(t, q, mon.ID, "up", now.Add(time.Second))
+	insertResult(t, q, mon.ID, "down", now.Add(2*time.Second))
+	created, err := d.MaybeCreateIncident(context.Background(), mon.ID, "down")
 	require.NoError(t, err)
-	assert.False(t, created, "counter should reset after 'up'")
+	assert.False(t, created)
+
+	insertResult(t, q, mon.ID, "down", now.Add(3*time.Second))
+	created, err = d.MaybeCreateIncident(context.Background(), mon.ID, "down")
+	require.NoError(t, err)
+	assert.True(t, created)
+}
+
+func TestDetector_SuppressesAutomaticIncidentWhenManualIncidentIsActive(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q)
+	now := time.Now()
+	_, err := q.CreateIncident(context.Background(), store.CreateIncidentParams{
+		Title: "Manual investigation", Severity: "minor",
+		AffectedMonitorIds: "[" + stringID(mon.ID) + "]", StartedAt: now,
+		Source: "internal", ExternalID: "",
+	})
+	require.NoError(t, err)
+	insertResult(t, q, mon.ID, "down", now.Add(time.Second))
+	insertResult(t, q, mon.ID, "down", now.Add(2*time.Second))
+
+	created, err := incident.NewDetector(q).MaybeCreateIncident(context.Background(), mon.ID, "down")
+
+	require.NoError(t, err)
+	assert.False(t, created)
+	incidents, err := q.ListActiveIncidents(context.Background())
+	require.NoError(t, err)
+	require.Len(t, incidents, 1)
+	assert.Equal(t, "internal", incidents[0].Source)
+}
+
+func stringID(id int64) string {
+	return fmt.Sprintf("%d", id)
 }

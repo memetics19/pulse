@@ -9,6 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPushFingerprintTracksWatchdogConfiguration(t *testing.T) {
+	push := store.Monitor{ID: 1, Type: "push", IntervalSeconds: 60}
+	changedInterval := push
+	changedInterval.IntervalSeconds = 90
+	changedType := push
+	changedType.Type = "http"
+
+	require.NotEqual(t, fingerprint(push), fingerprint(changedInterval))
+	require.NotEqual(t, fingerprint(push), fingerprint(changedType))
+}
+
 func TestReconcileTracksMonitorLifecycle(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
@@ -20,7 +31,7 @@ func TestReconcileTracksMonitorLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s := New(db, nil, nil, true)
+	s := New(db, nil, true)
 	require.NoError(t, s.reconcile(ctx))
 	s.mu.RLock()
 	_, running := s.running[mon.ID]

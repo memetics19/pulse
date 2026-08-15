@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"embed"
 	"errors"
+	"net/url"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/memetics19/pulse/api/internal/keyauth"
 	_ "modernc.org/sqlite"
@@ -16,7 +17,11 @@ import (
 var migrations embed.FS
 
 func Open(sqlitePath string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", sqlitePath+"?_journal_mode=WAL&_foreign_keys=on")
+	dsn, err := sqliteDSN(sqlitePath)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +35,29 @@ func Open(sqlitePath string) (*sql.DB, error) {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func sqliteDSN(sqlitePath string) (string, error) {
+	var parsed *url.URL
+	var err error
+	switch {
+	case sqlitePath == ":memory:":
+		parsed = &url.URL{Scheme: "file", Opaque: ":memory:"}
+	case strings.HasPrefix(sqlitePath, "file:"):
+		parsed, err = url.Parse(sqlitePath)
+		if err != nil {
+			return "", err
+		}
+	default:
+		parsed = &url.URL{Scheme: "file", Path: sqlitePath}
+	}
+
+	options := parsed.Query()
+	options.Add("_pragma", "journal_mode(WAL)")
+	options.Add("_pragma", "foreign_keys(1)")
+	options.Add("_pragma", "busy_timeout(5000)")
+	parsed.RawQuery = options.Encode()
+	return parsed.String(), nil
 }
 
 // hashLegacyAgentTokens hashes agent tokens that were stored in plaintext
@@ -78,7 +106,7 @@ func runMigrations(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	driver, err := sqlite.WithInstance(conn, &sqlite.Config{})
+	driver, err := newMigrationDriver(conn)
 	if err != nil {
 		return err
 	}

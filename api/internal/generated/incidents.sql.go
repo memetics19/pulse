@@ -10,6 +10,44 @@ import (
 	"time"
 )
 
+const createAutoIncident = `-- name: CreateAutoIncident :one
+INSERT INTO incidents (title, severity, status, affected_monitor_ids, started_at, source, external_id)
+VALUES (?, 'major', 'detected', ?, ?, 'monitor', ?)
+ON CONFLICT DO NOTHING
+RETURNING id, title, severity, status, affected_monitor_ids, started_at, resolved_at, rca, source, external_id, created_at
+`
+
+type CreateAutoIncidentParams struct {
+	Title              string    `json:"title"`
+	AffectedMonitorIds string    `json:"affected_monitor_ids"`
+	StartedAt          time.Time `json:"started_at"`
+	ExternalID         string    `json:"external_id"`
+}
+
+func (q *Queries) CreateAutoIncident(ctx context.Context, arg CreateAutoIncidentParams) (Incident, error) {
+	row := q.db.QueryRowContext(ctx, createAutoIncident,
+		arg.Title,
+		arg.AffectedMonitorIds,
+		arg.StartedAt,
+		arg.ExternalID,
+	)
+	var i Incident
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Severity,
+		&i.Status,
+		&i.AffectedMonitorIds,
+		&i.StartedAt,
+		&i.ResolvedAt,
+		&i.Rca,
+		&i.Source,
+		&i.ExternalID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createIncident = `-- name: CreateIncident :one
 INSERT INTO incidents (title, severity, status, affected_monitor_ids, started_at, source, external_id)
 VALUES (?, ?, 'detected', ?, ?, ?, ?) RETURNING id, title, severity, status, affected_monitor_ids, started_at, resolved_at, rca, source, external_id, created_at

@@ -34,6 +34,21 @@ type CheckResult struct {
 	ErrorMessage   string    `json:"error_message"`
 }
 
+type ImportRun struct {
+	ID             int64      `json:"id"`
+	Source         string     `json:"source"`
+	SourceVersion  string     `json:"source_version"`
+	InputHash      string     `json:"input_hash"`
+	IdempotencyKey string     `json:"idempotency_key"`
+	ConflictPolicy string     `json:"conflict_policy"`
+	Status         string     `json:"status"`
+	PlanHash       string     `json:"plan_hash"`
+	SummaryJson    string     `json:"summary_json"`
+	ErrorSummary   string     `json:"error_summary"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
+}
+
 type Incident struct {
 	ID                 int64      `json:"id"`
 	Title              string     `json:"title"`
@@ -126,6 +141,8 @@ type MonitorGroup struct {
 	DisplayOrder int64     `json:"display_order"`
 	Description  string    `json:"description"`
 	CreatedAt    time.Time `json:"created_at"`
+	Source       string    `json:"source"`
+	ExternalID   string    `json:"external_id"`
 }
 
 type Notification struct {
@@ -134,6 +151,14 @@ type Notification struct {
 	ConfigJson string    `json:"config_json"`
 	MonitorID  *int64    `json:"monitor_id"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type PushMonitorToken struct {
+	MonitorID int64      `json:"monitor_id"`
+	TokenHash string     `json:"token_hash"`
+	Prefix    string     `json:"prefix"`
+	CreatedAt time.Time  `json:"created_at"`
+	RotatedAt *time.Time `json:"rotated_at"`
 }
 
 type Session struct {
