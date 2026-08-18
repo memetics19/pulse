@@ -1,0 +1,2 @@
+DROP INDEX idx_incident_diagnostics_incident;
+DROP TABLE incident_diagnostics;

@@ -63,6 +63,14 @@ type Incident struct {
 	CreatedAt          time.Time  `json:"created_at"`
 }
 
+type IncidentDiagnostic struct {
+	ID          int64     `json:"id"`
+	IncidentID  *int64    `json:"incident_id"`
+	AgentID     int64     `json:"agent_id"`
+	CollectedAt time.Time `json:"collected_at"`
+	Payload     string    `json:"payload"`
+}
+
 type IncidentUpdate struct {
 	ID         int64     `json:"id"`
 	IncidentID int64     `json:"incident_id"`
