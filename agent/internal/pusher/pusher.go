@@ -31,13 +31,19 @@ func New(serverURL, token string) *Pusher {
 // Push encodes m as JSON and POSTs it to POST /api/ingest/metrics.
 // Returns a non-nil error if the request fails or the server returns non-2xx.
 func (p *Pusher) Push(ctx context.Context, m collector.Metrics) error {
-	body, err := json.Marshal(m)
+	return p.postJSON(ctx, "/api/ingest/metrics", m)
+}
+
+// postJSON marshals payload and POSTs it to path with the agent's bearer
+// token, treating any non-2xx response as an error.
+func (p *Pusher) postJSON(ctx context.Context, path string, payload any) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("pusher: marshal: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.serverURL+"/api/ingest/metrics", bytes.NewReader(body))
+		p.serverURL+path, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("pusher: new request: %w", err)
 	}
