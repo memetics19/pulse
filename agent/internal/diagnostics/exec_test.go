@@ -37,3 +37,25 @@ func TestExecRunner_ReturnsErrorForMissingCommand(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+// A bare "exit status 1" is useless in a tool whose entire job is explaining
+// failures. The command's own stderr is the diagnosis and must survive.
+func TestExecRunner_ErrorIncludesCommandOutput(t *testing.T) {
+	r := NewExecRunner(5 * time.Second)
+
+	_, err := r.Run(context.Background(), "sh", "-c",
+		"echo 'cannot connect to the docker daemon' >&2; exit 1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot connect to the docker daemon")
+}
+
+func TestExecRunner_ErrorStaysBoundedForNoisyCommands(t *testing.T) {
+	r := NewExecRunner(5 * time.Second)
+
+	_, err := r.Run(context.Background(), "sh", "-c",
+		"head -c 20000 /dev/zero | tr '\\0' 'x' >&2; exit 1")
+
+	require.Error(t, err)
+	assert.Less(t, len(err.Error()), 2000, "a noisy command must not bloat the bundle")
+}

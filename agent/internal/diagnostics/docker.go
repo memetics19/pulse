@@ -18,10 +18,12 @@ type Container struct {
 	Status string `json:"Status"`
 }
 
-// DockerReport is the container section of a diagnostic bundle.
+// DockerReport is the container section of a diagnostic bundle. Logs holds the
+// recent output of each container that is not running, keyed by name.
 type DockerReport struct {
-	Containers []Container `json:"containers"`
-	NotRunning []string    `json:"not_running,omitempty"`
+	Containers []Container       `json:"containers"`
+	NotRunning []string          `json:"not_running,omitempty"`
+	Logs       map[string]string `json:"logs,omitempty"`
 }
 
 // CollectDocker lists all containers, including stopped ones — a container
@@ -46,5 +48,25 @@ func CollectDocker(ctx context.Context, r Runner) (DockerReport, error) {
 			report.NotRunning = append(report.NotRunning, c.Name)
 		}
 	}
+
+	report.Logs = collectContainerLogs(ctx, r, report.NotRunning)
 	return report, nil
+}
+
+// collectContainerLogs fetches recent output for containers that are not
+// running. A container whose logs cannot be read is skipped rather than
+// failing the section.
+func collectContainerLogs(ctx context.Context, r Runner, names []string) map[string]string {
+	var logs map[string]string
+	for _, name := range capTargets(names) {
+		out, err := r.Run(ctx, "docker", "logs", "--tail", logTailLines, name)
+		if err != nil {
+			continue
+		}
+		if logs == nil {
+			logs = make(map[string]string)
+		}
+		logs[name] = truncateLog(out)
+	}
+	return logs
 }
