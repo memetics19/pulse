@@ -33,4 +33,4 @@ Pulse serves multiple [status pages](status-pages.md) from one process. It resol
 
 ## Infra agent
 
-The `pulse-agent` binary runs on a host you want to monitor and pushes CPU, memory, disk, and network metrics to Pulse. Because the agent pushes outbound, no inbound port is required on the monitored host. The metrics feed `infra` type monitors.
+The `pulse-agent` binary runs on a host you want to monitor and pushes CPU, memory, disk, and network metrics to Pulse. Because the agent pushes outbound, no inbound port is required on the monitored host. The metrics feed `infra` type monitors. The agent can also collect read-only [diagnostic bundles](diagnostics.md) describing why a host failed.
