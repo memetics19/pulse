@@ -33,8 +33,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: install deps
+        run: cd ui && NEXT_PUBLIC_API_URL="" npm ci
+      - name: lint
+        run: cd ui && npm run lint
       - name: build static export
-        run: cd ui && NEXT_PUBLIC_API_URL="" npm ci && NEXT_PUBLIC_API_URL="" npm run build
+        run: cd ui && NEXT_PUBLIC_API_URL="" npm run build
 
   docker:
     name: Docker image builds
