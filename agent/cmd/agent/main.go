@@ -91,6 +91,11 @@ const commandTimeout = 10 * time.Second
 // Uploading is optional: with no server configured the bundle still goes to
 // stdout, which is the only mode available when Pulse itself is unreachable.
 func runDiagnoseAndExit(server, token string) {
+	if err := credentialError(server, token); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse-agent:", err)
+		os.Exit(1)
+	}
+
 	var p diagnosticsPusher
 	if server != "" && token != "" {
 		p = pusher.New(server, token)

@@ -28,19 +28,27 @@ type DiskReport struct {
 // Below 100% there is usually still room for the reserved-blocks margin.
 const fullThresholdPercent = 100
 
-// pseudoFilesystems permanently report 100% capacity because they have no
-// backing store. Flagging them as full would produce a false "disk full"
-// diagnosis on a perfectly healthy host.
-var pseudoFilesystems = map[string]bool{
+// alwaysFullFilesystems have no backing store and report 100% permanently, so
+// flagging them would be a false "disk full" on a healthy host.
+//
+// tmpfs and overlay are deliberately absent: a full tmpfs is real memory-backed
+// exhaustion, and a full overlay is a container's writable layer filling up.
+// Both are actionable.
+var alwaysFullFilesystems = map[string]bool{
 	"devfs":    true,
 	"devtmpfs": true,
-	"tmpfs":    true,
 	"udev":     true,
-	"overlay":  true,
-	"squashfs": true,
 	"proc":     true,
 	"sysfs":    true,
 	"efivarfs": true,
+}
+
+// isAlwaysFull reports whether a mount reads 100% by design rather than being
+// exhausted. df -P names the device, not the filesystem type, so read-only
+// image mounts are matched by device path.
+func isAlwaysFull(filesystem string) bool {
+	return alwaysFullFilesystems[filesystem] ||
+		strings.HasPrefix(filesystem, "/dev/loop") // snap squashfs, always 100%
 }
 
 // CollectDisk reports filesystem usage. POSIX output (-P) keeps each mount on
@@ -76,7 +84,7 @@ func parseDF(out string) DiskReport {
 		}
 		report.Mounts = append(report.Mounts, mount)
 		// Every mount stays listed for context; only real storage can be full.
-		if capacity >= fullThresholdPercent && !pseudoFilesystems[mount.Filesystem] {
+		if capacity >= fullThresholdPercent && !isAlwaysFull(mount.Filesystem) {
 			report.Full = append(report.Full, mount.Mount)
 		}
 	}

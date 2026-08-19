@@ -40,21 +40,36 @@ func TestCollectDisk_FlagsMountsAtCapacity(t *testing.T) {
 	assert.Equal(t, []string{"/"}, report.Full)
 }
 
-// Pseudo filesystems permanently report 100% capacity. Flagging them as full
-// would produce a false "disk full" diagnosis — and, once remediation exists,
-// trigger the wrong action against a healthy host.
-func TestCollectDisk_IgnoresPseudoFilesystemsWhenFlaggingFull(t *testing.T) {
-	const withPseudoFS = `Filesystem     1024-blocks      Used Available Capacity Mounted on
+// Only filesystems that are 100% by design are suppressed. A full tmpfs is
+// real memory-backed exhaustion and a full overlay is a container's writable
+// layer filling up — both are actionable and must be flagged.
+func TestCollectDisk_FlagsRealExhaustionOnTmpfsAndOverlay(t *testing.T) {
+	const mixed = `Filesystem     1024-blocks      Used Available Capacity Mounted on
 devfs                  394       394         0     100% /dev
-tmpfs             16440000  16440000         0     100% /run/lock
+/dev/loop0           65536     65536         0     100% /snap/core
+tmpfs             16440000  16440000         0     100% /run
+overlay          102687672  102687672        0     100% /var/lib/docker/overlay2/abc/merged
 /dev/sda1        102687672  97553436         0     100% /
 `
-	runner := &fakeRunner{output: withPseudoFS}
+	runner := &fakeRunner{output: mixed}
 
 	report, err := CollectDisk(context.Background(), runner)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"/"}, report.Full,
-		"only real block devices should be reported full")
-	assert.Len(t, report.Mounts, 3, "all mounts stay listed for context")
+	assert.Equal(t, []string{"/run", "/var/lib/docker/overlay2/abc/merged", "/"}, report.Full)
+	assert.Len(t, report.Mounts, 5, "all mounts stay listed for context")
+}
+
+// devfs has no backing store and reports 100% permanently; flagging it would
+// be a false "disk full" on a healthy host.
+func TestCollectDisk_IgnoresFilesystemsThatAreAlwaysFull(t *testing.T) {
+	const pseudoOnly = `Filesystem     1024-blocks      Used Available Capacity Mounted on
+devfs                  394       394         0     100% /dev
+`
+	runner := &fakeRunner{output: pseudoOnly}
+
+	report, err := CollectDisk(context.Background(), runner)
+
+	require.NoError(t, err)
+	assert.Empty(t, report.Full)
 }

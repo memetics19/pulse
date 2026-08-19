@@ -61,9 +61,13 @@ survives rather than a bare exit status:
 Reading the kernel ring buffer requires root on most systems. Run the agent as
 root — as the systemd unit does — or the `kernel` section degrades.
 
-Mounts on pseudo filesystems (`tmpfs`, `devfs`, `udev`, and similar) are listed
-but never reported as full. They permanently report 100% capacity because they
-have no backing store.
+Mounts that read 100% by design are listed but never reported as full: `devfs`,
+`devtmpfs`, `udev`, `proc`, `sysfs`, `efivarfs`, and read-only image mounts on
+`/dev/loop*` such as snap packages.
+
+`tmpfs` and `overlay` are **not** suppressed. A full `tmpfs` is real
+memory-backed exhaustion, and a full `overlay` is a container's writable layer
+filling up — both are actionable.
 
 ## Collecting a bundle
 

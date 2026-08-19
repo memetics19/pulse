@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
@@ -13,6 +14,16 @@ import (
 // --diagnose can run with no server configured at all.
 type diagnosticsPusher interface {
 	PushDiagnostics(ctx context.Context, b diagnostics.Bundle) error
+}
+
+// credentialError rejects a half-configured upload. Supplying only one of
+// --server or --token used to fall back to local-only mode and exit 0, so
+// automation could believe evidence reached the server when it never did.
+func credentialError(server, token string) error {
+	if (server == "") != (token == "") {
+		return errors.New("--server and --token must be given together")
+	}
+	return nil
 }
 
 // runDiagnose collects one diagnostic bundle and either uploads it or, when no
@@ -30,7 +41,11 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 	if p == nil {
 		return nil
 	}
-	if err := p.PushDiagnostics(ctx, bundle); err != nil {
+	// Collection may have consumed the whole deadline — which is likeliest on
+	// exactly the degraded hosts worth diagnosing. The upload must not inherit
+	// an expired context, or the evidence never leaves the box. Pusher bounds
+	// the request with its own client timeout.
+	if err := p.PushDiagnostics(context.WithoutCancel(ctx), bundle); err != nil {
 		return fmt.Errorf("upload bundle: %w", err)
 	}
 	return nil
