@@ -41,8 +41,12 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(req.Bundle) == 0 {
-		http.Error(w, "bundle is required", http.StatusBadRequest)
+	// A bundle is a JSON object. Section contents stay unvalidated — the agent
+	// owns that schema — but null, numbers, strings, and arrays are garbage
+	// nothing downstream can render.
+	var envelope map[string]any
+	if json.Unmarshal(req.Bundle, &envelope) != nil || envelope == nil {
+		http.Error(w, "bundle must be a JSON object", http.StatusBadRequest)
 		return
 	}
 

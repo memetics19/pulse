@@ -99,3 +99,22 @@ func TestIngestDiagnosticsAttachesToIncidentWhenGiven(t *testing.T) {
 }
 
 func ptrInt64(v int64) *int64 { return &v }
+
+// A bundle is a JSON object. Accepting null, numbers, strings, or arrays stores
+// garbage that nothing downstream can render.
+func TestIngestDiagnosticsRejectsNonObjectBundles(t *testing.T) {
+	for _, body := range []string{
+		`{"bundle":null}`,
+		`{"bundle":123}`,
+		`{"bundle":"just a string"}`,
+		`{"bundle":[]}`,
+	} {
+		db := testutil.NewTestDB(t)
+		q := generated.New(db)
+		_, token := createAgent(t, handlers.NewAgents(q))
+
+		rr := postDiagnostics(t, q, token, body)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", body)
+	}
+}

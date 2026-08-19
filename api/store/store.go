@@ -80,6 +80,16 @@ type ThemeConfig = generated.ThemeConfig
 type CreateAgentParams = generated.CreateAgentParams
 
 // ---------------------------------------------------------------------------
+// Param types — diagnostics
+// ---------------------------------------------------------------------------
+
+// InsertIncidentDiagnosticParams is the public alias for the generated parameter type.
+type InsertIncidentDiagnosticParams = generated.InsertIncidentDiagnosticParams
+
+// ListAgentDiagnosticsParams is the public alias for the generated parameter type.
+type ListAgentDiagnosticsParams = generated.ListAgentDiagnosticsParams
+
+// ---------------------------------------------------------------------------
 // Param types — check_results
 // ---------------------------------------------------------------------------
 
