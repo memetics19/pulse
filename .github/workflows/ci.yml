@@ -14,16 +14,30 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+      # The workspace has three modules. Checking only api left agent and cli
+      # entirely unverified in CI.
       - name: go vet
-        run: cd api && go vet ./...
+        run: |
+          set -euo pipefail
+          for module in api agent cli; do
+            echo "::group::vet $module"
+            (cd "$module" && go vet ./...)
+            echo "::endgroup::"
+          done
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l $(find api -name '*.go' -not -path '*/internal/generated/*'))"
+          unformatted="$(gofmt -l $(find api agent cli -name '*.go' -not -path '*/internal/generated/*'))"
           if [ -n "$unformatted" ]; then
             echo "These files are not gofmt-formatted:"; echo "$unformatted"; exit 1
           fi
       - name: go test
-        run: cd api && go test ./... -count=1
+        run: |
+          set -euo pipefail
+          for module in api agent cli; do
+            echo "::group::test $module"
+            (cd "$module" && go test ./... -count=1)
+            echo "::endgroup::"
+          done
 
   ui:
     name: Admin UI build
