@@ -130,6 +130,11 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 			r.Get("/", h.GetMetrics)
 		})
 
+		r.Route("/api/agents/{agentID}/diagnostics", func(r chi.Router) {
+			h := handlers.NewAgents(q)
+			r.Get("/", h.ListDiagnostics)
+		})
+
 		r.Route("/api/theme", func(r chi.Router) {
 			h := handlers.NewTheme(q)
 			r.Get("/", h.Get)

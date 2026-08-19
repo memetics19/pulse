@@ -2,10 +2,14 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/handlers"
 	"github.com/memetics19/pulse/api/testutil"
@@ -91,4 +95,41 @@ func TestIngestDiagnosticsRejectsNonObjectBundles(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", body)
 	}
+}
+
+// Uploading evidence is pointless if nothing can read it back — the whole
+// reason to push bundles off the host is to see them without an SSH session.
+func TestListAgentDiagnosticsReturnsStoredBundles(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	agentID, token := createAgent(t, handlers.NewAgents(q))
+
+	require.Equal(t, http.StatusNoContent,
+		postDiagnostics(t, q, token, `{"bundle":`+sampleBundle+`}`).Code)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/agents/"+strconv.FormatInt(agentID, 10)+"/diagnostics", nil)
+	req = withURLParam(req, "agentID", strconv.FormatInt(agentID, 10))
+	rr := httptest.NewRecorder()
+	handlers.NewAgents(q).ListDiagnostics(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var got []struct {
+		AgentID int64           `json:"agent_id"`
+		Bundle  json.RawMessage `json:"bundle"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, agentID, got[0].AgentID)
+	// The bundle comes back as JSON, not a re-encoded string a client must
+	// parse twice.
+	assert.Contains(t, string(got[0].Bundle), "jellyfin")
+}
+
+// withURLParam attaches a chi route param, which the handler reads directly.
+func withURLParam(r *http.Request, key, value string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(key, value)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }

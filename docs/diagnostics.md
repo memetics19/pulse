@@ -61,13 +61,20 @@ survives rather than a bare exit status:
 Reading the kernel ring buffer requires root on most systems. Run the agent as
 root — as the systemd unit does — or the `kernel` section degrades.
 
-Mounts that read 100% by design are listed but never reported as full: `devfs`,
-`devtmpfs`, `udev`, `proc`, `sysfs`, `efivarfs`, and read-only image mounts on
-`/dev/loop*` such as snap packages.
+Mounts on filesystems with no backing store are listed but never reported as
+full, because they read 100% permanently: `devfs`, `devtmpfs`, `udev`, `proc`,
+`sysfs`, and `efivarfs`.
 
-`tmpfs` and `overlay` are **not** suppressed. A full `tmpfs` is real
-memory-backed exhaustion, and a full `overlay` is a container's writable layer
-filling up — both are actionable.
+Everything else is flagged when it reaches capacity, including `tmpfs`,
+`overlay`, and loop-backed mounts. A full `tmpfs` is real memory-backed
+exhaustion and a full `overlay` is a container's writable layer filling up, so
+both are actionable.
+
+Loop devices are a deliberate trade-off. A read-only image mount such as a snap
+package sits at 100% permanently and will be reported as full, but `df -P` names
+the device rather than the filesystem type, so it cannot be distinguished from a
+writable loop-mounted ext4 or XFS volume. Reporting a harmless snap mount is the
+lesser failure — hiding a genuinely full filesystem is a missed incident.
 
 ## Collecting a bundle
 
@@ -112,3 +119,15 @@ its section contents are not validated. Responds `204 No Content`.
 
 Bundles fall under the same `retention_days` window as check results and are
 removed by the retention worker.
+
+### Reading bundles back
+
+```
+GET /api/agents/{agentID}/diagnostics?limit=10
+Authorization: Bearer <api-key>
+```
+
+Returns an agent's recent bundles, newest first, as JSON. Requires the
+`agents:read` scope — reading a host's evidence is an admin action, not
+something the agent's own ingest token can do. `limit` defaults to 10 and is
+capped at 50, because bundles are large.

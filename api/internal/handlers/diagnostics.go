@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/keyauth"
@@ -66,4 +69,59 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// diagnosticView is one stored bundle as returned to a client. Bundle is raw
+// JSON rather than a quoted string so callers parse the payload once.
+type diagnosticView struct {
+	ID          int64           `json:"id"`
+	AgentID     int64           `json:"agent_id"`
+	CollectedAt time.Time       `json:"collected_at"`
+	Bundle      json.RawMessage `json:"bundle"`
+}
+
+// defaultDiagnosticLimit and maxDiagnosticLimit bound a history request.
+// Bundles are large, so an unbounded list is a foot-gun rather than a feature.
+const (
+	defaultDiagnosticLimit = 10
+	maxDiagnosticLimit     = 50
+)
+
+// ListDiagnostics returns an agent's recent diagnostic bundles, newest first.
+// Without this, uploaded evidence is only reachable by opening the database —
+// which defeats the reason for pushing it off the host at all.
+func (h *Agents) ListDiagnostics(w http.ResponseWriter, r *http.Request) {
+	agentID, err := strconv.ParseInt(chi.URLParam(r, "agentID"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid agentID", http.StatusBadRequest)
+		return
+	}
+
+	limit := int64(defaultDiagnosticLimit)
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			limit = min(n, maxDiagnosticLimit)
+		}
+	}
+
+	rows, err := h.q.ListAgentDiagnostics(r.Context(), generated.ListAgentDiagnosticsParams{
+		AgentID: agentID, Limit: limit,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	views := make([]diagnosticView, 0, len(rows))
+	for _, row := range rows {
+		views = append(views, diagnosticView{
+			ID:          row.ID,
+			AgentID:     row.AgentID,
+			CollectedAt: row.CollectedAt,
+			Bundle:      json.RawMessage(row.Payload),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(views)
 }
