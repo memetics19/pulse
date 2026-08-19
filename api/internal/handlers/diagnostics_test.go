@@ -135,8 +135,10 @@ func withURLParam(r *http.Request, key, value string) *http.Request {
 }
 
 // Bundles are large — each can approach the 1 MiB ingest cap — so a generous
-// row limit is a memory foot-gun rather than a feature.
-func TestListAgentDiagnosticsCapsHowManyBundlesAreReturned(t *testing.T) {
+// row limit is a memory foot-gun rather than a feature. Asserting an exact
+// count matters: "at most five" would also pass if the endpoint returned
+// nothing at all.
+func TestListAgentDiagnosticsClampsAndDefaultsTheRowCount(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := generated.New(db)
 	agentID, token := createAgent(t, handlers.NewAgents(q))
@@ -146,13 +148,26 @@ func TestListAgentDiagnosticsCapsHowManyBundlesAreReturned(t *testing.T) {
 			postDiagnostics(t, q, token, `{"bundle":`+sampleBundle+`}`).Code)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics?limit=50", nil)
-	req = withURLParam(req, "agentID", strconv.FormatInt(agentID, 10))
-	rr := httptest.NewRecorder()
-	handlers.NewAgents(q).ListDiagnostics(rr, req)
+	tests := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{"an oversized limit is clamped to the maximum", "?limit=50", 5},
+		{"no limit uses the default", "", 3},
+		{"a limit below the maximum is honoured", "?limit=2", 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics"+tc.query, nil)
+			req = withURLParam(req, "agentID", strconv.FormatInt(agentID, 10))
+			rr := httptest.NewRecorder()
+			handlers.NewAgents(q).ListDiagnostics(rr, req)
 
-	require.Equal(t, http.StatusOK, rr.Code)
-	var got []map[string]any
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
-	assert.LessOrEqual(t, len(got), 5, "an oversized limit must be clamped")
+			require.Equal(t, http.StatusOK, rr.Code)
+			var got []map[string]any
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+			assert.Len(t, got, tc.want)
+		})
+	}
 }

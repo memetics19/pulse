@@ -15,6 +15,13 @@ import (
 // requiredScope maps a request to the scope an API key must hold. Returns ""
 // when API keys may NOT access the path (session-only: key management, auth, setup).
 func requiredScope(method, path string) string {
+	// Chi serves a route with and without its trailing slash, so both spellings
+	// must resolve to the same scope. Matching a path suffix without this let
+	// "/diagnostics/" fall through to the generic /api/agents rule.
+	if path != "/" {
+		path = strings.TrimSuffix(path, "/")
+	}
+
 	if path == "/api/imports" || strings.HasPrefix(path, "/api/imports/") {
 		return "imports:write"
 	}

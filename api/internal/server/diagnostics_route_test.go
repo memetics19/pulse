@@ -48,12 +48,17 @@ func TestDiagnosticsHistoryNeedsItsOwnScope(t *testing.T) {
 	h.ServeHTTP(unauthRec, unauth)
 	assert.Equal(t, http.StatusUnauthorized, unauthRec.Code)
 
-	legacy := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics", nil)
-	legacy.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "agents:read"))
-	legacyRec := httptest.NewRecorder()
-	h.ServeHTTP(legacyRec, legacy)
-	assert.Equal(t, http.StatusForbidden, legacyRec.Code,
-		"an agents:read key must not inherit access to logs")
+	// Chi serves both spellings, so both must demand the scope. Matching on a
+	// path suffix alone let the trailing-slash form fall through to the
+	// generic /api/agents rule.
+	for _, path := range []string{"/api/agents/1/diagnostics", "/api/agents/1/diagnostics/"} {
+		legacy := httptest.NewRequest(http.MethodGet, path, nil)
+		legacy.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "agents:read"))
+		legacyRec := httptest.NewRecorder()
+		h.ServeHTTP(legacyRec, legacy)
+		assert.Equal(t, http.StatusForbidden, legacyRec.Code,
+			"an agents:read key must not inherit access to logs via %s", path)
+	}
 
 	granted := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics", nil)
 	granted.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "diagnostics:read"))
