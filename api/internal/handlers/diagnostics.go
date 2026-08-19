@@ -81,10 +81,14 @@ type diagnosticView struct {
 }
 
 // defaultDiagnosticLimit and maxDiagnosticLimit bound a history request.
-// Bundles are large, so an unbounded list is a foot-gun rather than a feature.
+//
+// A bundle can approach the 1 MiB ingest cap, so the ceiling is deliberately
+// low: fifty rows would materialise tens of megabytes of payload twice over —
+// once by the driver and again as raw JSON — while holding the single SQLite
+// connection. Reading recent evidence needs a handful of bundles, not a page.
 const (
-	defaultDiagnosticLimit = 10
-	maxDiagnosticLimit     = 50
+	defaultDiagnosticLimit = 3
+	maxDiagnosticLimit     = 5
 )
 
 // ListDiagnostics returns an agent's recent diagnostic bundles, newest first.

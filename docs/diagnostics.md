@@ -128,6 +128,10 @@ Authorization: Bearer <api-key>
 ```
 
 Returns an agent's recent bundles, newest first, as JSON. Requires the
-`agents:read` scope — reading a host's evidence is an admin action, not
-something the agent's own ingest token can do. `limit` defaults to 10 and is
-capped at 50, because bundles are large.
+`diagnostics:read` scope — bundles carry journal entries, container logs,
+process names, and filesystem paths, so they need an explicit grant rather than
+riding on `agents:read`. Reading a host's evidence is an admin action, not
+something the agent's own ingest token can do.
+
+`limit` defaults to 3 and is capped at 5. Bundles are large, so the ceiling is
+deliberately low.

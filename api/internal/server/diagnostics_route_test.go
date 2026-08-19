@@ -32,11 +32,11 @@ func TestDiagnosticsIngestRouteIsRegisteredAndRequiresAgentToken(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
 }
 
-// Reading an agent's evidence is an admin action, so it sits behind the
-// session/API-key group. Asserting 401 alone would pass even if the route did
-// not exist, because the group middleware rejects before routing — so this
-// authenticates and asserts the route actually resolves.
-func TestDiagnosticsHistoryRouteIsRegisteredBehindAgentsReadScope(t *testing.T) {
+// Diagnostic bundles carry journal entries, container logs, process names and
+// filesystem paths — materially more sensitive than agent inventory. A key
+// issued for agents:read before this feature existed must not silently gain
+// access to them.
+func TestDiagnosticsHistoryNeedsItsOwnScope(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := generated.New(db)
 	a := app.New()
@@ -48,12 +48,25 @@ func TestDiagnosticsHistoryRouteIsRegisteredBehindAgentsReadScope(t *testing.T) 
 	h.ServeHTTP(unauthRec, unauth)
 	assert.Equal(t, http.StatusUnauthorized, unauthRec.Code)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics", nil)
-	req.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "agents:read"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	legacy := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics", nil)
+	legacy.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "agents:read"))
+	legacyRec := httptest.NewRecorder()
+	h.ServeHTTP(legacyRec, legacy)
+	assert.Equal(t, http.StatusForbidden, legacyRec.Code,
+		"an agents:read key must not inherit access to logs")
 
-	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	granted := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics", nil)
+	granted.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "diagnostics:read"))
+	grantedRec := httptest.NewRecorder()
+	h.ServeHTTP(grantedRec, granted)
+	assert.Equal(t, http.StatusOK, grantedRec.Code, grantedRec.Body.String())
+
+	// Agent inventory itself is unaffected.
+	inventory := httptest.NewRequest(http.MethodGet, "/api/agents", nil)
+	inventory.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "agents:read"))
+	inventoryRec := httptest.NewRecorder()
+	h.ServeHTTP(inventoryRec, inventory)
+	assert.Equal(t, http.StatusOK, inventoryRec.Code)
 }
 
 // The point of the feature: an agent pushes evidence with its own token, and
@@ -80,7 +93,7 @@ func TestDiagnosticsRoundTripThroughRouter(t *testing.T) {
 
 	read := httptest.NewRequest(http.MethodGet,
 		fmt.Sprintf("/api/agents/%d/diagnostics", agent.ID), nil)
-	read.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "agents:read"))
+	read.Header.Set("Authorization", "Bearer "+createServerAPIKey(t, q, "diagnostics:read"))
 	readRec := httptest.NewRecorder()
 	h.ServeHTTP(readRec, read)
 

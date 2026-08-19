@@ -133,3 +133,26 @@ func withURLParam(r *http.Request, key, value string) *http.Request {
 	rctx.URLParams.Add(key, value)
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
+
+// Bundles are large — each can approach the 1 MiB ingest cap — so a generous
+// row limit is a memory foot-gun rather than a feature.
+func TestListAgentDiagnosticsCapsHowManyBundlesAreReturned(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	agentID, token := createAgent(t, handlers.NewAgents(q))
+
+	for i := 0; i < 8; i++ {
+		require.Equal(t, http.StatusNoContent,
+			postDiagnostics(t, q, token, `{"bundle":`+sampleBundle+`}`).Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/1/diagnostics?limit=50", nil)
+	req = withURLParam(req, "agentID", strconv.FormatInt(agentID, 10))
+	rr := httptest.NewRecorder()
+	handlers.NewAgents(q).ListDiagnostics(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got []map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.LessOrEqual(t, len(got), 5, "an oversized limit must be clamped")
+}

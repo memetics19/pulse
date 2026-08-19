@@ -18,6 +18,14 @@ func requiredScope(method, path string) string {
 	if path == "/api/imports" || strings.HasPrefix(path, "/api/imports/") {
 		return "imports:write"
 	}
+	// Diagnostic bundles carry journal entries, container logs, process names
+	// and filesystem paths. That is materially more sensitive than agent
+	// inventory, so it needs an explicit grant rather than riding on
+	// agents:read — which keys issued before the feature existed already hold.
+	if strings.HasPrefix(path, "/api/agents/") && strings.HasSuffix(path, "/diagnostics") {
+		return "diagnostics:read"
+	}
+
 	var resource string
 	switch {
 	case strings.HasPrefix(path, "/api/monitors"), strings.HasPrefix(path, "/api/groups"):
