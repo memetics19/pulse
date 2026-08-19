@@ -79,10 +79,6 @@ func pushOnce(ctx context.Context, col *collector.Collector, psh *pusher.Pusher)
 	return nil
 }
 
-// diagnoseTimeout bounds a whole --diagnose run. Individual commands carry
-// their own shorter timeout inside the ExecRunner.
-const diagnoseTimeout = 60 * time.Second
-
 // commandTimeout bounds each diagnostic command. A wedged host is exactly when
 // diagnostics matter, so no single command may hang the run.
 const commandTimeout = 10 * time.Second
@@ -101,8 +97,11 @@ func runDiagnoseAndExit(server, token string) {
 		p = pusher.New(server, token)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), diagnoseTimeout)
-	defer cancel()
+	// No overall deadline: every command is already bounded by commandTimeout,
+	// and a shared budget only let one slow section starve the others. Ctrl-C
+	// still aborts.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if err := runDiagnose(ctx, diagnostics.NewExecRunner(commandTimeout), p, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "pulse-agent:", err)

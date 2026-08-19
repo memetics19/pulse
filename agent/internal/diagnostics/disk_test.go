@@ -56,7 +56,10 @@ overlay          102687672  102687672        0     100% /var/lib/docker/overlay2
 	report, err := CollectDisk(context.Background(), runner)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"/run", "/var/lib/docker/overlay2/abc/merged", "/"}, report.Full)
+	// Loop-backed mounts are flagged too: writable loop-mounted ext4/XFS is
+	// common, and hiding a genuinely full filesystem is worse than an
+	// occasional spurious flag on a read-only image.
+	assert.Equal(t, []string{"/snap/core", "/run", "/var/lib/docker/overlay2/abc/merged", "/"}, report.Full)
 	assert.Len(t, report.Mounts, 5, "all mounts stay listed for context")
 }
 

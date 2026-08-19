@@ -30,12 +30,19 @@ func NewExecRunner(timeout time.Duration) *ExecRunner {
 // "exit status 1" is useless in a tool whose whole job is explaining failures:
 // "cannot connect to the docker daemon" is the actual diagnosis.
 func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	parent := ctx
+	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	if err == nil {
 		return out, nil
+	}
+
+	// A cancelled caller is not this runner's timeout; reporting Ctrl-C as a
+	// timeout sends an operator looking for a slow command that was never slow.
+	if parent.Err() != nil {
+		return out, parent.Err()
 	}
 
 	// A killed process reports "signal: killed", which does not tell an

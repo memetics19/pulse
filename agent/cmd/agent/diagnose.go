@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/memetics19/pulse/agent/internal/diagnostics"
 )
@@ -15,6 +16,10 @@ import (
 type diagnosticsPusher interface {
 	PushDiagnostics(ctx context.Context, b diagnostics.Bundle) error
 }
+
+// uploadTimeout bounds the bundle upload independently of how long collection
+// took, so a slow host cannot leave the evidence unsent.
+const uploadTimeout = 30 * time.Second
 
 // credentialError rejects a half-configured upload. Supplying only one of
 // --server or --token used to fall back to local-only mode and exit 0, so
@@ -41,11 +46,13 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 	if p == nil {
 		return nil
 	}
-	// Collection may have consumed the whole deadline — which is likeliest on
-	// exactly the degraded hosts worth diagnosing. The upload must not inherit
-	// an expired context, or the evidence never leaves the box. Pusher bounds
-	// the request with its own client timeout.
-	if err := p.PushDiagnostics(context.WithoutCancel(ctx), bundle); err != nil {
+	// The upload gets its own budget rather than whatever collection left over,
+	// and it stays a child of ctx so Ctrl-C still cancels the run.
+	// diagnosticsPusher promises no timeout of its own.
+	uploadCtx, cancel := context.WithTimeout(ctx, uploadTimeout)
+	defer cancel()
+
+	if err := p.PushDiagnostics(uploadCtx, bundle); err != nil {
 		return fmt.Errorf("upload bundle: %w", err)
 	}
 	return nil

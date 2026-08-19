@@ -44,11 +44,15 @@ var alwaysFullFilesystems = map[string]bool{
 }
 
 // isAlwaysFull reports whether a mount reads 100% by design rather than being
-// exhausted. df -P names the device, not the filesystem type, so read-only
-// image mounts are matched by device path.
+// exhausted.
+//
+// Loop devices are deliberately not suppressed. A read-only image mount such as
+// a snap is permanently 100%, but writable loop-mounted ext4/XFS is common in
+// appliance and VM workflows, and df -P names the device rather than the
+// filesystem type so the two are indistinguishable here. Hiding a genuinely
+// full filesystem is worse than an occasional spurious flag.
 func isAlwaysFull(filesystem string) bool {
-	return alwaysFullFilesystems[filesystem] ||
-		strings.HasPrefix(filesystem, "/dev/loop") // snap squashfs, always 100%
+	return alwaysFullFilesystems[filesystem]
 }
 
 // CollectDisk reports filesystem usage. POSIX output (-P) keeps each mount on

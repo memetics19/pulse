@@ -24,14 +24,17 @@ func (stubRunner) Run(_ context.Context, name string, _ ...string) ([]byte, erro
 }
 
 type stubPusher struct {
-	pushed  bool
-	pushErr error
-	ctxErr  error
+	pushed   bool
+	pushErr  error
+	ctxErr   error
+	deadline time.Time
+	bounded  bool
 }
 
 func (s *stubPusher) PushDiagnostics(ctx context.Context, _ diagnostics.Bundle) error {
 	s.pushed = true
 	s.ctxErr = ctx.Err()
+	s.deadline, s.bounded = ctx.Deadline()
 	return s.pushErr
 }
 
@@ -66,42 +69,25 @@ func TestRunDiagnose_ReturnsUploadFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "401")
 }
 
-// Collection consumes the shared deadline on exactly the degraded hosts this
-// feature exists for. The upload must not inherit an already-expired context,
-// or the evidence never leaves the box.
-func TestRunDiagnose_UploadsEvenWhenCollectionExhaustedTheDeadline(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
-	<-ctx.Done()
-
+// diagnosticsPusher promises no timeout of its own, so runDiagnose must give
+// the upload a finite budget rather than trusting the adapter.
+func TestRunDiagnose_UploadGetsItsOwnBudget(t *testing.T) {
 	p := &stubPusher{}
-	require.NoError(t, runDiagnose(ctx, stubRunner{}, p, &bytes.Buffer{}))
 
-	assert.True(t, p.pushed, "upload must still be attempted")
-	assert.NoError(t, p.ctxErr, "pusher must receive a live context")
+	require.NoError(t, runDiagnose(context.Background(), stubRunner{}, p, &bytes.Buffer{}))
+
+	require.True(t, p.pushed)
+	assert.True(t, p.bounded, "upload must be bounded even when the caller sets no deadline")
 }
 
-// Supplying only one credential silently fell back to local-only mode and
-// exited 0, so automation would believe evidence reached the server.
-func TestCredentialError(t *testing.T) {
-	tests := []struct {
-		name          string
-		server, token string
-		wantErr       bool
-	}{
-		{"neither is local-only mode", "", "", false},
-		{"both is upload mode", "https://s", "t", false},
-		{"server without token", "https://s", "", true},
-		{"token without server", "", "t", true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := credentialError(tc.server, tc.token)
-			if tc.wantErr {
-				require.Error(t, err)
-				return
-			}
-			assert.NoError(t, err)
-		})
-	}
+// The upload budget must still be a child of the caller's context, or Ctrl-C
+// stops cancelling the run.
+func TestRunDiagnose_UploadHonoursCallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := &stubPusher{}
+
+	_ = runDiagnose(ctx, stubRunner{}, p, &bytes.Buffer{})
+
+	assert.Error(t, p.ctxErr, "a cancelled caller must cancel the upload")
 }

@@ -70,3 +70,18 @@ func TestExecRunner_TimeoutErrorSaysItTimedOut(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timed out")
 }
+
+// A cancelled caller is not this runner's timeout. Reporting Ctrl-C as
+// "timed out after 10s" sends an operator looking for a slow command that
+// was never slow.
+func TestExecRunner_ReportsCallerCancellationDistinctly(t *testing.T) {
+	r := NewExecRunner(10 * time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := r.Run(ctx, "sleep", "5")
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "timed out", "no 10s timer elapsed")
+	assert.ErrorIs(t, err, context.Canceled)
+}
