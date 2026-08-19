@@ -12,7 +12,7 @@ them to incidents automatically is not yet implemented.
 | Section | Source | Contents |
 | --- | --- | --- |
 | `kernel` | `dmesg` | Out-of-memory kills, with the process, PID, and resident size |
-| `disk` | `df -P` | Usage per mount, and which mounts are at capacity |
+| `disk` | `df -Pk` | Usage per mount, and which mounts are at capacity |
 | `processes` | `ps` | The 15 busiest processes by CPU share |
 | `docker` | `docker ps -a`, `docker logs` | All containers with state and exit status, which are not running, and recent output from those |
 | `systemd` | `systemctl list-units --failed`, `journalctl` | Units in the failed state, and the recent journal for each |
@@ -20,6 +20,10 @@ them to incidents automatically is not yet implemented.
 
 Every collector is read-only. The agent runs a fixed set of commands and never
 executes anything supplied by the server.
+
+`df` is invoked with `-k` deliberately: POSIX `-P` alone reports 512-byte blocks
+on BSD and under `POSIXLY_CORRECT`, which would make `available_kb` double the
+true value. The unit is part of the contract, not an implementation detail.
 
 ### Logs are captured only for what already failed
 
@@ -71,9 +75,9 @@ exhaustion and a full `overlay` is a container's writable layer filling up, so
 both are actionable.
 
 Loop devices are a deliberate trade-off. A read-only image mount such as a snap
-package sits at 100% permanently and will be reported as full, but `df -P` names
-the device rather than the filesystem type, so it cannot be distinguished from a
-writable loop-mounted ext4 or XFS volume. Reporting a harmless snap mount is the
+package sits at 100% permanently and will be reported as full, but `df -Pk`
+names the device rather than the filesystem type, so it cannot be distinguished
+from a writable loop-mounted ext4 or XFS volume. Reporting a harmless snap mount is the
 lesser failure — hiding a genuinely full filesystem is a missed incident.
 
 ## Collecting a bundle
@@ -118,7 +122,9 @@ can change without a server-side migration. The bundle must be a JSON object;
 its section contents are not validated. Responds `204 No Content`.
 
 Bundles fall under the same `retention_days` window as check results and are
-removed by the retention worker.
+removed by the retention worker. Lowering that setting therefore discards older
+diagnostic evidence as well as older check history — see
+[Data retention](monitors.md#data-retention).
 
 ### Reading bundles back
 
