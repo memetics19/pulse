@@ -43,6 +43,14 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 		return fmt.Errorf("render bundle: %w", err)
 	}
 
+	// An interrupted run is not a success: Collect records "context canceled"
+	// in every section it could not reach. The partial bundle is still printed,
+	// but the exit status has to say the diagnosis did not complete, or a
+	// script will treat cancellation as a clean result.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("collection interrupted: %w", err)
+	}
+
 	if p == nil {
 		return nil
 	}

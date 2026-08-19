@@ -80,14 +80,19 @@ func TestRunDiagnose_UploadGetsItsOwnBudget(t *testing.T) {
 	assert.True(t, p.bounded, "upload must be bounded even when the caller sets no deadline")
 }
 
-// The upload budget must still be a child of the caller's context, or Ctrl-C
-// stops cancelling the run.
-func TestRunDiagnose_UploadHonoursCallerCancellation(t *testing.T) {
+// An interrupted run is not a success. Collect records "context canceled" in
+// every section, so returning nil would make a script treat a partial
+// cancellation bundle as a completed diagnosis.
+func TestRunDiagnose_InterruptedRunIsNotSuccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	p := &stubPusher{}
+	var out bytes.Buffer
 
-	_ = runDiagnose(ctx, stubRunner{}, p, &bytes.Buffer{})
+	err := runDiagnose(ctx, stubRunner{}, p, &out)
 
-	assert.Error(t, p.ctxErr, "a cancelled caller must cancel the upload")
+	require.Error(t, err, "an interrupted diagnosis must not report success")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.False(t, p.pushed, "a cancelled run must not upload")
+	assert.NotEmpty(t, out.String(), "partial evidence is still printed")
 }

@@ -27,3 +27,17 @@ func TestParseOOMKills_NoneWhenDmesgIsClean(t *testing.T) {
 
 	assert.Empty(t, parseOOMKills(clean))
 }
+
+// A container killed by its cgroup memory limit logs a different prefix. This
+// is the primary Docker failure mode, so missing it would mean the kernel
+// section reports nothing for exactly the case it exists to explain.
+const dmesgWithCgroupOOM = `[Sat Aug 16 03:14:02 2026] Memory cgroup out of memory: Killed process 4821 (ffmpeg) total-vm:9216044kB, anon-rss:8104928kB, file-rss:0kB, shmem-rss:0kB, UID:0 pgtables:16000kB oom_score_adj:0
+`
+
+func TestParseOOMKills_MatchesMemoryCgroupKills(t *testing.T) {
+	kills := parseOOMKills(dmesgWithCgroupOOM)
+
+	require.Len(t, kills, 1)
+	assert.Equal(t, "ffmpeg", kills[0].Process)
+	assert.Equal(t, 4821, kills[0].PID)
+}

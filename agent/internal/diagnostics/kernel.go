@@ -18,8 +18,13 @@ type OOMKill struct {
 // versions and carries the process, pid, and resident size in one place:
 //
 //	Out of memory: Killed process 1234 (jellyfin) total-vm:...kB, anon-rss:7104928kB, ...
+//	Memory cgroup out of memory: Killed process 4821 (ffmpeg) total-vm:...kB, ...
+//
+// The case-insensitive match covers both the global form and the memory-cgroup
+// form, which is what a container killed by its own memory limit logs — the
+// primary Docker failure mode.
 var oomKillRe = regexp.MustCompile(
-	`Out of memory: Killed process (\d+) \(([^)]+)\)(?:.*?anon-rss:(\d+)kB)?`)
+	`(?i)out of memory: Killed process (\d+) \(([^)]+)\)(?:.*?anon-rss:(\d+)kB)?`)
 
 // parseOOMKills returns every OOM kill recorded in dmesg output, oldest first.
 // Output with no OOM kills yields an empty slice.
