@@ -38,6 +38,13 @@ func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]by
 		return out, nil
 	}
 
+	// A killed process reports "signal: killed", which does not tell an
+	// operator the command hit its time limit — the likeliest failure on a
+	// wedged host.
+	if ctx.Err() != nil {
+		return out, fmt.Errorf("timed out after %s", r.timeout)
+	}
+
 	detail := strings.TrimSpace(string(out))
 	if detail == "" {
 		return out, err

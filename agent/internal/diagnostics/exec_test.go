@@ -59,3 +59,14 @@ func TestExecRunner_ErrorStaysBoundedForNoisyCommands(t *testing.T) {
 	require.Error(t, err)
 	assert.Less(t, len(err.Error()), 2000, "a noisy command must not bloat the bundle")
 }
+
+// "signal: killed" does not tell an operator the command hit its time limit,
+// which is the likeliest failure on the wedged hosts worth diagnosing.
+func TestExecRunner_TimeoutErrorSaysItTimedOut(t *testing.T) {
+	r := NewExecRunner(50 * time.Millisecond)
+
+	_, err := r.Run(context.Background(), "sleep", "5")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out")
+}
