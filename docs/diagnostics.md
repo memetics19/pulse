@@ -101,11 +101,14 @@ Authorization: Bearer <agent-token>
 
 ```json
 {
-  "incident_id": 7,
   "bundle": { "collected_at": "...", "sections": {} }
 }
 ```
 
-`incident_id` is optional; omit it for an on-demand bundle that belongs to no
-incident. The server stores the bundle verbatim, so collectors can change
-without a server-side migration. Responds `204 No Content`.
+A bundle belongs to the agent that produced it, identified by the bearer token,
+and carries no other association. The server stores it verbatim, so collectors
+can change without a server-side migration. The bundle must be a JSON object;
+its section contents are not validated. Responds `204 No Content`.
+
+Bundles fall under the same `retention_days` window as check results and are
+removed by the retention worker.

@@ -29,8 +29,8 @@ func (p *Pruner) Run(ctx context.Context) error {
 		log.Printf("pruner: check_results: %v", err)
 		return err
 	}
-	if err := p.q.PruneIncidentDiagnostics(ctx, cutoff); err != nil {
-		log.Printf("pruner: incident_diagnostics: %v", err)
+	if err := p.q.PruneAgentDiagnostics(ctx, cutoff); err != nil {
+		log.Printf("pruner: agent_diagnostics: %v", err)
 		return err
 	}
 	return nil

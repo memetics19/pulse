@@ -2,7 +2,6 @@ package handlers_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,7 +39,7 @@ func TestIngestDiagnosticsStoresBundleForAuthenticatedAgent(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, stored, 1)
-	assert.Nil(t, stored[0].IncidentID, "an on-demand bundle belongs to no incident")
+	assert.Equal(t, agentID, stored[0].AgentID)
 	// The server stores the payload verbatim so collectors can evolve without
 	// a matching server-side schema change.
 	assert.Contains(t, stored[0].Payload, "jellyfin")
@@ -74,31 +73,6 @@ func TestIngestDiagnosticsRejectsMalformedBody(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
-
-func TestIngestDiagnosticsAttachesToIncidentWhenGiven(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	q := generated.New(db)
-	agentID, token := createAgent(t, handlers.NewAgents(q))
-
-	_, err := db.ExecContext(t.Context(), `
-		INSERT INTO incidents (id, title, severity, status)
-		VALUES (7, 'Jellyfin is down', 'major', 'detected')`)
-	require.NoError(t, err)
-
-	body, _ := json.Marshal(map[string]any{
-		"incident_id": 7,
-		"bundle":      json.RawMessage(sampleBundle),
-	})
-	rr := postDiagnostics(t, q, token, string(body))
-	require.Equal(t, http.StatusNoContent, rr.Code)
-
-	stored, err := q.ListIncidentDiagnostics(t.Context(), ptrInt64(7))
-	require.NoError(t, err)
-	require.Len(t, stored, 1)
-	assert.Equal(t, agentID, stored[0].AgentID)
-}
-
-func ptrInt64(v int64) *int64 { return &v }
 
 // A bundle is a JSON object. Accepting null, numbers, strings, or arrays stores
 // garbage that nothing downstream can render.

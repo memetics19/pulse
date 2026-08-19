@@ -8,10 +8,8 @@ import (
 )
 
 // diagnosticsRequest mirrors the server's POST /api/ingest/diagnostics body.
-// IncidentID is omitted for on-demand bundles, which belong to no incident.
 type diagnosticsRequest struct {
-	IncidentID *int64             `json:"incident_id,omitempty"`
-	Bundle     diagnostics.Bundle `json:"bundle"`
+	Bundle diagnostics.Bundle `json:"bundle"`
 }
 
 // PushDiagnostics uploads a diagnostic bundle collected from this host.

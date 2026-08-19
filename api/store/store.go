@@ -83,8 +83,8 @@ type CreateAgentParams = generated.CreateAgentParams
 // Param types — diagnostics
 // ---------------------------------------------------------------------------
 
-// InsertIncidentDiagnosticParams is the public alias for the generated parameter type.
-type InsertIncidentDiagnosticParams = generated.InsertIncidentDiagnosticParams
+// InsertAgentDiagnosticParams is the public alias for the generated parameter type.
+type InsertAgentDiagnosticParams = generated.InsertAgentDiagnosticParams
 
 // ListAgentDiagnosticsParams is the public alias for the generated parameter type.
 type ListAgentDiagnosticsParams = generated.ListAgentDiagnosticsParams

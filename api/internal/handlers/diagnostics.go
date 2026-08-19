@@ -14,11 +14,9 @@ import (
 //
 // Bundle is kept as raw JSON and stored verbatim: the agent owns the bundle
 // schema, so collectors can be added or changed without a matching server-side
-// migration. IncidentID is optional — an on-demand bundle from
-// `pulse-agent --diagnose` describes a host at a moment, not an incident.
+// migration.
 type diagnosticsRequest struct {
-	IncidentID *int64          `json:"incident_id"`
-	Bundle     json.RawMessage `json:"bundle"`
+	Bundle json.RawMessage `json:"bundle"`
 }
 
 // PostDiagnostics stores a diagnostic bundle pushed by an agent. It
@@ -53,8 +51,7 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 	// Receipt time, not the agent's clock: it keeps ordering consistent across
 	// agents with skewed clocks. The agent's own timestamp survives inside the
 	// stored payload.
-	if err := h.q.InsertIncidentDiagnostic(r.Context(), generated.InsertIncidentDiagnosticParams{
-		IncidentID:  req.IncidentID,
+	if err := h.q.InsertAgentDiagnostic(r.Context(), generated.InsertAgentDiagnosticParams{
 		AgentID:     agent.ID,
 		CollectedAt: time.Now(),
 		Payload:     string(req.Bundle),

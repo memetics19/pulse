@@ -10,30 +10,24 @@ import (
 	"time"
 )
 
-const insertIncidentDiagnostic = `-- name: InsertIncidentDiagnostic :exec
-INSERT INTO incident_diagnostics (incident_id, agent_id, collected_at, payload)
-VALUES (?, ?, ?, ?)
+const insertAgentDiagnostic = `-- name: InsertAgentDiagnostic :exec
+INSERT INTO agent_diagnostics (agent_id, collected_at, payload)
+VALUES (?, ?, ?)
 `
 
-type InsertIncidentDiagnosticParams struct {
-	IncidentID  *int64    `json:"incident_id"`
+type InsertAgentDiagnosticParams struct {
 	AgentID     int64     `json:"agent_id"`
 	CollectedAt time.Time `json:"collected_at"`
 	Payload     string    `json:"payload"`
 }
 
-func (q *Queries) InsertIncidentDiagnostic(ctx context.Context, arg InsertIncidentDiagnosticParams) error {
-	_, err := q.db.ExecContext(ctx, insertIncidentDiagnostic,
-		arg.IncidentID,
-		arg.AgentID,
-		arg.CollectedAt,
-		arg.Payload,
-	)
+func (q *Queries) InsertAgentDiagnostic(ctx context.Context, arg InsertAgentDiagnosticParams) error {
+	_, err := q.db.ExecContext(ctx, insertAgentDiagnostic, arg.AgentID, arg.CollectedAt, arg.Payload)
 	return err
 }
 
 const listAgentDiagnostics = `-- name: ListAgentDiagnostics :many
-SELECT id, incident_id, agent_id, collected_at, payload FROM incident_diagnostics
+SELECT id, agent_id, collected_at, payload FROM agent_diagnostics
 WHERE agent_id = ?
 ORDER BY collected_at DESC
 LIMIT ?
@@ -44,18 +38,17 @@ type ListAgentDiagnosticsParams struct {
 	Limit   int64 `json:"limit"`
 }
 
-func (q *Queries) ListAgentDiagnostics(ctx context.Context, arg ListAgentDiagnosticsParams) ([]IncidentDiagnostic, error) {
+func (q *Queries) ListAgentDiagnostics(ctx context.Context, arg ListAgentDiagnosticsParams) ([]AgentDiagnostic, error) {
 	rows, err := q.db.QueryContext(ctx, listAgentDiagnostics, arg.AgentID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []IncidentDiagnostic
+	var items []AgentDiagnostic
 	for rows.Next() {
-		var i IncidentDiagnostic
+		var i AgentDiagnostic
 		if err := rows.Scan(
 			&i.ID,
-			&i.IncidentID,
 			&i.AgentID,
 			&i.CollectedAt,
 			&i.Payload,
@@ -73,46 +66,11 @@ func (q *Queries) ListAgentDiagnostics(ctx context.Context, arg ListAgentDiagnos
 	return items, nil
 }
 
-const listIncidentDiagnostics = `-- name: ListIncidentDiagnostics :many
-SELECT id, incident_id, agent_id, collected_at, payload FROM incident_diagnostics
-WHERE incident_id = ?
-ORDER BY collected_at DESC
+const pruneAgentDiagnostics = `-- name: PruneAgentDiagnostics :exec
+DELETE FROM agent_diagnostics WHERE collected_at < ?
 `
 
-func (q *Queries) ListIncidentDiagnostics(ctx context.Context, incidentID *int64) ([]IncidentDiagnostic, error) {
-	rows, err := q.db.QueryContext(ctx, listIncidentDiagnostics, incidentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []IncidentDiagnostic
-	for rows.Next() {
-		var i IncidentDiagnostic
-		if err := rows.Scan(
-			&i.ID,
-			&i.IncidentID,
-			&i.AgentID,
-			&i.CollectedAt,
-			&i.Payload,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const pruneIncidentDiagnostics = `-- name: PruneIncidentDiagnostics :exec
-DELETE FROM incident_diagnostics WHERE collected_at < ?
-`
-
-func (q *Queries) PruneIncidentDiagnostics(ctx context.Context, collectedAt time.Time) error {
-	_, err := q.db.ExecContext(ctx, pruneIncidentDiagnostics, collectedAt)
+func (q *Queries) PruneAgentDiagnostics(ctx context.Context, collectedAt time.Time) error {
+	_, err := q.db.ExecContext(ctx, pruneAgentDiagnostics, collectedAt)
 	return err
 }

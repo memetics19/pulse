@@ -69,8 +69,8 @@ func TestPruner_DeletesOldDiagnostics(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, at := range []time.Time{time.Now().AddDate(0, 0, -91), time.Now().Add(-time.Hour)} {
-		require.NoError(t, q.InsertIncidentDiagnostic(context.Background(),
-			store.InsertIncidentDiagnosticParams{
+		require.NoError(t, q.InsertAgentDiagnostic(context.Background(),
+			store.InsertAgentDiagnosticParams{
 				AgentID: agent.ID, CollectedAt: at, Payload: `{"sections":{}}`,
 			}))
 	}
