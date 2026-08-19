@@ -76,3 +76,15 @@ devfs                  394       394         0     100% /dev
 	require.NoError(t, err)
 	assert.Empty(t, report.Full)
 }
+
+// POSIX df -P reports 512-byte blocks, and this host does exactly that, so the
+// unit has to be forced or available_kb is silently double the real value.
+func TestCollectDisk_ForcesKilobyteUnits(t *testing.T) {
+	runner := &fakeRunner{output: dfOutput}
+
+	_, err := CollectDisk(context.Background(), runner)
+
+	require.NoError(t, err)
+	require.Len(t, runner.calls, 1)
+	assert.Equal(t, "df -Pk", runner.calls[0])
+}

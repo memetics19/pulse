@@ -85,3 +85,17 @@ func TestExecRunner_ReportsCallerCancellationDistinctly(t *testing.T) {
 	assert.NotContains(t, err.Error(), "timed out", "no 10s timer elapsed")
 	assert.ErrorIs(t, err, context.Canceled)
 }
+
+// exec.CommandContext kills only the direct child. A descendant that inherits
+// the pipe keeps CombinedOutput blocked past the deadline, which breaks the
+// no-hang guarantee on exactly the wedged hosts this package targets.
+func TestExecRunner_TimeoutIsNotDefeatedByDescendantProcesses(t *testing.T) {
+	r := NewExecRunner(100 * time.Millisecond)
+
+	started := time.Now()
+	_, err := r.Run(context.Background(), "sh", "-c", "sleep 5 & echo started; wait")
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(started), 3*time.Second,
+		"a descendant holding the pipe must not outlast the timeout")
+}

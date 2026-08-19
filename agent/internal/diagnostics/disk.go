@@ -57,8 +57,10 @@ func isAlwaysFull(filesystem string) bool {
 
 // CollectDisk reports filesystem usage. POSIX output (-P) keeps each mount on
 // a single line, which df does not otherwise guarantee for long device names.
+// -k forces 1024-byte blocks: POSIX -P alone reports 512-byte blocks on BSD and
+// under POSIXLY_CORRECT, which would make AvailableKb silently double.
 func CollectDisk(ctx context.Context, r Runner) (DiskReport, error) {
-	out, err := r.Run(ctx, "df", "-P")
+	out, err := r.Run(ctx, "df", "-Pk")
 	if err != nil {
 		return DiskReport{}, fmt.Errorf("df: %w", err)
 	}

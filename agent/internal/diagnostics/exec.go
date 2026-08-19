@@ -12,6 +12,10 @@ import (
 // the error, so a noisy command cannot bloat the bundle.
 const maxErrorDetail = 512
 
+// waitDelay bounds how long Wait may block after the context is cancelled,
+// covering descendants that outlive the direct child and hold its pipes.
+const waitDelay = 2 * time.Second
+
 // ExecRunner runs diagnostic commands against the real host, bounding each one
 // so a wedged command cannot stall collection. A hung host is precisely when
 // diagnostics matter most, so the timeout is not optional.
@@ -34,7 +38,14 @@ func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	// CommandContext kills only the direct child. A descendant that inherited
+	// the pipe would otherwise keep CombinedOutput blocked well past the
+	// deadline, defeating the timeout on exactly the wedged hosts this package
+	// exists for. WaitDelay bounds that wait and forces the pipes closed.
+	cmd.WaitDelay = waitDelay
+
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return out, nil
 	}
