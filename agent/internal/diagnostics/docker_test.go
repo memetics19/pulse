@@ -34,3 +34,14 @@ func TestCollectDocker_FlagsNonRunningContainers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"jellyfin"}, report.NotRunning)
 }
+
+// Skipping malformed rows silently can hide the very container being
+// diagnosed. If nothing at all parses, the section is not healthy-and-empty.
+func TestCollectDocker_FailsWhenNoRowParses(t *testing.T) {
+	runner := &fakeRunner{output: "not json\nalso not json\n"}
+
+	_, err := CollectDocker(context.Background(), runner)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no containers parsed")
+}

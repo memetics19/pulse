@@ -39,6 +39,7 @@ func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
+	configureProcessGroup(cmd)
 	// CommandContext kills only the direct child. A descendant that inherited
 	// the pipe would otherwise keep CombinedOutput blocked well past the
 	// deadline, defeating the timeout on exactly the wedged hosts this package

@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,4 +97,63 @@ func TestRunDiagnose_InterruptedRunIsNotSuccess(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.False(t, p.pushed, "a cancelled run must not upload")
 	assert.NotEmpty(t, out.String(), "partial evidence is still printed")
+}
+
+func TestValidateDiagnoseFlags(t *testing.T) {
+	tests := []struct {
+		name          string
+		server, token string
+		nargs         int
+		wantErr       bool
+	}{
+		{"neither credential is local-only mode", "", "", 0, false},
+		{"both credentials is upload mode", "https://s", "t", 0, false},
+		{"server without token", "https://s", "", 0, true},
+		{"token without server", "", "t", 0, true},
+		{"stray positional argument", "", "", 1, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDiagnoseFlags(tc.server, tc.token, tc.nargs)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// The server caps requests at 1 MiB. A host with a very large container or
+// mount table is how a bundle realistically gets there. It should fail with a
+// message naming the cause rather than as an opaque 400 from the far end, and
+// the local copy must still be printed so the evidence is not lost.
+func TestRunDiagnose_RejectsAnOversizedBundleButStillPrintsIt(t *testing.T) {
+	var containers strings.Builder
+	for i := 0; i < 6000; i++ {
+		fmt.Fprintf(&containers,
+			`{"ID":"abcdef%06d","Image":"registry.example.com/team/service:1.2.3","Names":"service-%06d","State":"running","Status":"Up 3 days"}`+"\n", i, i)
+	}
+
+	runner := funcRunnerAgent(func(name string, _ []string) ([]byte, error) {
+		if name == "docker" {
+			return []byte(containers.String()), nil
+		}
+		return nil, errors.New("unavailable")
+	})
+	p := &stubPusher{}
+	var out bytes.Buffer
+
+	err := runDiagnose(context.Background(), runner, p, &out)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "too large")
+	assert.False(t, p.pushed, "an oversized bundle must not be sent")
+	assert.Greater(t, out.Len(), maxBundleBytes, "the local copy is still printed in full")
+}
+
+type funcRunnerAgent func(name string, args []string) ([]byte, error)
+
+func (f funcRunnerAgent) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	return f(name, args)
 }

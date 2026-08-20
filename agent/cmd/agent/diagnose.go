@@ -21,12 +21,23 @@ type diagnosticsPusher interface {
 // took, so a slow host cannot leave the evidence unsent.
 const uploadTimeout = 30 * time.Second
 
-// credentialError rejects a half-configured upload. Supplying only one of
-// --server or --token used to fall back to local-only mode and exit 0, so
-// automation could believe evidence reached the server when it never did.
-func credentialError(server, token string) error {
+// maxBundleBytes caps the rendered bundle. The server rejects requests over
+// 1 MiB, so an oversized bundle should fail here with a message naming the
+// cause rather than as an opaque 400 from the far end. Headroom covers the
+// request envelope.
+const maxBundleBytes = 900 << 10
+
+// validateDiagnoseFlags rejects invocations that would do something other than
+// what was asked. Supplying only one of --server or --token used to fall back
+// to local-only mode and exit 0, so automation could believe evidence reached
+// the server when it never did. A stray positional argument is a typo, not an
+// instruction.
+func validateDiagnoseFlags(server, token string, nargs int) error {
 	if (server == "") != (token == "") {
 		return errors.New("--server and --token must be given together")
+	}
+	if nargs > 0 {
+		return errors.New("unexpected positional arguments; --diagnose takes none")
 	}
 	return nil
 }
@@ -37,10 +48,12 @@ func credentialError(server, token string) error {
 func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher, out io.Writer) error {
 	bundle := diagnostics.Collect(ctx, r)
 
-	encoder := json.NewEncoder(out)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(bundle); err != nil {
+	rendered, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
 		return fmt.Errorf("render bundle: %w", err)
+	}
+	if _, err := out.Write(append(rendered, '\n')); err != nil {
+		return fmt.Errorf("write bundle: %w", err)
 	}
 
 	// An interrupted run is not a success: Collect records "context canceled"
@@ -53,6 +66,13 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 
 	if p == nil {
 		return nil
+	}
+
+	// Checked after printing: the local copy is the evidence, and losing it
+	// because it cannot be uploaded would be the worse outcome.
+	if len(rendered) > maxBundleBytes {
+		return fmt.Errorf("bundle too large to upload: %d bytes exceeds the %d byte limit",
+			len(rendered), maxBundleBytes)
 	}
 	// The upload gets its own budget rather than whatever collection left over,
 	// and it stays a child of ctx so Ctrl-C still cancels the run.

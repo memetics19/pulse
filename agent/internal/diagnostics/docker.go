@@ -34,19 +34,28 @@ func CollectDocker(ctx context.Context, r Runner) (DockerReport, error) {
 		return DockerReport{}, fmt.Errorf("docker ps: %w", err)
 	}
 
+	trimmed := strings.TrimSpace(string(out))
+
 	var report DockerReport
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, line := range strings.Split(trimmed, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		var c Container
 		if err := json.Unmarshal([]byte(line), &c); err != nil {
-			continue // a malformed row must not cost us the rest
+			continue // one malformed row must not cost us the rest
 		}
 		report.Containers = append(report.Containers, c)
 		if c.State != "running" {
 			report.NotRunning = append(report.NotRunning, c.Name)
 		}
+	}
+
+	// Output that yields nothing is not a healthy empty section: docker prints
+	// nothing at all when there are no containers, so text we could not parse
+	// means the section is unreliable and should say so.
+	if trimmed != "" && len(report.Containers) == 0 {
+		return DockerReport{}, fmt.Errorf("docker ps: no containers parsed from %d bytes of output", len(trimmed))
 	}
 
 	report.Logs = collectContainerLogs(ctx, r, report.NotRunning)
