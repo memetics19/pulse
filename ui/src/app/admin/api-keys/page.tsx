@@ -11,6 +11,7 @@ const ALL_SCOPES = [
   'notifications:write',
   'agents:read',
   'agents:write',
+  'diagnostics:read',
   'theme:read',
   'theme:write',
   'status:read',

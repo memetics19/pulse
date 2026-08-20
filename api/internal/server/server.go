@@ -43,7 +43,9 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 
 	r.Get("/healthz", handlers.Health)
 	r.Get("/api/status", handlers.NewStatus(q).Get)
-	r.Post("/api/ingest/metrics", handlers.NewIngest(q).PostMetrics)
+	ingestH := handlers.NewIngest(q)
+	r.Post("/api/ingest/metrics", ingestH.PostMetrics)
+	r.Post("/api/ingest/diagnostics", ingestH.PostDiagnostics)
 	pushH := handlers.NewPush(q, &livePushRecorder{app: a, cfg: cfg})
 	r.Get("/api/push/{token}", pushH.Heartbeat)
 	r.Post("/api/push/{token}", pushH.Heartbeat)
@@ -126,6 +128,11 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		r.Route("/api/agents/{agentID}/metrics", func(r chi.Router) {
 			h := handlers.NewAgents(q)
 			r.Get("/", h.GetMetrics)
+		})
+
+		r.Route("/api/agents/{agentID}/diagnostics", func(r chi.Router) {
+			h := handlers.NewAgents(q)
+			r.Get("/", h.ListDiagnostics)
 		})
 
 		r.Route("/api/theme", func(r chi.Router) {

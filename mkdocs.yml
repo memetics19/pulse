@@ -19,6 +19,7 @@ nav:
   - Configuration: configuration.md
   - Monitors: monitors.md
   - Incidents: incidents.md
+  - Diagnostics: diagnostics.md
   - Maintenance: maintenance.md
   - Status pages: status-pages.md
   - Theming: theming.md

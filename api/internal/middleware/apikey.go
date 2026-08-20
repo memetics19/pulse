@@ -15,9 +15,24 @@ import (
 // requiredScope maps a request to the scope an API key must hold. Returns ""
 // when API keys may NOT access the path (session-only: key management, auth, setup).
 func requiredScope(method, path string) string {
+	// Chi serves a route with and without its trailing slash, so both spellings
+	// must resolve to the same scope. Matching a path suffix without this let
+	// "/diagnostics/" fall through to the generic /api/agents rule.
+	if path != "/" {
+		path = strings.TrimSuffix(path, "/")
+	}
+
 	if path == "/api/imports" || strings.HasPrefix(path, "/api/imports/") {
 		return "imports:write"
 	}
+	// Diagnostic bundles carry journal entries, container logs, process names
+	// and filesystem paths. That is materially more sensitive than agent
+	// inventory, so it needs an explicit grant rather than riding on
+	// agents:read — which keys issued before the feature existed already hold.
+	if strings.HasPrefix(path, "/api/agents/") && strings.HasSuffix(path, "/diagnostics") {
+		return "diagnostics:read"
+	}
+
 	var resource string
 	switch {
 	case strings.HasPrefix(path, "/api/monitors"), strings.HasPrefix(path, "/api/groups"):

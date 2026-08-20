@@ -1,0 +1,58 @@
+package diagnostics
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// Real dmesg output from a kernel OOM kill, trimmed to the relevant lines.
+const dmesgWithOOM = `[Sat Aug 16 03:13:58 2026] jellyfin invoked oom-killer: gfp_mask=0x140cca(GFP_HIGHUSER_MOVABLE|__GFP_COMP), order=0, oom_score_adj=0
+[Sat Aug 16 03:14:02 2026] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=/,mems_allowed=0,global_oom,task_memcg=/system.slice/docker-abc.scope,task=jellyfin,pid=1234,uid=0
+[Sat Aug 16 03:14:02 2026] Out of memory: Killed process 1234 (jellyfin) total-vm:8216044kB, anon-rss:7104928kB, file-rss:0kB, shmem-rss:0kB, UID:0 pgtables:15000kB oom_score_adj:0
+`
+
+func TestParseOOMKills_ExtractsProcessAndPID(t *testing.T) {
+	kills := parseOOMKills(dmesgWithOOM)
+
+	require.Len(t, kills, 1)
+	assert.Equal(t, "jellyfin", kills[0].Process)
+	assert.Equal(t, 1234, kills[0].PID)
+	assert.Equal(t, int64(7104928), kills[0].AnonRSSKb)
+}
+
+func TestParseOOMKills_NoneWhenDmesgIsClean(t *testing.T) {
+	clean := "[Sat Aug 16 03:14:02 2026] eth0: link up\n"
+
+	assert.Empty(t, parseOOMKills(clean))
+}
+
+// A container killed by its cgroup memory limit logs a different prefix. This
+// is the primary Docker failure mode, so missing it would mean the kernel
+// section reports nothing for exactly the case it exists to explain.
+const dmesgWithCgroupOOM = `[Sat Aug 16 03:14:02 2026] Memory cgroup out of memory: Killed process 4821 (ffmpeg) total-vm:9216044kB, anon-rss:8104928kB, file-rss:0kB, shmem-rss:0kB, UID:0 pgtables:16000kB oom_score_adj:0
+`
+
+func TestParseOOMKills_MatchesMemoryCgroupKills(t *testing.T) {
+	kills := parseOOMKills(dmesgWithCgroupOOM)
+
+	require.Len(t, kills, 1)
+	assert.Equal(t, "ffmpeg", kills[0].Process)
+	assert.Equal(t, 4821, kills[0].PID)
+}
+
+// An OOM from three weeks ago looks identical to one from this incident
+// without its timestamp, which turns evidence into a red herring.
+func TestParseOOMKills_RetainsOccurrenceTime(t *testing.T) {
+	const twoKills = `[Sat Aug 17 02:10:01 2026] Out of memory: Killed process 111 (old-service) total-vm:1kB, anon-rss:1kB
+[Mon Aug 19 03:14:02 2026] Memory cgroup out of memory: Killed process 4821 (ffmpeg) total-vm:9kB, anon-rss:8104928kB
+`
+	kills := parseOOMKills(twoKills)
+
+	require.Len(t, kills, 2)
+	assert.Equal(t, "Sat Aug 17 02:10:01 2026", kills[0].At)
+	assert.Equal(t, "old-service", kills[0].Process)
+	assert.Equal(t, "Mon Aug 19 03:14:02 2026", kills[1].At)
+	assert.Equal(t, "ffmpeg", kills[1].Process)
+}

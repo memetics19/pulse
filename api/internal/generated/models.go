@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+type AgentDiagnostic struct {
+	ID          int64     `json:"id"`
+	AgentID     int64     `json:"agent_id"`
+	CollectedAt time.Time `json:"collected_at"`
+	Payload     string    `json:"payload"`
+}
+
 type ApiKey struct {
 	ID         int64      `json:"id"`
 	Name       string     `json:"name"`

@@ -55,3 +55,30 @@ func TestPruner_DeletesOldCheckResults(t *testing.T) {
 	// compares the location pointer) would spuriously fail on non-UTC hosts.
 	assert.WithinDuration(t, recentTime, results[0].CheckedAt, time.Second)
 }
+
+// Diagnostic bundles are the largest rows Pulse stores and every authenticated
+// agent request adds one, so they must fall under the same retention window as
+// check results.
+func TestPruner_DeletesOldDiagnostics(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+
+	agent, err := q.CreateAgent(context.Background(), store.CreateAgentParams{
+		Name: "proxmox", HostLabel: "homeserver", TokenHash: "hash",
+	})
+	require.NoError(t, err)
+
+	for _, at := range []time.Time{time.Now().AddDate(0, 0, -91), time.Now().Add(-time.Hour)} {
+		require.NoError(t, q.InsertAgentDiagnostic(context.Background(),
+			store.InsertAgentDiagnosticParams{
+				AgentID: agent.ID, CollectedAt: at, Payload: `{"sections":{}}`,
+			}))
+	}
+
+	require.NoError(t, pruner.New(q).Run(context.Background()))
+
+	remaining, err := q.ListAgentDiagnostics(context.Background(),
+		store.ListAgentDiagnosticsParams{AgentID: agent.ID, Limit: 10})
+	require.NoError(t, err)
+	assert.Len(t, remaining, 1, "the 91-day-old bundle should be gone, the recent one kept")
+}

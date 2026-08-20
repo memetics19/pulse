@@ -47,4 +47,6 @@ After two consecutive down checks for a monitor, the worker auto-creates an inci
 
 ## Data retention
 
-A configurable retention window controls how long raw check history is kept. The default is 90 days. The worker prunes results older than the window.
+A configurable retention window controls how long history is kept. The default is 90 days. The worker prunes anything older than the window.
+
+The window covers two data classes: raw check history, and agent [diagnostic bundles](diagnostics.md). Lowering it discards both, so choose it with the diagnostic evidence in mind and not only uptime storage.
