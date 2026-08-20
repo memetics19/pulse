@@ -52,8 +52,12 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 	if err != nil {
 		return fmt.Errorf("render bundle: %w", err)
 	}
+	// Printing locally and uploading are independent effects. A full disk or a
+	// broken stdout redirect is exactly the degraded-host case this serves, so
+	// a local write failure must not destroy the only off-host copy.
+	var writeErr error
 	if _, err := out.Write(append(rendered, '\n')); err != nil {
-		return fmt.Errorf("write bundle: %w", err)
+		writeErr = fmt.Errorf("write bundle: %w", err)
 	}
 
 	// An interrupted run is not a success: Collect records "context canceled"
@@ -61,18 +65,19 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 	// but the exit status has to say the diagnosis did not complete, or a
 	// script will treat cancellation as a clean result.
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("collection interrupted: %w", err)
+		return errors.Join(writeErr, fmt.Errorf("collection interrupted: %w", err))
 	}
 
 	if p == nil {
-		return nil
+		return writeErr
 	}
 
 	// Checked after printing: the local copy is the evidence, and losing it
 	// because it cannot be uploaded would be the worse outcome.
 	if len(rendered) > maxBundleBytes {
-		return fmt.Errorf("bundle too large to upload: %d bytes exceeds the %d byte limit",
-			len(rendered), maxBundleBytes)
+		return errors.Join(writeErr, fmt.Errorf(
+			"bundle too large to upload: %d bytes exceeds the %d byte limit",
+			len(rendered), maxBundleBytes))
 	}
 	// The upload gets its own budget rather than whatever collection left over,
 	// and it stays a child of ctx so Ctrl-C still cancels the run.
@@ -81,7 +86,7 @@ func runDiagnose(ctx context.Context, r diagnostics.Runner, p diagnosticsPusher,
 	defer cancel()
 
 	if err := p.PushDiagnostics(uploadCtx, bundle); err != nil {
-		return fmt.Errorf("upload bundle: %w", err)
+		return errors.Join(writeErr, fmt.Errorf("upload bundle: %w", err))
 	}
-	return nil
+	return writeErr
 }

@@ -41,3 +41,18 @@ func TestParseOOMKills_MatchesMemoryCgroupKills(t *testing.T) {
 	assert.Equal(t, "ffmpeg", kills[0].Process)
 	assert.Equal(t, 4821, kills[0].PID)
 }
+
+// An OOM from three weeks ago looks identical to one from this incident
+// without its timestamp, which turns evidence into a red herring.
+func TestParseOOMKills_RetainsOccurrenceTime(t *testing.T) {
+	const twoKills = `[Sat Aug 17 02:10:01 2026] Out of memory: Killed process 111 (old-service) total-vm:1kB, anon-rss:1kB
+[Mon Aug 19 03:14:02 2026] Memory cgroup out of memory: Killed process 4821 (ffmpeg) total-vm:9kB, anon-rss:8104928kB
+`
+	kills := parseOOMKills(twoKills)
+
+	require.Len(t, kills, 2)
+	assert.Equal(t, "Sat Aug 17 02:10:01 2026", kills[0].At)
+	assert.Equal(t, "old-service", kills[0].Process)
+	assert.Equal(t, "Mon Aug 19 03:14:02 2026", kills[1].At)
+	assert.Equal(t, "ffmpeg", kills[1].Process)
+}

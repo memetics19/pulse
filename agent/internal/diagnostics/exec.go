@@ -61,15 +61,27 @@ func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	// operator the command hit its time limit — the likeliest failure on a
 	// wedged host.
 	if ctx.Err() != nil {
+		// A command that explains itself on stderr and then hangs is the most
+		// useful kind of failure; classifying it must not discard what it said.
+		if detail := boundedDetail(out); detail != "" {
+			return out, fmt.Errorf("timed out after %s: %s", r.timeout, detail)
+		}
 		return out, fmt.Errorf("timed out after %s", r.timeout)
 	}
 
-	detail := strings.TrimSpace(string(out))
+	detail := boundedDetail(out)
 	if detail == "" {
 		return out, err
 	}
-	if len(detail) > maxErrorDetail {
-		detail = detail[:maxErrorDetail] + "…"
-	}
 	return out, fmt.Errorf("%w: %s", err, detail)
+}
+
+// boundedDetail trims a command's output and caps it, so a noisy command
+// cannot bloat the bundle through its error message.
+func boundedDetail(out []byte) string {
+	detail := strings.TrimSpace(string(out))
+	if len(detail) > maxErrorDetail {
+		return detail[:maxErrorDetail] + "…"
+	}
+	return detail
 }

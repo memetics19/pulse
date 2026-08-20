@@ -157,3 +157,20 @@ type funcRunnerAgent func(name string, args []string) ([]byte, error)
 func (f funcRunnerAgent) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	return f(name, args)
 }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// A full disk or a broken stdout redirect is exactly the degraded-host case
+// this command serves. Losing the only off-host copy because the local one
+// could not be written is the worst possible outcome.
+func TestRunDiagnose_UploadsEvenWhenLocalWriteFails(t *testing.T) {
+	p := &stubPusher{}
+
+	err := runDiagnose(context.Background(), stubRunner{}, p, failingWriter{})
+
+	assert.True(t, p.pushed, "the upload must still be attempted")
+	require.Error(t, err, "the write failure is still reported")
+	assert.Contains(t, err.Error(), "no space left on device")
+}

@@ -99,3 +99,16 @@ func TestExecRunner_TimeoutIsNotDefeatedByDescendantProcesses(t *testing.T) {
 	assert.Less(t, time.Since(started), 3*time.Second,
 		"a descendant holding the pipe must not outlast the timeout")
 }
+
+// A command that explains itself on stderr and then hangs is the most useful
+// kind of failure. Classifying it as a timeout must not discard what it said.
+func TestExecRunner_TimeoutKeepsOutputAlreadyWritten(t *testing.T) {
+	r := NewExecRunner(150 * time.Millisecond)
+
+	_, err := r.Run(context.Background(), "sh", "-c",
+		"echo 'cannot reach the docker daemon' >&2; sleep 5")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out")
+	assert.Contains(t, err.Error(), "cannot reach the docker daemon")
+}
