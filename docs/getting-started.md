@@ -92,6 +92,27 @@ To produce it in Uptime Kuma:
 2. Open the Backup section.
 3. Choose Export and save the JSON file (for example `backup.json`).
 
+### Install pulse-cli
+
+`pulse-cli` is published with each release and is not installed by
+`deploy/install.sh`, which sets up the server only. Download it for your
+platform:
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/memetics19/pulse/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+BASE="https://github.com/memetics19/pulse/releases/download/${VERSION}"
+
+curl -fsSLo pulse-cli "${BASE}/pulse-cli_${OS}_${ARCH}"
+curl -fsSLo SHA256SUMS "${BASE}/SHA256SUMS"
+grep " pulse-cli_${OS}_${ARCH}\$" SHA256SUMS | sed "s|pulse-cli_${OS}_${ARCH}|pulse-cli|" | shasum -a 256 -c -
+chmod +x pulse-cli && sudo mv pulse-cli /usr/local/bin/
+```
+
+The checksum step is the same one `install.sh` performs for the server binary;
+skip it only if you have another way to verify the download.
+
 ### Run the import
 
 ```bash

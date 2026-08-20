@@ -89,13 +89,21 @@ arm64. Install it on the host you want to diagnose:
 VERSION=$(curl -fsSL https://api.github.com/repos/memetics19/pulse/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
-curl -fsSLo pulse-agent "https://github.com/memetics19/pulse/releases/download/${VERSION}/pulse-agent_${OS}_${ARCH}"
+BASE="https://github.com/memetics19/pulse/releases/download/${VERSION}"
+
+curl -fsSLo pulse-agent "${BASE}/pulse-agent_${OS}_${ARCH}"
+curl -fsSLo SHA256SUMS "${BASE}/SHA256SUMS"
+grep " pulse-agent_${OS}_${ARCH}\$" SHA256SUMS | sed "s|pulse-agent_${OS}_${ARCH}|pulse-agent|" | shasum -a 256 -c -
 chmod +x pulse-agent && sudo mv pulse-agent /usr/local/bin/
 ```
 
-Run it as root so the `kernel` section can read the ring buffer. On a Proxmox
-node, install it on the host rather than inside a guest: a hung VM cannot report
-on itself, so the host-side view is the only reliable one.
+Run it as root so the `kernel` section can read the ring buffer; without that
+the section degrades to a permission error. On a Proxmox node, install it on the
+host rather than inside a guest: a hung VM cannot report on itself, so the
+host-side view is the only reliable one.
+
+Pulse does not ship a systemd unit for the agent. Invoke it directly, or write
+your own unit if you want it scheduled.
 
 ## Collecting a bundle
 
@@ -149,7 +157,7 @@ diagnostic evidence as well as older check history — see
 ### Reading bundles back
 
 ```
-GET /api/agents/{agentID}/diagnostics?limit=10
+GET /api/agents/{agentID}/diagnostics?limit=5
 Authorization: Bearer <api-key>
 ```
 

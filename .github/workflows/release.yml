@@ -17,8 +17,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - run: cd api && go vet ./...
-      - run: cd api && go test ./... -count=1
+      # Every module whose binary is published must be gated, or a tag can
+      # ship pulse-agent while the agent module's tests are red.
+      - name: vet and test all modules
+        run: |
+          set -euo pipefail
+          for module in api agent cli; do
+            echo "::group::$module"
+            ( cd "$module" && go vet ./... && go test ./... -count=1 )
+            echo "::endgroup::"
+          done
 
   release:
     name: Build image and publish release
