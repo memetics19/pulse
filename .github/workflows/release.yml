@@ -76,25 +76,37 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+      # All three workspace binaries ship: pulse-agent runs on the hosts being
+      # monitored, so publishing only the server left it reachable solely by
+      # building from source.
       - name: Cross-compile binaries
         run: |
+          set -euo pipefail
           mkdir -p dist-bin
-          cd api
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
-            os="${target%/*}"; arch="${target#*/}"
-            out="../dist-bin/pulse_${os}_${arch}"
-            echo "==> building $out"
-            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/pulse
+          for spec in "api ./cmd/pulse pulse" \
+                      "agent ./cmd/agent pulse-agent" \
+                      "cli ./cmd/pulse-cli pulse-cli"; do
+            set -- $spec
+            module="$1"; pkg="$2"; name="$3"
+            for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+              os="${target%/*}"; arch="${target#*/}"
+              out="../dist-bin/${name}_${os}_${arch}"
+              echo "==> building $out"
+              ( cd "$module" && GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+                  go build -trimpath -ldflags "-s -w" -o "$out" "$pkg" )
+            done
           done
+          ls -1 dist-bin
       - name: Generate checksums
-        run: cd dist-bin && sha256sum pulse_* > SHA256SUMS && cat SHA256SUMS
+        run: cd dist-bin && sha256sum pulse_* pulse-agent_* pulse-cli_* > SHA256SUMS && cat SHA256SUMS
       - name: Attach to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
             dist-bin/pulse_*
+            dist-bin/pulse-agent_*
+            dist-bin/pulse-cli_*
             dist-bin/SHA256SUMS
 
   # Deploy runs only after the image is built and pushed, so the homelab never

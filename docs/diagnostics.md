@@ -80,6 +80,23 @@ names the device rather than the filesystem type, so it cannot be distinguished
 from a writable loop-mounted ext4 or XFS volume. Reporting a harmless snap mount is the
 lesser failure — hiding a genuinely full filesystem is a missed incident.
 
+## Installing the agent
+
+`pulse-agent` is published with each release for Linux and macOS on amd64 and
+arm64. Install it on the host you want to diagnose:
+
+```sh
+VERSION=$(curl -fsSL https://api.github.com/repos/memetics19/pulse/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSLo pulse-agent "https://github.com/memetics19/pulse/releases/download/${VERSION}/pulse-agent_${OS}_${ARCH}"
+chmod +x pulse-agent && sudo mv pulse-agent /usr/local/bin/
+```
+
+Run it as root so the `kernel` section can read the ring buffer. On a Proxmox
+node, install it on the host rather than inside a guest: a hung VM cannot report
+on itself, so the host-side view is the only reliable one.
+
 ## Collecting a bundle
 
 Print a bundle locally, without contacting Pulse:
@@ -117,7 +134,10 @@ Authorization: Bearer <agent-token>
 ```
 
 A bundle belongs to the agent that produced it, identified by the bearer token,
-and carries no other association. The server stores it verbatim, so collectors
+and carries no other association. Uploads are limited to one per agent every
+five seconds; a faster caller receives `429` with `Retry-After`. The agent
+refuses to send a bundle larger than 900 KiB, which would be rejected by the
+1 MiB request cap anyway — the local copy is still printed. The server stores it verbatim, so collectors
 can change without a server-side migration. The bundle must be a JSON object;
 its section contents are not validated. Responds `204 No Content`.
 

@@ -37,6 +37,12 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.allowDiagnostic(agent.ID, time.Now()) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(minDiagnosticInterval.Seconds())))
+		http.Error(w, "too many diagnostic uploads for this agent", http.StatusTooManyRequests)
+		return
+	}
+
 	var req diagnosticsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

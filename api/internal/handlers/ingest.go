@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/memetics19/pulse/api/internal/generated"
@@ -13,10 +14,35 @@ import (
 
 type Ingest struct {
 	q *generated.Queries
+
+	// lastDiagnostic throttles diagnostic uploads per agent. In memory is
+	// enough: Pulse is a single process, and this exists to stop a runaway
+	// loop rather than a determined caller. Bounded by the number of agents.
+	mu             sync.Mutex
+	lastDiagnostic map[int64]time.Time
 }
 
 func NewIngest(q *generated.Queries) *Ingest {
-	return &Ingest{q: q}
+	return &Ingest{q: q, lastDiagnostic: make(map[int64]time.Time)}
+}
+
+// minDiagnosticInterval is the shortest gap between diagnostic uploads from one
+// agent. Bundles approach the 1 MiB request cap, so a cron misfiring in a tight
+// loop could outpace retention. Short enough not to impede a human running
+// --diagnose twice.
+const minDiagnosticInterval = 5 * time.Second
+
+// allowDiagnostic reports whether an agent may upload now, recording the time
+// when it may.
+func (h *Ingest) allowDiagnostic(agentID int64, now time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if last, ok := h.lastDiagnostic[agentID]; ok && now.Sub(last) < minDiagnosticInterval {
+		return false
+	}
+	h.lastDiagnostic[agentID] = now
+	return true
 }
 
 func extractBearerToken(r *http.Request) string {

@@ -171,3 +171,26 @@ func TestListAgentDiagnosticsClampsAndDefaultsTheRowCount(t *testing.T) {
 		})
 	}
 }
+
+// A misconfigured cron firing continuously would otherwise fill the database
+// with near-1 MiB rows faster than retention can trim them. The limit is per
+// agent and deliberately short — it stops a runaway loop, not a human running
+// --diagnose twice.
+func TestIngestDiagnosticsRateLimitsPerAgent(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	_, token := createAgent(t, handlers.NewAgents(q))
+	ingest := handlers.NewIngest(q)
+
+	post := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/api/ingest/diagnostics",
+			bytes.NewReader([]byte(`{"bundle":`+sampleBundle+`}`)))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		ingest.PostDiagnostics(rr, req)
+		return rr.Code
+	}
+
+	assert.Equal(t, http.StatusNoContent, post(), "the first upload is accepted")
+	assert.Equal(t, http.StatusTooManyRequests, post(), "an immediate repeat is refused")
+}
