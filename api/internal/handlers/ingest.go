@@ -26,23 +26,29 @@ func NewIngest(q *generated.Queries) *Ingest {
 	return &Ingest{q: q, lastDiagnostic: make(map[int64]time.Time)}
 }
 
-// minDiagnosticInterval is the shortest gap between diagnostic uploads from one
-// agent. Bundles approach the 1 MiB request cap, so a cron misfiring in a tight
-// loop could outpace retention. Short enough not to impede a human running
-// --diagnose twice.
+// minDiagnosticInterval is the shortest gap between successful diagnostic
+// uploads from one agent. This is a guard against a misfiring loop, not a
+// storage ceiling — retention is what bounds total size. Short enough not to
+// impede a human running --diagnose twice.
 const minDiagnosticInterval = 5 * time.Second
 
-// allowDiagnostic reports whether an agent may upload now, recording the time
-// when it may.
-func (h *Ingest) allowDiagnostic(agentID int64, now time.Time) bool {
+// diagnosticAllowed reports whether an agent may upload now. It does not
+// record anything: a rejected or failed request must not consume the agent's
+// next slot, or a malformed body would lock out the corrected retry behind it.
+func (h *Ingest) diagnosticAllowed(agentID int64, now time.Time) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if last, ok := h.lastDiagnostic[agentID]; ok && now.Sub(last) < minDiagnosticInterval {
-		return false
-	}
+	last, ok := h.lastDiagnostic[agentID]
+	return !ok || now.Sub(last) >= minDiagnosticInterval
+}
+
+// recordDiagnostic marks a successful upload, called only once the bundle is
+// stored.
+func (h *Ingest) recordDiagnostic(agentID int64, now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.lastDiagnostic[agentID] = now
-	return true
 }
 
 func extractBearerToken(r *http.Request) string {

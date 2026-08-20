@@ -37,7 +37,7 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.allowDiagnostic(agent.ID, time.Now()) {
+	if !h.diagnosticAllowed(agent.ID, time.Now()) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(minDiagnosticInterval.Seconds())))
 		http.Error(w, "too many diagnostic uploads for this agent", http.StatusTooManyRequests)
 		return
@@ -68,6 +68,10 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Committed only now: a rejected or failed request must not consume the
+	// agent's next slot.
+	h.recordDiagnostic(agent.ID, time.Now())
 
 	if err := h.q.UpdateAgentLastSeen(r.Context(), agent.ID); err != nil {
 		// Non-fatal: the bundle is already stored.

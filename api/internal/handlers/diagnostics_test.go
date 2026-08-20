@@ -194,3 +194,27 @@ func TestIngestDiagnosticsRateLimitsPerAgent(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, post(), "the first upload is accepted")
 	assert.Equal(t, http.StatusTooManyRequests, post(), "an immediate repeat is refused")
 }
+
+// A rejected request must not consume the agent's next slot, or a malformed
+// body locks out the corrected retry behind a 429.
+func TestIngestDiagnosticsRejectedRequestDoesNotConsumeTheSlot(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := generated.New(db)
+	_, token := createAgent(t, handlers.NewAgents(q))
+	ingest := handlers.NewIngest(q)
+
+	post := func(body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/ingest/diagnostics",
+			bytes.NewReader([]byte(body)))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		ingest.PostDiagnostics(rr, req)
+		return rr.Code
+	}
+
+	assert.Equal(t, http.StatusBadRequest, post(`{"bundle":null}`), "malformed body is refused")
+	assert.Equal(t, http.StatusNoContent, post(`{"bundle":`+sampleBundle+`}`),
+		"the corrected retry must be accepted immediately")
+	assert.Equal(t, http.StatusTooManyRequests, post(`{"bundle":`+sampleBundle+`}`),
+		"only a stored bundle starts the interval")
+}

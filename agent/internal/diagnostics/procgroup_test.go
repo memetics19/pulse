@@ -23,8 +23,11 @@ func TestExecRunner_KillsDescendantsNotJustTheDirectChild(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ticks")
 	r := NewExecRunner(150 * time.Millisecond)
 
+	// The loop is bounded rather than infinite: if the group kill regresses the
+	// assertion fails, and the descendant must not then keep writing forever on
+	// a developer machine or a persistent runner.
 	_, err := r.Run(context.Background(), "sh", "-c",
-		"while :; do echo tick >> "+marker+"; sleep 0.02; done & wait")
+		"for _ in $(seq 1 400); do echo tick >> "+marker+"; sleep 0.02; done & wait")
 	require.Error(t, err, "the command must still hit its timeout")
 
 	sizeAfterRun := fileSize(t, marker)
