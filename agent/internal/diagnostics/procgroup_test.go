@@ -5,9 +5,7 @@ package diagnostics
 import (
 	"context"
 	"os"
-	"strconv"
-	"strings"
-	"syscall"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,21 +14,34 @@ import (
 )
 
 // Killing only the direct child leaves descendants running on a host that is
-// already struggling. Repeated diagnoses would accumulate them.
+// already struggling, and repeated diagnoses would accumulate them.
+//
+// Liveness is checked by observing that the descendant stops doing work rather
+// than by probing its PID: a killed process lingers as a zombie until reaped,
+// so kill(pid, 0) still succeeds and the timing of reaping differs by platform.
 func TestExecRunner_KillsDescendantsNotJustTheDirectChild(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "ticks")
 	r := NewExecRunner(150 * time.Millisecond)
 
-	out, err := r.Run(context.Background(), "sh", "-c", "sleep 30 & echo $!; wait")
+	_, err := r.Run(context.Background(), "sh", "-c",
+		"while :; do echo tick >> "+marker+"; sleep 0.02; done & wait")
 	require.Error(t, err, "the command must still hit its timeout")
 
-	fields := strings.Fields(string(out))
-	require.NotEmpty(t, fields, "the descendant PID should have been printed")
-	pid, convErr := strconv.Atoi(fields[0])
-	require.NoError(t, convErr)
+	sizeAfterRun := fileSize(t, marker)
+	require.NotZero(t, sizeAfterRun, "the descendant should have been writing")
 
-	// Signal 0 probes liveness without delivering anything.
-	proc, findErr := os.FindProcess(pid)
-	require.NoError(t, findErr)
-	assert.Error(t, proc.Signal(syscall.Signal(0)),
-		"descendant %d should be dead once the group was terminated", pid)
+	time.Sleep(300 * time.Millisecond)
+
+	assert.Equal(t, sizeAfterRun, fileSize(t, marker),
+		"the descendant kept working after the command was cancelled")
+}
+
+func fileSize(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return 0
+	}
+	require.NoError(t, err)
+	return info.Size()
 }
