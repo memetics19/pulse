@@ -45,7 +45,7 @@ func (d *migrationDriver) Run(migration io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { err = errors.Join(err, conn.Close()) }()
 	defer func() {
 		err = errors.Join(err, setForeignKeys(ctx, conn, true))
 	}()

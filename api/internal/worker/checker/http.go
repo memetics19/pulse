@@ -112,7 +112,8 @@ func (c *httpChecker) attempt(ctx context.Context, client *http.Client, target s
 	if err != nil {
 		return Result{Status: "down", ResponseTimeMs: elapsed, ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}
-	defer resp.Body.Close()
+	// The body is only read, so a failed close loses nothing.
+	defer func() { _ = resp.Body.Close() }()
 
 	// Status check: an explicit expected status requires an exact match;
 	// otherwise any 2xx is considered up.

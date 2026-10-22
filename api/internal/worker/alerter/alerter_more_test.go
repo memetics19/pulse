@@ -75,7 +75,9 @@ func TestDispatcherNotifyFansOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An unknown channel row must be skipped, not crash.
-	q.CreateNotification(ctx, generated.CreateNotificationParams{Channel: "email", ConfigJson: `bad json`})
+	if _, err := q.CreateNotification(ctx, generated.CreateNotificationParams{Channel: "email", ConfigJson: `bad json`}); err != nil {
+		t.Fatal(err)
+	}
 
 	d := alerter.NewDispatcher(q, "", "")
 	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected", Severity: "major"}, nil)

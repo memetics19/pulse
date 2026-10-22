@@ -20,7 +20,9 @@ func TestSetupStateAndComplete(t *testing.T) {
 	var st struct {
 		Configured bool `json:"configured"`
 	}
-	json.NewDecoder(rec.Body).Decode(&st)
+	if err := json.NewDecoder(rec.Body).Decode(&st); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if st.Configured {
 		t.Fatal("fresh app: configured should be false")
 	}

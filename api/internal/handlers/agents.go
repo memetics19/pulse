@@ -31,7 +31,7 @@ func (h *Agents) List(w http.ResponseWriter, r *http.Request) {
 		agents = []generated.InfraAgent{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(agents)
+	encodeJSON(w, agents)
 }
 
 func (h *Agents) Create(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +65,7 @@ func (h *Agents) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(struct {
+	encodeJSON(w, struct {
 		generated.InfraAgent
 		Token string `json:"token"`
 	}{InfraAgent: agent, Token: token})
@@ -113,5 +113,5 @@ func (h *Agents) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		metrics = []generated.InfraMetrics1m{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(metrics)
+	encodeJSON(w, metrics)
 }

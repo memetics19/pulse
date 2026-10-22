@@ -38,7 +38,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("db: %v", err)
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				log.Printf("db close: %v", err)
+			}
+		}()
 		a.SetDB(conn)
 	}
 

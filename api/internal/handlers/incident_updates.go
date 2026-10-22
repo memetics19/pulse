@@ -33,7 +33,7 @@ func (h *IncidentUpdates) List(w http.ResponseWriter, r *http.Request) {
 		updates = []generated.IncidentUpdate{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updates)
+	encodeJSON(w, updates)
 }
 
 func (h *IncidentUpdates) Create(w http.ResponseWriter, r *http.Request) {
@@ -56,5 +56,5 @@ func (h *IncidentUpdates) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(update)
+	encodeJSON(w, update)
 }

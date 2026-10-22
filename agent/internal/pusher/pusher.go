@@ -71,7 +71,8 @@ func (p *Pusher) postJSON(ctx context.Context, path string, payload any) error {
 	if err != nil {
 		return fmt.Errorf("pusher: do: %w", err)
 	}
-	defer resp.Body.Close()
+	// Only the status code is used, so a failed close loses nothing.
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("pusher: server returned %d", resp.StatusCode)

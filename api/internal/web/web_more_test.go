@@ -15,7 +15,9 @@ import (
 func closedWebQ(t *testing.T) *generated.Queries {
 	t.Helper()
 	db := testutil.NewTestDB(t)
-	db.Close()
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return generated.New(db)
 }
 
@@ -26,17 +28,21 @@ func TestPublicGetScopedPage(t *testing.T) {
 	shown, _ := q.CreateGroup(ctx, generated.CreateGroupParams{Name: "Shown"})
 	hidden, _ := q.CreateGroup(ctx, generated.CreateGroupParams{Name: "Hidden"})
 	mk := func(name string, gid int64) {
-		q.CreateMonitor(ctx, generated.CreateMonitorParams{
+		if _, err := q.CreateMonitor(ctx, generated.CreateMonitorParams{
 			Name: name, Url: "http://example.com", Type: "http", IntervalSeconds: 60,
 			TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000,
 			IsActive: true, GroupID: &gid, Source: "internal",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mk("ShownMon", shown.ID)
 	mk("HiddenMon", hidden.ID)
 
 	page, _ := q.CreateStatusPage(ctx, generated.CreateStatusPageParams{Domain: "acme.com", Title: "Acme", Published: 1})
-	q.AddPageGroup(ctx, generated.AddPageGroupParams{StatusPageID: page.ID, GroupID: shown.ID})
+	if err := q.AddPageGroup(ctx, generated.AddPageGroupParams{StatusPageID: page.ID, GroupID: shown.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "acme.com"
@@ -54,7 +60,9 @@ func TestPublicGetScopedPage(t *testing.T) {
 
 func TestPublicUnpublishedPage404(t *testing.T) {
 	q := generated.New(testutil.NewTestDB(t))
-	q.CreateStatusPage(context.Background(), generated.CreateStatusPageParams{Domain: "hidden.com", Title: "H", Published: 0})
+	if _, err := q.CreateStatusPage(context.Background(), generated.CreateStatusPageParams{Domain: "hidden.com", Title: "H", Published: 0}); err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "hidden.com"
 	rec := httptest.NewRecorder()

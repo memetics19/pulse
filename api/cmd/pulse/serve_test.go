@@ -18,8 +18,11 @@ func freePort(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
 	_, port, _ := net.SplitHostPort(l.Addr().String())
+	// The port must be free again before the server under test binds it.
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return port
 }
 
@@ -91,7 +94,7 @@ func TestServeStartsAndShutsDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server never came up: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close() // only the status code is checked
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("/healthz = %d", resp.StatusCode)
 	}

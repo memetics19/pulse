@@ -35,7 +35,9 @@ func TestDetectorSuppressesDuringMaintenance(t *testing.T) {
 
 	d := incident.NewDetector(q)
 	// Two consecutive downs would normally open an incident; maintenance suppresses it.
-	d.MaybeCreateIncident(ctx, mon.ID, "down")
+	if _, err := d.MaybeCreateIncident(ctx, mon.ID, "down"); err != nil {
+		t.Fatal(err)
+	}
 	created, err := d.MaybeCreateIncident(ctx, mon.ID, "down")
 	if err != nil {
 		t.Fatal(err)

@@ -87,7 +87,9 @@ func TestAuthSessionMethods(t *testing.T) {
 		Authenticated bool `json:"authenticated"`
 		Username      string
 	}
-	json.NewDecoder(rec.Body).Decode(&st)
+	if err := json.NewDecoder(rec.Body).Decode(&st); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if !st.Authenticated || st.Username != "admin" {
 		t.Fatalf("authenticated status wrong: %+v", st)
 	}

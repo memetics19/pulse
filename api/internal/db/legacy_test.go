@@ -19,14 +19,20 @@ func TestHashLegacyAgentTokensOnReopen(t *testing.T) {
 	if _, err := conn.Exec(`INSERT INTO infra_agents (name, host_label, token_hash) VALUES ('h','web',?)`, plaintext); err != nil {
 		t.Fatal(err)
 	}
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Reopen: hashLegacyAgentTokens should rewrite it to a sha256 hex hash.
 	conn2, err := db.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn2.Close()
+	t.Cleanup(func() {
+		if err := conn2.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 	var stored string
 	if err := conn2.QueryRow(`SELECT token_hash FROM infra_agents LIMIT 1`).Scan(&stored); err != nil {
 		t.Fatal(err)

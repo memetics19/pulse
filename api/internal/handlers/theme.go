@@ -22,7 +22,7 @@ func (h *Theme) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(theme)
+	encodeJSON(w, theme)
 }
 
 func (h *Theme) Update(w http.ResponseWriter, r *http.Request) {
@@ -37,5 +37,5 @@ func (h *Theme) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(theme)
+	encodeJSON(w, theme)
 }

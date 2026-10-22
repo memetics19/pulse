@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -245,5 +246,13 @@ func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, userID int64
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+	encodeJSON(w, v)
+}
+
+// encodeJSON writes v as the JSON response body. The status line is already
+// sent by then, so a failure (usually the client hanging up) can only be logged.
+func encodeJSON(w http.ResponseWriter, v any) {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("handlers: write JSON response: %v", err)
+	}
 }

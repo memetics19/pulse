@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -47,7 +46,7 @@ func (h *CheckResults) List(w http.ResponseWriter, r *http.Request) {
 		results = []generated.CheckResult{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	encodeJSON(w, results)
 }
 
 func (h *CheckResults) Uptime(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +75,7 @@ func (h *CheckResults) Uptime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	encodeJSON(w, map[string]interface{}{
 		"monitor_id": monitorID,
 		"days":       days,
 		"uptime_pct": uptimePct,

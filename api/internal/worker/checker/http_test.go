@@ -38,7 +38,7 @@ func TestHTTPChecker_Down_WrongStatus(t *testing.T) {
 
 func TestHTTPChecker_Down_Keyword(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("maintenance mode"))
+		_, _ = w.Write([]byte("maintenance mode"))
 	}))
 	defer srv.Close()
 

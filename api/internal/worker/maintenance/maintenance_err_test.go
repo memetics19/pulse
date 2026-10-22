@@ -12,7 +12,9 @@ import (
 
 func TestMaintenanceRunDBError(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	db.Close()
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := maintenance.New(store.New(db)).Run(context.Background(), time.Now()); err == nil {
 		t.Fatal("Run on closed DB should error")
 	}

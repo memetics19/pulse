@@ -55,7 +55,8 @@ func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	// Only the status code matters, so a failed close loses nothing.
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("slack webhook returned %d", resp.StatusCode)
 	}

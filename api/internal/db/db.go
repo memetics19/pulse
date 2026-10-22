@@ -42,12 +42,10 @@ func Open(sqlitePath string) (*sql.DB, error) {
 		conn.SetMaxIdleConns(8)
 	}
 	if err := runMigrations(conn); err != nil {
-		conn.Close()
-		return nil, err
+		return nil, errors.Join(err, conn.Close())
 	}
 	if err := hashLegacyAgentTokens(conn); err != nil {
-		conn.Close()
-		return nil, err
+		return nil, errors.Join(err, conn.Close())
 	}
 	return conn, nil
 }
@@ -88,7 +86,9 @@ func hashLegacyAgentTokens(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	// Rollback is a no-op once Commit succeeds. On an earlier failure the
+	// original error is the one worth returning.
+	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.Query(`SELECT id, token_hash FROM infra_agents WHERE length(token_hash) = 48`)
 	if err != nil {
@@ -102,13 +102,14 @@ func hashLegacyAgentTokens(conn *sql.DB) error {
 	for rows.Next() {
 		var l legacy
 		if err := rows.Scan(&l.id, &l.token); err != nil {
-			rows.Close()
-			return err
+			return errors.Join(err, rows.Close())
 		}
 		pending = append(pending, l)
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
+		return errors.Join(err, rows.Close())
+	}
+	if err := rows.Close(); err != nil {
 		return err
 	}
 

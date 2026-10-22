@@ -39,14 +39,14 @@ func TestRunImport_CreatesGroupThenMonitors(t *testing.T) {
 			groupCreated.Store(true)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(10), "name": "Imported", "display_order": float64(0), "description": "", "created_at": "2026-06-04T00:00:00Z"})
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(10), "name": "Imported", "display_order": float64(0), "description": "", "created_at": "2026-06-04T00:00:00Z"}))
 
 		case "/api/monitors":
 			require.Equal(t, http.MethodPost, r.Method)
 			monitorsCreated.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(monitorsCreated.Load()), "name": "x"})
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(monitorsCreated.Load()), "name": "x"}))
 
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)

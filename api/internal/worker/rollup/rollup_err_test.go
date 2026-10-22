@@ -11,7 +11,9 @@ import (
 
 func TestRollupRunDBError(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	db.Close()
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := rollup.New(store.New(db)).Run(context.Background()); err == nil {
 		t.Fatal("Run on closed DB should error")
 	}

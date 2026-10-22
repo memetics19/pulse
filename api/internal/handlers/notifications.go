@@ -27,7 +27,7 @@ func (h *Notifications) List(w http.ResponseWriter, r *http.Request) {
 		notifications = []generated.Notification{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(notifications)
+	encodeJSON(w, notifications)
 }
 
 func (h *Notifications) Create(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +43,7 @@ func (h *Notifications) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(notification)
+	encodeJSON(w, notification)
 }
 
 func (h *Notifications) Update(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +65,7 @@ func (h *Notifications) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(notification)
+	encodeJSON(w, notification)
 }
 
 func (h *Notifications) Delete(w http.ResponseWriter, r *http.Request) {
