@@ -60,9 +60,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27.3"
-      - uses: golangci/golangci-lint-action@v6
+      # golangci-lint must be built with a Go at least as new as go.mod's (1.27).
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9.3.0
         with:
-          version: latest
+          version: v2.15.0
           working-directory: api
 
   ui:
