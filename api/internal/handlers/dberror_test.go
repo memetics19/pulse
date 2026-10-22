@@ -27,7 +27,7 @@ func TestHandlersReturn500OnDBError(t *testing.T) {
 	// Each of these calls a query immediately with no prior validation, so a
 	// closed DB drives them into their error branch.
 	lists := map[string]http.HandlerFunc{
-		"monitors.List":      handlers.NewMonitors(q, true).List,
+		"monitors.List":      handlers.NewMonitors(q, nil, true).List,
 		"groups.List":        handlers.NewGroups(q).List,
 		"incidents.List":     handlers.NewIncidents(q).List,
 		"notifications.List": handlers.NewNotifications(q).List,
@@ -59,7 +59,7 @@ func TestHandlerCreatesReturn500OnDBError(t *testing.T) {
 		h    http.HandlerFunc
 		body any
 	}{
-		{"monitors.Create", handlers.NewMonitors(q, true).Create,
+		{"monitors.Create", handlers.NewMonitors(q, nil, true).Create,
 			map[string]any{"name": "m", "url": "http://example.com", "type": "http", "interval_seconds": 60}},
 		{"groups.Create", handlers.NewGroups(q).Create, map[string]any{"name": "g"}},
 		{"incidents.Create", handlers.NewIncidents(q).Create,
@@ -77,7 +77,7 @@ func TestHandlerCreatesReturn500OnDBError(t *testing.T) {
 	}
 
 	// Get/Delete with a valid numeric id but a dead DB -> 500 (or 404 for Get).
-	m := handlers.NewMonitors(q, true)
+	m := handlers.NewMonitors(q, nil, true)
 	assert.Equal(t, http.StatusNotFound, do(func(w http.ResponseWriter, r *http.Request) {
 		m.Get(w, withChiID(r, "id", "1"))
 	}, "GET", "/x", nil).Code, "monitors.Get on dead DB -> 404")
@@ -97,7 +97,7 @@ func TestHandlerMutationsReturn500OnDBError(t *testing.T) {
 		method string
 		body   any
 	}{
-		{"monitors.Update", handlers.NewMonitors(q, true).Update, "id", "PUT",
+		{"monitors.Update", handlers.NewMonitors(q, nil, true).Update, "id", "PUT",
 			map[string]any{"name": "m", "url": "http://example.com", "type": "http", "interval_seconds": 60}},
 		{"groups.Update", handlers.NewGroups(q).Update, "id", "PUT", map[string]any{"name": "g"}},
 		{"groups.Delete", handlers.NewGroups(q).Delete, "id", "DELETE", nil},

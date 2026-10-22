@@ -197,6 +197,20 @@ on `(source, external_id)` where `external_id <> ''` enforce identity without
 affecting existing internal resources. Uptime Kuma identities use source IDs,
 for example `group:12` and `monitor:42`.
 
+SQLite has no old-version-safe conditional `ADD COLUMN`. Migration 9 downgrade
+therefore rebuilds the legacy group table and preserves group identities in a
+migration sidecar; migration 9 re-up restores those identities and removes the
+sidecar.
+
+Migrations normally use golang-migrate's SQLite transaction wrapping. The two
+migration 9 files carry an explicit marker handled by a focused driver wrapper:
+it disables foreign keys on one connection, runs the marked SQL in its own
+transaction, rolls back on failure, and restores foreign keys on every path.
+Migration 9 preflights duplicate monitor identities before rebuilding tables
+and preserves each rebuilt AUTOINCREMENT table's `sqlite_sequence` high-water.
+Real v8-to-v9, early-collision, late-failure, rollback/re-up, and sequence-reuse
+tests exercise this production driver boundary.
+
 `idempotency_key` protects a submitted apply from duplicate network delivery.
 Repeated delivery returns the stored result. A later intentional rerun with a
 new key is still idempotent at the resource level through source identity and
@@ -217,6 +231,37 @@ values or push tokens.
 
 ## Native push monitor behavior
 
+### Shared recorder safety boundary
+
+Scheduled checks and push heartbeats call the same recorder. The recorder
+validates the result status and server receipt timestamp, applies monitor
+latency thresholds, and performs result persistence plus incident evaluation
+inside one SQLite transaction. The transaction includes the latest-two-result
+read, active-incident suppression, maintenance suppression, and automatic
+incident insertion. A database-side evaluation failure rolls back the result,
+so a retry cannot duplicate an already committed heartbeat row after a 5xx.
+
+Automatic monitor incidents use `source = 'monitor'` and the decimal monitor
+ID as `external_id`. A partial unique index permits at most one unresolved
+automatic incident for that identity. The detector still suppresses creation
+when any active incident, including a manual incident, affects the monitor;
+the unique index is the final cross-process guard when automatic requests race.
+Only the transaction that inserts the incident dispatches an alert, and it does
+so after commit. Alert transport remains non-retryable from the heartbeat's
+perspective and is logged by the dispatcher.
+
+Monitor CRUD supplies the schema defaults (500 ms degraded and 2000 ms down)
+when threshold fields are omitted or zero. This prevents a positive push ping
+from being classified down solely because generated request parameters use
+zero values.
+
+Direct connection monitors apply private-network policy both at CRUD time and
+at execution time. TCP and TLS use the dial-time address guard after DNS
+resolution. Ping resolves on every check, rejects forbidden results, and gives
+the pinger a concrete allowed IP so the pinger cannot independently re-resolve
+the hostname to a private address. DNS monitors only perform name lookup and
+are not treated as direct connection targets.
+
 ### Storage and lifecycle
 
 `push` becomes a valid monitor type. Push monitors are allowed to have an empty
@@ -230,10 +275,16 @@ persisted. Imported Uptime Kuma push tokens are hashed during the transaction.
 New or rotated tokens are returned once. Rotation replaces the stored hash and
 immediately invalidates the previous token. Token management requires the
 normal monitor write scope or an admin session. Creating a push monitor through
-`POST /api/monitors` returns the new token and complete push URL once. Imported
-tokens are accepted and hashed but are not echoed back. The authenticated
-`POST /api/monitors/{id}/push-token/rotate` endpoint returns a replacement token
-and URL once.
+`POST /api/monitors` returns `push_token` and the complete `push_url` once;
+omitted `is_active` defaults to true while an explicit false remains inactive.
+The authenticated `POST /api/monitors/{id}/push-token/rotate` endpoint returns
+a replacement `{token,push_url}` once. Imported tokens are accepted and hashed
+but are not echoed back.
+
+Monitor updates may change fields within the current push/non-push category,
+but cannot change a monitor type to or from `push`. Such transitions require
+delete and recreate so a credential is neither missing nor left dormant for
+later accidental reactivation.
 
 ### Compatible heartbeat endpoint
 
@@ -247,10 +298,12 @@ POST /api/push/{token}?status=up&msg=OK&ping=123
 The endpoint is public because the high-entropy token is the credential. It:
 
 - hashes the supplied token and looks up an active push monitor;
-- accepts only `up` or `down` status;
-- defaults the message to `OK` and limits its UTF-8 encoding to 1,024 bytes;
+- accepts only `up` or `down` status and defaults an omitted status to `up`;
+- defaults an omitted or empty message to `OK` and limits its UTF-8 encoding to
+  1,024 bytes;
 - accepts an optional finite ping value from 0 through 100,000,000,000
-  milliseconds, matching the upstream compatibility bound;
+  milliseconds, matching the upstream compatibility bound; an omitted or empty
+  `ping` is recorded without a response time;
 - records receipt time on the server;
 - writes a standard check result and invokes the shared incident/alert flow; and
 - returns the same not-found response for missing, invalid, inactive, and
@@ -265,10 +318,10 @@ characters with at least 192 bits of entropy.
 ### Missed heartbeat detection
 
 Push monitors do not run a network checker. The scheduler runs a watchdog whose
-first deadline is monitor creation plus `interval_seconds` and whose subsequent
-deadline is the last heartbeat receipt plus `interval_seconds` plus a five-second
-network-jitter allowance. Once a deadline is missed, it records a down result
-through the shared check recorder. A later valid heartbeat records recovery.
+deadline is monitor creation, or the last persisted heartbeat/result receipt,
+plus `interval_seconds` and a five-second network-jitter allowance. Once a
+deadline is missed, it records a down result through the shared check recorder.
+A later valid heartbeat records recovery.
 
 Scheduler reconciliation starts, updates, and stops push watchdogs when monitor
 configuration or active state changes, just as it manages polling monitors.
@@ -305,7 +358,8 @@ field with an "Expected heartbeat every" interval control, and displays the
 new endpoint once after creation. Existing push monitors show only the stored
 token prefix and a rotation action because Pulse cannot recover hashed tokens.
 The rotation confirmation warns that the previous endpoint stops working
-immediately.
+immediately. Editing does not offer conversion to or from `Push`; users delete
+and recreate a monitor when changing across that credential boundary.
 
 ## Error handling
 

@@ -11,6 +11,12 @@ SELECT * FROM incidents WHERE id = ?;
 INSERT INTO incidents (title, severity, status, affected_monitor_ids, started_at, source, external_id)
 VALUES (?, ?, 'detected', ?, ?, ?, ?) RETURNING *;
 
+-- name: CreateAutoIncident :one
+INSERT INTO incidents (title, severity, status, affected_monitor_ids, started_at, source, external_id)
+VALUES (?, 'major', 'detected', ?, ?, 'monitor', ?)
+ON CONFLICT DO NOTHING
+RETURNING *;
+
 -- name: UpdateIncidentStatus :one
 UPDATE incidents SET status = ?, resolved_at = ?, rca = ? WHERE id = ? RETURNING *;
 

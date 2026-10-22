@@ -89,3 +89,49 @@ func TestHasScopeExactMatchOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestImportsRequireExactWriteScope(t *testing.T) {
+	q := generated.New(testutil.NewTestDB(t))
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	h := RequireSessionOrAPIKey(q)(next)
+
+	createKey := func(t *testing.T, name, scope string) string {
+		t.Helper()
+		full, prefix, hash, err := keyauth.Generate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		scopes, _ := json.Marshal([]string{scope})
+		if _, err := q.CreateAPIKey(t.Context(), generated.CreateAPIKeyParams{
+			Name: name, KeyHash: hash, Prefix: prefix, Scopes: string(scopes),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return full
+	}
+
+	writeKey := createKey(t, "writer", "imports:write")
+	readKey := createKey(t, "reader", "imports:read")
+	for _, tt := range []struct {
+		name string
+		key  string
+		want int
+	}{
+		{name: "exact write allowed", key: writeKey, want: http.StatusNoContent},
+		{name: "read denied", key: readKey, want: http.StatusForbidden},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/imports", nil)
+			req.Header.Set("Authorization", "Bearer "+tt.key)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("status=%d want %d", rec.Code, tt.want)
+			}
+		})
+	}
+
+	if got := requiredScope(http.MethodGet, "/api/imports/preview"); got != "imports:write" {
+		t.Fatalf("GET imports scope=%q want imports:write", got)
+	}
+}

@@ -100,6 +100,44 @@ func (q *Queries) LatestStatuses(ctx context.Context) ([]LatestStatusesRow, erro
 	return items, nil
 }
 
+const latestTwoCheckResults = `-- name: LatestTwoCheckResults :many
+SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message FROM check_results
+WHERE monitor_id = ?
+ORDER BY checked_at DESC, id DESC
+LIMIT 2
+`
+
+func (q *Queries) LatestTwoCheckResults(ctx context.Context, monitorID int64) ([]CheckResult, error) {
+	rows, err := q.db.QueryContext(ctx, latestTwoCheckResults, monitorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CheckResult
+	for rows.Next() {
+		var i CheckResult
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.CheckedAt,
+			&i.Status,
+			&i.ResponseTimeMs,
+			&i.StatusCode,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCheckResults = `-- name: ListCheckResults :many
 SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message FROM check_results
 WHERE monitor_id = ? AND checked_at >= ?

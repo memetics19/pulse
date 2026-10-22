@@ -4,6 +4,7 @@
 package netguard
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -55,35 +56,14 @@ func DialControl(allowPrivate bool) func(network, address string, c syscall.RawC
 // ValidateTarget rejects a non-HTTP monitor target (used by tcp/ssl/dns/ping)
 // that points at a forbidden IP. The target may be "host:port" (tcp/ssl) or a
 // bare host (dns/ping). Like ValidateURL it is a best-effort API-time check:
-// DialControl remains the enforcement point at connect time, and an
-// unresolvable host is not rejected (it may be temporarily down).
+// DialControl and ResolveAllowedIP remain the enforcement points at check
+// time, and an unresolvable host is not rejected (it may be temporarily down).
 func ValidateTarget(target string, allowPrivate bool) error {
-	if allowPrivate {
-		return nil
-	}
 	host := target
 	if h, _, err := net.SplitHostPort(target); err == nil {
 		host = h
 	}
-	if host == "" {
-		return fmt.Errorf("target has no host")
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		if IsForbiddenIP(ip) {
-			return fmt.Errorf("%s is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", ip)
-		}
-		return nil
-	}
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return nil // unresolvable now; DialControl guards the actual connection
-	}
-	for _, ip := range ips {
-		if IsForbiddenIP(ip) {
-			return fmt.Errorf("%s resolves to private or internal address %s (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", host, ip)
-		}
-	}
-	return nil
+	return ValidateHost(host, allowPrivate)
 }
 
 // ValidateURL rejects monitor URLs that are malformed, use a non-HTTP scheme,
@@ -103,6 +83,16 @@ func ValidateURL(raw string, allowPrivate bool) error {
 	if host == "" {
 		return fmt.Errorf("url has no host")
 	}
+	return ValidateHost(host, allowPrivate)
+}
+
+// ValidateHost performs a best-effort validation of a direct connection host.
+// A lookup failure is allowed because the target may be temporarily
+// unresolvable; runtime checks must call ResolveAllowedIP or DialControl.
+func ValidateHost(host string, allowPrivate bool) error {
+	if host == "" {
+		return fmt.Errorf("target has no host")
+	}
 	if allowPrivate {
 		return nil
 	}
@@ -122,4 +112,40 @@ func ValidateURL(raw string, allowPrivate bool) error {
 		}
 	}
 	return nil
+}
+
+// ValidateHostPort validates the host portion of a direct TCP/TLS target.
+func ValidateHostPort(target string, allowPrivate bool) error {
+	host, port, err := net.SplitHostPort(target)
+	if err != nil || host == "" || port == "" {
+		return fmt.Errorf("target must be host:port")
+	}
+	return ValidateHost(host, allowPrivate)
+}
+
+// ResolveAllowedIP resolves host for a runtime check, rejects forbidden
+// results, and returns one concrete IP so callers do not re-resolve the name.
+func ResolveAllowedIP(ctx context.Context, host string, allowPrivate bool) (net.IP, error) {
+	if host == "" {
+		return nil, fmt.Errorf("target has no host")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !allowPrivate && IsForbiddenIP(ip) {
+			return nil, fmt.Errorf("%s is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", ip)
+		}
+		return ip, nil
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("resolve %s: no addresses", host)
+	}
+	for _, ip := range ips {
+		if !allowPrivate && IsForbiddenIP(ip) {
+			return nil, fmt.Errorf("%s resolves to private or internal address %s (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)", host, ip)
+		}
+	}
+	return ips[0], nil
 }

@@ -25,7 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.3"
+          go-version: "1.27.3"
+      # The workspace has three modules; each one is vetted, tested and gated.
       - name: go vet
         run: cd ${{ matrix.module }} && go vet ./...
       - name: gofmt
@@ -58,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.3"
+          go-version: "1.27.3"
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
@@ -71,9 +72,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
+      - name: install deps
+        run: cd ui && NEXT_PUBLIC_API_URL="" npm ci
+      - name: lint
+        run: cd ui && npm run lint
       - name: build static export
-        run: cd ui && NEXT_PUBLIC_API_URL="" npm ci && NEXT_PUBLIC_API_URL="" npm run build
+        run: cd ui && NEXT_PUBLIC_API_URL="" npm run build
 
   docker:
     name: Docker image builds

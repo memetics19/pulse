@@ -11,6 +11,12 @@ LIMIT ?;
 -- name: LatestCheckResult :one
 SELECT * FROM check_results WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1;
 
+-- name: LatestTwoCheckResults :many
+SELECT * FROM check_results
+WHERE monitor_id = ?
+ORDER BY checked_at DESC, id DESC
+LIMIT 2;
+
 -- name: UptimePercent :one
 -- COUNT(*)=0 (no checks in range) would divide by zero → NULL; COALESCE keeps
 -- the result a non-null REAL (100.0 = "no failures observed") so it scans into

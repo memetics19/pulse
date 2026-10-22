@@ -4,11 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/checker"
+	"github.com/memetics19/pulse/api/internal/worker/checkresult"
 	"github.com/memetics19/pulse/api/internal/worker/incident"
 	"github.com/memetics19/pulse/api/store"
 	"github.com/memetics19/pulse/api/testutil"
@@ -37,7 +39,7 @@ func TestCheckPersistsAndAppliesThresholds(t *testing.T) {
 
 	det := incident.NewDetector(q)
 	disp := alerter.NewDispatcher(q, "", "")
-	s := New(db, disp, det, true)
+	s := New(db, checkresult.New(db, det, disp), true)
 
 	var beats int
 	s.SetHeartbeat(func() { beats++ })
@@ -56,6 +58,9 @@ func TestCheckPersistsAndAppliesThresholds(t *testing.T) {
 	s.check(ctx, mon)
 	if got := latestStatus(t, q, mon.ID); got != "degraded" {
 		t.Fatalf("status = %q, want degraded", got)
+	}
+	if cr, err := q.LatestCheckResult(ctx, mon.ID); err != nil || !strings.Contains(cr.ErrorMessage, "exceeded degraded threshold") {
+		t.Fatalf("degraded override should record a reason, got %q (err %v)", cr.ErrorMessage, err)
 	}
 
 	// up but very slow -> down, and two downs open an incident (exercises the
@@ -92,7 +97,7 @@ func TestCheckHTTPTypeBuildsChecker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(db, nil, nil, true)
+	s := New(db, checkresult.New(db, nil, nil), true)
 	// "http" must be registered for the dispatch to proceed; check() then builds
 	// a per-monitor HTTP checker itself.
 	s.SetChecker("http", &stubChecker{res: checker.Result{Status: "down"}})
@@ -107,7 +112,7 @@ func TestStartLaunchesAndReconciles(t *testing.T) {
 	q := store.New(db)
 	makeMonitor(t, q)
 
-	s := New(db, nil, nil, true)
+	s := New(db, checkresult.New(db, nil, nil), true)
 	s.SetChecker("tcp", &stubChecker{res: checker.Result{Status: "up", ResponseTimeMs: 10, CheckedAt: time.Now()}})
 
 	var beats int
@@ -124,8 +129,12 @@ func TestStartLaunchesAndReconciles(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// Start with a nil DB scheduler -> error path.
-	if err := New(nil, nil, nil, true).Start(context.Background()); err == nil {
+	if err := New(nil, nil, true).Start(context.Background()); err == nil {
 		t.Fatal("Start with no DB should error")
+	}
+	// Start without a recorder -> error path.
+	if err := New(db, nil, true).Start(context.Background()); err == nil {
+		t.Fatal("Start with no recorder should error")
 	}
 }
 

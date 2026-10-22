@@ -42,7 +42,7 @@ func TestMonitorsGetUpdateDelete(t *testing.T) {
 		TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true, Source: "internal",
 	})
 	require.NoError(t, err)
-	h := handlers.NewMonitors(q, true)
+	h := handlers.NewMonitors(q, nil, true)
 	id := itoa(mon.ID)
 
 	assert.Equal(t, http.StatusOK, do(func(w http.ResponseWriter, r *http.Request) {

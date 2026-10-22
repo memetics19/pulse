@@ -27,3 +27,6 @@ DELETE FROM monitors WHERE id = ?;
 
 -- name: ListActiveMonitors :many
 SELECT * FROM monitors WHERE is_active = 1;
+
+-- name: GetMonitorBySourceExternalID :one
+SELECT * FROM monitors WHERE source = ? AND external_id = ?;

@@ -32,3 +32,16 @@ func TestTCPChecker_Down(t *testing.T) {
 	result := c.Check(context.Background(), "127.0.0.1:19998", 1)
 	assert.Equal(t, "down", result.Status)
 }
+
+func TestTCPChecker_BlocksPrivateTargetAtDialTime(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	result := checker.NewTCP(false).Check(context.Background(), ln.Addr().String(), 1)
+
+	assert.Equal(t, "down", result.Status)
+	assert.Contains(t, result.ErrorMessage, "private or internal")
+}

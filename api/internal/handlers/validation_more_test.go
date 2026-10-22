@@ -20,7 +20,7 @@ func decode(t *testing.T, rr *httptest.ResponseRecorder, v any) {
 
 func TestMonitorValidation(t *testing.T) {
 	q := newQ(t)
-	h := handlers.NewMonitors(q, false) // allowPrivate=false -> SSRF guard active
+	h := handlers.NewMonitors(q, nil, false) // allowPrivate=false -> SSRF guard active
 
 	cases := []struct {
 		name string

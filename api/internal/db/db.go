@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"embed"
 	"errors"
+	"net/url"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/memetics19/pulse/api/internal/keyauth"
 	_ "modernc.org/sqlite"
@@ -16,13 +17,15 @@ import (
 var migrations embed.FS
 
 func Open(sqlitePath string) (*sql.DB, error) {
-	// modernc.org/sqlite uses the _pragma=name(value) DSN syntax (not the
+	// sqliteDSN uses modernc.org/sqlite's _pragma=name(value) syntax (not the
 	// mattn-style _journal_mode=WAL). WAL lets readers run concurrently with the
 	// single writer; busy_timeout makes a contending connection wait rather than
 	// fail with "database is locked". foreign_keys is per-connection, so it must
 	// be in the DSN to apply to every pooled connection.
-	dsn := "file:" + sqlitePath +
-		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	dsn, err := sqliteDSN(sqlitePath)
+	if err != nil {
+		return nil, err
+	}
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -31,8 +34,13 @@ func Open(sqlitePath string) (*sql.DB, error) {
 	// page, API GETs) no longer serialize behind the writer as they did under the
 	// old single-connection pool. SQLite still allows only one writer at a time,
 	// which busy_timeout serializes safely.
-	conn.SetMaxOpenConns(8)
-	conn.SetMaxIdleConns(8)
+	// An in-memory database exists per connection, so it must stay on one.
+	if isMemoryDB(sqlitePath) {
+		conn.SetMaxOpenConns(1)
+	} else {
+		conn.SetMaxOpenConns(8)
+		conn.SetMaxIdleConns(8)
+	}
 	if err := runMigrations(conn); err != nil {
 		conn.Close()
 		return nil, err
@@ -42,6 +50,33 @@ func Open(sqlitePath string) (*sql.DB, error) {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func isMemoryDB(sqlitePath string) bool {
+	return sqlitePath == ":memory:" || strings.Contains(sqlitePath, "mode=memory")
+}
+
+func sqliteDSN(sqlitePath string) (string, error) {
+	var parsed *url.URL
+	var err error
+	switch {
+	case sqlitePath == ":memory:":
+		parsed = &url.URL{Scheme: "file", Opaque: ":memory:"}
+	case strings.HasPrefix(sqlitePath, "file:"):
+		parsed, err = url.Parse(sqlitePath)
+		if err != nil {
+			return "", err
+		}
+	default:
+		parsed = &url.URL{Scheme: "file", Path: sqlitePath}
+	}
+
+	options := parsed.Query()
+	options.Add("_pragma", "journal_mode(WAL)")
+	options.Add("_pragma", "foreign_keys(1)")
+	options.Add("_pragma", "busy_timeout(5000)")
+	parsed.RawQuery = options.Encode()
+	return parsed.String(), nil
 }
 
 // hashLegacyAgentTokens hashes agent tokens that were stored in plaintext
@@ -90,7 +125,7 @@ func runMigrations(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	driver, err := sqlite.WithInstance(conn, &sqlite.Config{})
+	driver, err := newMigrationDriver(conn)
 	if err != nil {
 		return err
 	}

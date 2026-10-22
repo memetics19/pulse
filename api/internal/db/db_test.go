@@ -1,11 +1,13 @@
 package db_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
 	"github.com/memetics19/pulse/api/internal/db"
 	"github.com/memetics19/pulse/api/internal/keyauth"
+	"github.com/memetics19/pulse/api/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,6 +76,30 @@ func TestOpen(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Ping())
 	conn.Close()
+}
+
+func TestImportFoundationSchema(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `INSERT INTO monitors
+		(name, url, type, interval_seconds, timeout_seconds, source, external_id)
+		VALUES ('Push', '', 'push', 60, 10, 'uptime-kuma', 'monitor:7')`)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, `INSERT INTO monitors
+		(name, url, type, interval_seconds, timeout_seconds, source, external_id)
+		VALUES ('Duplicate', '', 'push', 60, 10, 'uptime-kuma', 'monitor:7')`)
+	require.Error(t, err)
+
+	_, err = db.ExecContext(ctx, `INSERT INTO import_runs
+		(source, source_version, input_hash, idempotency_key, conflict_policy, status)
+		VALUES ('uptime-kuma', '1.23.16', 'hash', 'request-1', 'fail', 'running')`)
+	require.NoError(t, err)
+
+	var foreignKeys int
+	require.NoError(t, db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&foreignKeys))
+	require.Equal(t, 1, foreignKeys)
 }
 
 func TestLegacyAgentTokensHashedOnOpen(t *testing.T) {

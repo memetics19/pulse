@@ -38,14 +38,18 @@ Generated files under `api/internal/generated/` are changed only by `make sqlc`.
 ### Task 1: Add import identity, run, and push-token schema
 
 **Files:**
+- Create: `api/internal/db/migration_driver.go`
 - Create: `api/internal/db/migrations/9_import_foundation.up.sql`
 - Create: `api/internal/db/migrations/9_import_foundation.down.sql`
 - Create: `api/internal/db/queries/imports.sql`
 - Create: `api/internal/db/queries/push_tokens.sql`
+- Modify: `api/internal/db/db.go`
 - Modify: `api/internal/db/queries/groups.sql`
 - Modify: `api/internal/db/queries/monitors.sql`
 - Modify: `api/store/store.go`
 - Test: `api/internal/db/db_test.go`
+- Test: `api/internal/db/db_dsn_test.go`
+- Test: `api/internal/db/import_foundation_migration_test.go`
 - Generate: `api/internal/generated/*.sql.go`, `api/internal/generated/models.go`
 
 - [ ] **Step 1: Write the migration test first**
@@ -86,12 +90,34 @@ Run: `cd api && go test ./internal/db -run TestImportFoundationSchema -count=1`
 
 Expected: FAIL because `push` violates the current monitor type check or `import_runs` does not exist.
 
+Add real migration-driver tests starting from embedded migration version 8.
+Cover an early duplicate-monitor identity failure, a late restored-group
+identity failure, down/re-up, and deleted/highest-ID AUTOINCREMENT cases. Failed
+migration 9 attempts must leave the legacy schema and data intact with foreign
+keys enabled, and retry must succeed after the collision is corrected.
+
 - [ ] **Step 3: Create migration 9**
+
+Normal migrations retain golang-migrate's SQLite transaction wrapping. A
+focused driver wrapper recognizes the marker below, disables foreign keys on a
+dedicated connection before beginning its own SQL transaction, rolls back any
+failure, and restores foreign keys on every path.
 
 Create `api/internal/db/migrations/9_import_foundation.up.sql` with the complete migration below:
 
 ```sql
-PRAGMA foreign_keys = OFF;
+-- pulse:foreign-keys-off-transaction
+
+CREATE UNIQUE INDEX idx_import_foundation_monitors_preflight
+ON monitors(source, external_id) WHERE external_id <> '';
+
+CREATE TABLE import_foundation_sequence_state (
+    table_name TEXT PRIMARY KEY,
+    seq        INTEGER NOT NULL
+);
+
+INSERT INTO import_foundation_sequence_state (table_name, seq)
+SELECT name, seq FROM sqlite_sequence WHERE name = 'monitors';
 
 CREATE TABLE monitors_new (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,14 +146,44 @@ FROM monitors;
 DROP TABLE monitors;
 ALTER TABLE monitors_new RENAME TO monitors;
 
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitors'))
+WHERE name = 'monitors'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitors');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitors', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitors'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitors');
+
+DROP TABLE import_foundation_sequence_state;
+
+CREATE TABLE IF NOT EXISTS import_foundation_group_identities (
+    group_id    INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL
+);
+
 ALTER TABLE monitor_groups ADD COLUMN source TEXT NOT NULL DEFAULT 'internal';
 ALTER TABLE monitor_groups ADD COLUMN external_id TEXT NOT NULL DEFAULT '';
+
+UPDATE monitor_groups
+SET source = (SELECT source FROM import_foundation_group_identities
+              WHERE group_id = monitor_groups.id),
+    external_id = (SELECT external_id FROM import_foundation_group_identities
+                   WHERE group_id = monitor_groups.id)
+WHERE id IN (SELECT group_id FROM import_foundation_group_identities);
 
 CREATE UNIQUE INDEX idx_monitors_source_external
 ON monitors(source, external_id) WHERE external_id <> '';
 
 CREATE UNIQUE INDEX idx_groups_source_external
 ON monitor_groups(source, external_id) WHERE external_id <> '';
+
+DROP TABLE import_foundation_group_identities;
 
 CREATE TABLE push_monitor_tokens (
     monitor_id  INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
@@ -151,44 +207,127 @@ CREATE TABLE import_runs (
     created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at       DATETIME
 );
-
-PRAGMA foreign_keys = ON;
 ```
 
 Create the down migration to remove imported-only state safely before restoring the original monitor constraint:
 
 ```sql
-DELETE FROM monitors WHERE type = 'push';
-DROP TABLE IF EXISTS push_monitor_tokens;
-DROP TABLE IF EXISTS import_runs;
-DROP INDEX IF EXISTS idx_monitors_source_external;
-DROP INDEX IF EXISTS idx_groups_source_external;
+-- pulse:foreign-keys-off-transaction
 
-PRAGMA foreign_keys = OFF;
-CREATE TABLE monitors_old (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    url TEXT NOT NULL DEFAULT '',
-    type TEXT NOT NULL CHECK(type IN ('http','tcp','ping','dns','ssl','infra')),
-    interval_seconds INTEGER NOT NULL DEFAULT 60,
-    timeout_seconds INTEGER NOT NULL DEFAULT 10,
-    expected_status INTEGER,
-    keyword_check TEXT NOT NULL DEFAULT '',
-    degraded_threshold_ms INTEGER NOT NULL DEFAULT 500,
-    down_threshold_ms INTEGER NOT NULL DEFAULT 2000,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    group_id INTEGER REFERENCES monitor_groups(id) ON DELETE SET NULL,
-    source TEXT NOT NULL DEFAULT 'internal',
-    external_id TEXT NOT NULL DEFAULT '',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE import_foundation_sequence_state (
+    table_name TEXT PRIMARY KEY,
+    seq        INTEGER NOT NULL
 );
-INSERT INTO monitors_old SELECT * FROM monitors;
+
+INSERT INTO import_foundation_sequence_state (table_name, seq)
+SELECT name, seq
+FROM sqlite_sequence
+WHERE name IN ('monitors', 'monitor_groups');
+
+CREATE TABLE import_foundation_group_identities (
+    group_id    INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL
+);
+
+INSERT INTO import_foundation_group_identities (group_id, source, external_id)
+SELECT id, source, external_id
+FROM monitor_groups
+WHERE source <> 'internal' OR external_id <> '';
+
+CREATE TABLE monitor_groups_old (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    description   TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO monitor_groups_old (id, name, display_order, description, created_at)
+SELECT id, name, display_order, description, created_at
+FROM monitor_groups;
+
+CREATE TABLE monitors_old (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                  TEXT NOT NULL,
+    url                   TEXT NOT NULL DEFAULT '',
+    type                  TEXT NOT NULL CHECK(type IN ('http','tcp','ping','dns','ssl','infra')),
+    interval_seconds      INTEGER NOT NULL DEFAULT 60,
+    timeout_seconds       INTEGER NOT NULL DEFAULT 10,
+    expected_status       INTEGER,
+    keyword_check         TEXT NOT NULL DEFAULT '',
+    degraded_threshold_ms INTEGER NOT NULL DEFAULT 500,
+    down_threshold_ms     INTEGER NOT NULL DEFAULT 2000,
+    is_active             INTEGER NOT NULL DEFAULT 1,
+    group_id              INTEGER REFERENCES monitor_groups(id) ON DELETE SET NULL,
+    source                TEXT NOT NULL DEFAULT 'internal',
+    external_id           TEXT NOT NULL DEFAULT '',
+    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO monitors_old
+SELECT id, name, url, CASE type WHEN 'https' THEN 'http' ELSE type END,
+       interval_seconds, timeout_seconds, expected_status, keyword_check,
+       degraded_threshold_ms, down_threshold_ms, is_active, group_id, source,
+       external_id, created_at
+FROM monitors
+WHERE type <> 'push';
+
+DELETE FROM check_results
+WHERE monitor_id IN (SELECT id FROM monitors WHERE type = 'push');
+DELETE FROM ssl_checks
+WHERE monitor_id IN (SELECT id FROM monitors WHERE type = 'push');
+DELETE FROM notifications
+WHERE monitor_id IN (SELECT id FROM monitors WHERE type = 'push');
+
+DROP TABLE push_monitor_tokens;
+DROP TABLE import_runs;
+DROP INDEX idx_monitors_source_external;
+DROP INDEX idx_groups_source_external;
+
 DROP TABLE monitors;
 ALTER TABLE monitors_old RENAME TO monitors;
-PRAGMA foreign_keys = ON;
+DROP TABLE monitor_groups;
+ALTER TABLE monitor_groups_old RENAME TO monitor_groups;
+
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitors'))
+WHERE name = 'monitors'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitors');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitors', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitors'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitors');
+
+UPDATE sqlite_sequence
+SET seq = MAX(seq, (SELECT seq FROM import_foundation_sequence_state
+                    WHERE table_name = 'monitor_groups'))
+WHERE name = 'monitor_groups'
+  AND EXISTS (SELECT 1 FROM import_foundation_sequence_state
+              WHERE table_name = 'monitor_groups');
+
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'monitor_groups', seq
+FROM import_foundation_sequence_state
+WHERE table_name = 'monitor_groups'
+  AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'monitor_groups');
+
+DROP TABLE import_foundation_sequence_state;
 ```
 
-SQLite cannot remove the two new `monitor_groups` columns in-place; the down migration intentionally leaves them as backward-compatible columns.
+SQLite lacks conditional `ADD COLUMN`. The downgrade rebuilds the legacy
+five-column `monitor_groups` table and preserves non-default identities in
+`import_foundation_group_identities`; migration 9 re-up restores the identities
+before recreating the unique index, then removes the sidecar.
+
+The marker keeps foreign-key-off table rebuilds atomic without disabling normal
+transaction wrapping for migrations 1-8. The initial monitor identity index is
+a collision preflight before destructive DDL, and the sequence state table
+prevents rebuilt AUTOINCREMENT tables from reusing deleted or push-only IDs.
 
 - [ ] **Step 4: Add source-identity and lifecycle queries**
 
@@ -436,6 +575,34 @@ git add api/internal/monitorvalidation api/internal/worker/checkresult api/inter
 git commit -m "refactor(worker): share monitor validation and result recording"
 ```
 
+#### Task 2 safety amendment (approved 2026-07-15)
+
+The shared recorder is a transaction boundary, not just a code-extraction
+boundary. Before Task 3, Task 2 also includes:
+
+- migration 10, with a partial unique index on unresolved automatic monitor
+  incidents identified by `source = 'monitor'` and `external_id = monitor ID`;
+- an atomic `CreateAutoIncident` query whose uniqueness conflict means another
+  process created the incident and alert first;
+- one SQLite transaction covering result insertion, latest-two evaluation,
+  active incident and maintenance reads, and automatic incident insertion;
+- alert dispatch only after commit, with transport failures retaining the
+  dispatcher's non-retryable log-only behavior;
+- validation of recorder status and receipt timestamp, and safe handler
+  defaults of 500 ms degraded / 2000 ms down when omitted;
+- a startup error when a database-backed scheduler lacks a recorder;
+- private-network validation for TCP, SSL, and ping targets, plus runtime
+  `DialControl` enforcement for TCP/TLS and concrete allowed-IP selection for
+  ping; and
+- a check-result index on `(monitor_id, checked_at DESC, id DESC)` matching the
+  latest-two query.
+
+Tests use two independent SQLite connections/recorders to prove one incident
+and one alert, triggers/table removal to prove rollback on DB-side detection
+failures, and CRUD/checker coverage for private-target rejection. SQLite uses a
+bounded busy timeout so concurrent accepted heartbeats wait for the writer
+rather than failing immediately with `SQLITE_BUSY`.
+
 ### Task 3: Add secure push creation, heartbeat, and rotation APIs
 
 **Files:**
@@ -498,9 +665,11 @@ require.Equal(t, "up", latest.Status)
 require.Equal(t, int64(12), *latest.ResponseTimeMs)
 ```
 
-Add cases for POST, invalid status, ping above `100000000000`, message over 1024
-bytes, unknown token, inactive monitor, non-push monitor, and rotation invalidating
-the old hash.
+Add cases for POST, `degraded`/other invalid status, ping above
+`100000000000`, empty ping, message over 1024 bytes, default `OK` message,
+unknown token, inactive monitor, non-push monitor, and rotation invalidating the
+old hash. Create a minimal push monitor, replay its exact returned `push_url`,
+and assert it records `up` with no response time.
 
 Add a request-logging test that captures the logger output for
 `/api/push/abcdefghij?msg=secret` and asserts neither `abcdefghij` nor `secret`
@@ -516,10 +685,13 @@ func (h *Push) Rotate(w http.ResponseWriter, r *http.Request)
 ```
 
 Heartbeat validates before lookup, hashes the path token, loads token and monitor,
-requires `monitor.Type == "push" && monitor.IsActive`, parses status/message/ping,
-and records through `checkresult.Recorder`. Every credential lookup failure returns
-the same `404 {"error":"push monitor not found"}`. Rotation verifies monitor type,
-generates and upserts a token, and returns `{token,push_url}` once.
+requires `monitor.Type == "push" && monitor.IsActive`, accepts only `up` or
+`down` (default `up`), defaults omitted/empty `msg` to `OK`, and treats
+omitted/empty `ping` as no response time before parsing a non-empty bounded
+value. It records through `checkresult.Recorder`. Every credential lookup
+failure returns the same `404 {"error":"push monitor not found"}`. Rotation
+verifies monitor type, generates and upserts a token, and returns
+`{token,push_url}` once.
 
 - [ ] **Step 6: Generate a token on normal push-monitor creation**
 
@@ -539,7 +711,10 @@ type monitorCreateResponse struct {
 For `type == "push"`, begin a transaction, create the monitor through
 `generated.New(tx)`, generate/upsert the credential, commit, and return the
 one-time values. Roll back on every error. For every other type, keep the JSON
-monitor fields unchanged and omit push fields.
+monitor fields unchanged and omit push fields. Decode `is_active` through a
+pointer so omission uses the schema-compatible active default while explicit
+false remains inactive. Reject updates that change a monitor type to or from
+`push`; delete/recreate is required to cross the credential boundary.
 
 Build `push_url` from the request's scheme/host, honoring a single
 `X-Forwarded-Proto` value of `http` or `https`, and append
@@ -690,6 +865,8 @@ In the monitor page:
 - add `push` to `TYPES`;
 - hide URL, timeout, latency, and keyword controls for push;
 - relabel interval as `Expected heartbeat every (s)`;
+- do not offer type conversion to or from `push` while editing; require
+  delete/recreate for that transition;
 - capture `push_url` from create/rotate responses in one-time reveal state;
 - show `Rotate token` only while editing a push monitor; and
 - require a confirmation click before rotation.

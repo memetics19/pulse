@@ -39,7 +39,7 @@ func TestMonitorUpdateValidation(t *testing.T) {
 		TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true, Source: "internal",
 	})
 	require.NoError(t, err)
-	h := handlers.NewMonitors(q, false) // guard on
+	h := handlers.NewMonitors(q, nil, false) // guard on
 	// Update to a private URL is rejected.
 	rr := do(func(w http.ResponseWriter, r *http.Request) {
 		h.Update(w, withChiID(r, "id", itoa(mon.ID)))

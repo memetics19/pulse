@@ -10,7 +10,7 @@ import (
 )
 
 const createGroup = `-- name: CreateGroup :one
-INSERT INTO monitor_groups (name, display_order, description) VALUES (?, ?, ?) RETURNING id, name, display_order, description, created_at
+INSERT INTO monitor_groups (name, display_order, description) VALUES (?, ?, ?) RETURNING id, name, display_order, description, created_at, source, external_id
 `
 
 type CreateGroupParams struct {
@@ -28,6 +28,42 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Monit
 		&i.DisplayOrder,
 		&i.Description,
 		&i.CreatedAt,
+		&i.Source,
+		&i.ExternalID,
+	)
+	return i, err
+}
+
+const createImportedGroup = `-- name: CreateImportedGroup :one
+INSERT INTO monitor_groups (name, display_order, description, source, external_id)
+VALUES (?, ?, ?, ?, ?) RETURNING id, name, display_order, description, created_at, source, external_id
+`
+
+type CreateImportedGroupParams struct {
+	Name         string `json:"name"`
+	DisplayOrder int64  `json:"display_order"`
+	Description  string `json:"description"`
+	Source       string `json:"source"`
+	ExternalID   string `json:"external_id"`
+}
+
+func (q *Queries) CreateImportedGroup(ctx context.Context, arg CreateImportedGroupParams) (MonitorGroup, error) {
+	row := q.db.QueryRowContext(ctx, createImportedGroup,
+		arg.Name,
+		arg.DisplayOrder,
+		arg.Description,
+		arg.Source,
+		arg.ExternalID,
+	)
+	var i MonitorGroup
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.DisplayOrder,
+		&i.Description,
+		&i.CreatedAt,
+		&i.Source,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -42,7 +78,7 @@ func (q *Queries) DeleteGroup(ctx context.Context, id int64) error {
 }
 
 const getGroup = `-- name: GetGroup :one
-SELECT id, name, display_order, description, created_at FROM monitor_groups WHERE id = ?
+SELECT id, name, display_order, description, created_at, source, external_id FROM monitor_groups WHERE id = ?
 `
 
 func (q *Queries) GetGroup(ctx context.Context, id int64) (MonitorGroup, error) {
@@ -54,12 +90,38 @@ func (q *Queries) GetGroup(ctx context.Context, id int64) (MonitorGroup, error) 
 		&i.DisplayOrder,
 		&i.Description,
 		&i.CreatedAt,
+		&i.Source,
+		&i.ExternalID,
+	)
+	return i, err
+}
+
+const getGroupBySourceExternalID = `-- name: GetGroupBySourceExternalID :one
+SELECT id, name, display_order, description, created_at, source, external_id FROM monitor_groups WHERE source = ? AND external_id = ?
+`
+
+type GetGroupBySourceExternalIDParams struct {
+	Source     string `json:"source"`
+	ExternalID string `json:"external_id"`
+}
+
+func (q *Queries) GetGroupBySourceExternalID(ctx context.Context, arg GetGroupBySourceExternalIDParams) (MonitorGroup, error) {
+	row := q.db.QueryRowContext(ctx, getGroupBySourceExternalID, arg.Source, arg.ExternalID)
+	var i MonitorGroup
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.DisplayOrder,
+		&i.Description,
+		&i.CreatedAt,
+		&i.Source,
+		&i.ExternalID,
 	)
 	return i, err
 }
 
 const listGroups = `-- name: ListGroups :many
-SELECT id, name, display_order, description, created_at FROM monitor_groups ORDER BY display_order ASC, id ASC
+SELECT id, name, display_order, description, created_at, source, external_id FROM monitor_groups ORDER BY display_order ASC, id ASC
 `
 
 func (q *Queries) ListGroups(ctx context.Context) ([]MonitorGroup, error) {
@@ -77,6 +139,8 @@ func (q *Queries) ListGroups(ctx context.Context) ([]MonitorGroup, error) {
 			&i.DisplayOrder,
 			&i.Description,
 			&i.CreatedAt,
+			&i.Source,
+			&i.ExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -92,7 +156,7 @@ func (q *Queries) ListGroups(ctx context.Context) ([]MonitorGroup, error) {
 }
 
 const updateGroup = `-- name: UpdateGroup :one
-UPDATE monitor_groups SET name = ?, display_order = ?, description = ? WHERE id = ? RETURNING id, name, display_order, description, created_at
+UPDATE monitor_groups SET name = ?, display_order = ?, description = ? WHERE id = ? RETURNING id, name, display_order, description, created_at, source, external_id
 `
 
 type UpdateGroupParams struct {
@@ -116,6 +180,40 @@ func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) (Monit
 		&i.DisplayOrder,
 		&i.Description,
 		&i.CreatedAt,
+		&i.Source,
+		&i.ExternalID,
+	)
+	return i, err
+}
+
+const updateImportedGroup = `-- name: UpdateImportedGroup :one
+UPDATE monitor_groups SET name = ?, display_order = ?, description = ?
+WHERE id = ? RETURNING id, name, display_order, description, created_at, source, external_id
+`
+
+type UpdateImportedGroupParams struct {
+	Name         string `json:"name"`
+	DisplayOrder int64  `json:"display_order"`
+	Description  string `json:"description"`
+	ID           int64  `json:"id"`
+}
+
+func (q *Queries) UpdateImportedGroup(ctx context.Context, arg UpdateImportedGroupParams) (MonitorGroup, error) {
+	row := q.db.QueryRowContext(ctx, updateImportedGroup,
+		arg.Name,
+		arg.DisplayOrder,
+		arg.Description,
+		arg.ID,
+	)
+	var i MonitorGroup
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.DisplayOrder,
+		&i.Description,
+		&i.CreatedAt,
+		&i.Source,
+		&i.ExternalID,
 	)
 	return i, err
 }

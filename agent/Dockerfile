@@ -1,7 +1,7 @@
 # Build context: pulse/ (workspace root).
 # The agent is a standalone Go module; build it with the workspace disabled
 # (GOWORK=off) so it does not need the api/ or cli/ modules to be present.
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 ENV GOTOOLCHAIN=auto GOWORK=off CGO_ENABLED=0
 WORKDIR /src
 
@@ -13,9 +13,11 @@ RUN go mod download
 COPY agent/ ./
 
 # Build the static binary.
-RUN go build -o /pulse-agent ./cmd/agent
+RUN go build -trimpath -ldflags "-s -w" -o /pulse-agent ./cmd/agent
 
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates \
+ && adduser -D -u 10001 agent
 COPY --from=builder /pulse-agent /usr/local/bin/pulse-agent
+USER agent
 ENTRYPOINT ["/usr/local/bin/pulse-agent"]

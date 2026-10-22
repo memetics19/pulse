@@ -14,3 +14,10 @@ func TestPingChecker_Localhost(t *testing.T) {
 	// Ping may require privileges — accept either up or down (not a panic)
 	assert.Contains(t, []string{"up", "down"}, result.Status)
 }
+
+func TestPingChecker_BlocksPrivateTargetBeforePinging(t *testing.T) {
+	result := checker.NewPing(false).Check(context.Background(), "127.0.0.1", 1)
+
+	assert.Equal(t, "down", result.Status)
+	assert.Contains(t, result.ErrorMessage, "private or internal")
+}

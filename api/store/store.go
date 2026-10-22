@@ -25,7 +25,7 @@ type DBTX = generated.DBTX
 type Queries = generated.Queries
 
 // New creates a new Queries instance backed by the given database connection.
-func New(db *sql.DB) *Queries {
+func New(db DBTX) *Queries {
 	return generated.New(db)
 }
 
@@ -51,6 +51,9 @@ type InfraMetrics1m = generated.InfraMetrics1m
 // InfraMetricsRaw is the public alias for the generated infra_metrics_raw row type.
 type InfraMetricsRaw = generated.InfraMetricsRaw
 
+// ImportRun is the public alias for the generated import_runs row type.
+type ImportRun = generated.ImportRun
+
 // Monitor is the public alias for the generated monitors row type.
 type Monitor = generated.Monitor
 
@@ -59,6 +62,9 @@ type MonitorGroup = generated.MonitorGroup
 
 // Notification is the public alias for the generated notifications row type.
 type Notification = generated.Notification
+
+// PushMonitorToken is the public alias for the generated push_monitor_tokens row type.
+type PushMonitorToken = generated.PushMonitorToken
 
 // SslCheck is the public alias for the generated ssl_checks row type.
 type SslCheck = generated.SslCheck
@@ -93,8 +99,30 @@ type UptimePercentParams = generated.UptimePercentParams
 // CreateGroupParams is the public alias for the generated parameter type.
 type CreateGroupParams = generated.CreateGroupParams
 
+// CreateImportedGroupParams is the public alias for the generated parameter type.
+type CreateImportedGroupParams = generated.CreateImportedGroupParams
+
+// GetGroupBySourceExternalIDParams is the public alias for the generated parameter type.
+type GetGroupBySourceExternalIDParams = generated.GetGroupBySourceExternalIDParams
+
 // UpdateGroupParams is the public alias for the generated parameter type.
 type UpdateGroupParams = generated.UpdateGroupParams
+
+// UpdateImportedGroupParams is the public alias for the generated parameter type.
+type UpdateImportedGroupParams = generated.UpdateImportedGroupParams
+
+// ---------------------------------------------------------------------------
+// Param types — imports
+// ---------------------------------------------------------------------------
+
+// CompleteImportRunParams is the public alias for the generated parameter type.
+type CompleteImportRunParams = generated.CompleteImportRunParams
+
+// CreateImportRunParams is the public alias for the generated parameter type.
+type CreateImportRunParams = generated.CreateImportRunParams
+
+// FailImportRunParams is the public alias for the generated parameter type.
+type FailImportRunParams = generated.FailImportRunParams
 
 // ---------------------------------------------------------------------------
 // Param types — incident_updates
@@ -109,6 +137,9 @@ type CreateIncidentUpdateParams = generated.CreateIncidentUpdateParams
 
 // CreateIncidentParams is the public alias for the generated parameter type.
 type CreateIncidentParams = generated.CreateIncidentParams
+
+// CreateAutoIncidentParams is the parameter type for atomic monitor incidents.
+type CreateAutoIncidentParams = generated.CreateAutoIncidentParams
 
 // UpdateIncidentRCAParams is the public alias for the generated parameter type.
 type UpdateIncidentRCAParams = generated.UpdateIncidentRCAParams
@@ -139,6 +170,9 @@ type Upsert1mMetricParams = generated.Upsert1mMetricParams
 // CreateMonitorParams is the public alias for the generated parameter type.
 type CreateMonitorParams = generated.CreateMonitorParams
 
+// GetMonitorBySourceExternalIDParams is the public alias for the generated parameter type.
+type GetMonitorBySourceExternalIDParams = generated.GetMonitorBySourceExternalIDParams
+
 // UpdateMonitorParams is the public alias for the generated parameter type.
 type UpdateMonitorParams = generated.UpdateMonitorParams
 
@@ -151,6 +185,13 @@ type CreateNotificationParams = generated.CreateNotificationParams
 
 // UpdateNotificationParams is the public alias for the generated parameter type.
 type UpdateNotificationParams = generated.UpdateNotificationParams
+
+// ---------------------------------------------------------------------------
+// Param types — push tokens
+// ---------------------------------------------------------------------------
+
+// UpsertPushTokenParams is the public alias for the generated parameter type.
+type UpsertPushTokenParams = generated.UpsertPushTokenParams
 
 // ---------------------------------------------------------------------------
 // Param types — theme

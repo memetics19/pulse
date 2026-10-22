@@ -106,6 +106,38 @@ func (q *Queries) GetMonitor(ctx context.Context, id int64) (Monitor, error) {
 	return i, err
 }
 
+const getMonitorBySourceExternalID = `-- name: GetMonitorBySourceExternalID :one
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors WHERE source = ? AND external_id = ?
+`
+
+type GetMonitorBySourceExternalIDParams struct {
+	Source     string `json:"source"`
+	ExternalID string `json:"external_id"`
+}
+
+func (q *Queries) GetMonitorBySourceExternalID(ctx context.Context, arg GetMonitorBySourceExternalIDParams) (Monitor, error) {
+	row := q.db.QueryRowContext(ctx, getMonitorBySourceExternalID, arg.Source, arg.ExternalID)
+	var i Monitor
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Url,
+		&i.Type,
+		&i.IntervalSeconds,
+		&i.TimeoutSeconds,
+		&i.ExpectedStatus,
+		&i.KeywordCheck,
+		&i.DegradedThresholdMs,
+		&i.DownThresholdMs,
+		&i.IsActive,
+		&i.GroupID,
+		&i.Source,
+		&i.ExternalID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listActiveMonitors = `-- name: ListActiveMonitors :many
 SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors WHERE is_active = 1
 `

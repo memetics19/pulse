@@ -4,7 +4,7 @@
 [![api coverage](https://img.shields.io/badge/api%20coverage-%E2%89%A585%25-green)](.github/workflows/ci.yml)
 [![cli coverage](https://img.shields.io/badge/cli%20coverage-%E2%89%A590%25-brightgreen)](.github/workflows/ci.yml)
 [![agent coverage](https://img.shields.io/badge/agent%20coverage-%E2%89%A585%25-green)](.github/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](go.work)
+[![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.work)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 
 > Coverage is enforced in CI per module (excluding generated code); the badges
