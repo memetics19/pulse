@@ -1,6 +1,6 @@
 module github.com/memetics19/pulse/agent
 
-go 1.25.3
+go 1.27.3
 
 require (
 	github.com/shirou/gopsutil/v3 v3.24.5
@@ -17,6 +17,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
