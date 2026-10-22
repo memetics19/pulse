@@ -41,8 +41,8 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/feed.xml", pub.Feed)
 	r.Handle("/static/*", web.StaticHandler())
 
-	r.Get("/healthz", handlers.Health)
-	r.Get("/api/status", handlers.NewStatus(q).Get)
+	r.Get("/healthz", handlers.NewHealth(a).Get)
+	r.Get("/api/status", pub.StatusJSON)
 	r.Post("/api/ingest/metrics", handlers.NewIngest(q).PostMetrics)
 	pushH := handlers.NewPush(q, &livePushRecorder{app: a, cfg: cfg})
 	r.Get("/api/push/{token}", pushH.Heartbeat)
@@ -53,7 +53,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/api/monitors/{monitorID}/checks/uptime", handlers.NewCheckResults(q).Uptime)
 	r.Get("/api/incidents/{incidentID}/updates", handlers.NewIncidentUpdates(q).List)
 
-	authH := handlers.NewAuth(q, cfg.SecureCookies)
+	authH := handlers.NewAuth(q, cfg.SecureCookies, cfg.TrustedProxies...)
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/logout", authH.Logout)
 	r.Get("/api/auth/status", authH.Status)

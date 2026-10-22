@@ -12,6 +12,9 @@ import (
 
 type sslChecker struct{ allowPrivate bool }
 
+// NewSSL creates a TLS certificate-expiry checker. allowPrivate permits targets
+// on private/internal networks; otherwise the dial is rejected by netguard on
+// the resolved IP (SSRF guard).
 func NewSSL(allowPrivate bool) Checker { return &sslChecker{allowPrivate: allowPrivate} }
 
 func (c *sslChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {

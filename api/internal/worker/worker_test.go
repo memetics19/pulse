@@ -14,7 +14,7 @@ func TestRunStartsAndStopsCleanly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, db, config.Config{}) }()
+	go func() { done <- Run(ctx, db, config.Config{}, nil) }()
 
 	time.Sleep(100 * time.Millisecond) // let it spin up with zero monitors
 	cancel()

@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -35,6 +36,33 @@ func renderMarkdown(s string) template.HTML {
 	e = mdCode.ReplaceAllString(e, "<code>$1</code>")
 	e = strings.ReplaceAll(e, "\n", "<br>")
 	return template.HTML(e)
+}
+
+// sanitizeCSS neutralizes a stored-XSS vector in user-supplied theme CSS. The
+// value is injected inside a <style> block, so a "</style><script>…" payload
+// would break out and execute on the public origin. CSS has no legitimate use
+// for angle brackets, so stripping them blocks the breakout while leaving all
+// normal styling intact.
+func sanitizeCSS(s string) template.CSS {
+	s = strings.ReplaceAll(s, "<", "")
+	s = strings.ReplaceAll(s, ">", "")
+	return template.CSS(s)
+}
+
+// safeURL permits only http(s) and root-relative URLs for user-supplied theme
+// links/logos, blocking javascript:, data:, and other script-bearing schemes
+// that template.URL would otherwise pass through unescaped.
+func safeURL(raw string) template.URL {
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "/") {
+		return template.URL(raw)
+	}
+	if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		return template.URL(raw)
+	}
+	return ""
 }
 
 //go:embed templates/status.html
@@ -220,14 +248,14 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 		HidePoweredBy: cfg.Footer.HidePoweredBy,
 	}
 	for _, l := range cfg.Footer.Links {
-		footer.Links = append(footer.Links, footerLinkVM{Label: l.Label, URL: template.URL(l.URL)})
+		footer.Links = append(footer.Links, footerLinkVM{Label: l.Label, URL: safeURL(l.URL)})
 	}
 
 	vm := statusVM{
 		SiteName:    cfg.SiteName,
-		LogoURL:     template.URL(cfg.LogoURL),
-		FaviconURL:  template.URL(cfg.FaviconURL),
-		CustomCSS:   template.CSS(snap.Theme.CustomCss),
+		LogoURL:     safeURL(cfg.LogoURL),
+		FaviconURL:  safeURL(cfg.FaviconURL),
+		CustomCSS:   sanitizeCSS(snap.Theme.CustomCss),
 		ThemePreset: snap.Theme.Preset,
 		Footer:      footer,
 	}
@@ -273,7 +301,11 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 		pageMonitors[m.ID] = true
 		st := snap.Statuses[m.ID]
 		if st == "" {
-			st = statusUp
+			// No check recorded yet (e.g. infra monitors, which have no checker,
+			// or any monitor before its first check). Show "no data" rather than
+			// falsely reporting "up" — an unchecked/offline target must never read
+			// as operational.
+			st = "nodata"
 		}
 		switch st {
 		case statusDown:
@@ -375,12 +407,8 @@ func (p *Public) monitorSeries(ctx context.Context, monitorID int64, since, now 
 		window = time.Hour
 	}
 	rank := map[string]int{"up": 1, "degraded": 2, "down": 3}
-	var sumMs, nMs, upCount, total int64
+	var sumMs, nMs int64
 	for _, cr := range rows {
-		total++
-		if cr.Status == "up" {
-			upCount++
-		}
 		if cr.ResponseTimeMs != nil {
 			sumMs += *cr.ResponseTimeMs
 			nMs++
@@ -407,9 +435,14 @@ func (p *Public) monitorSeries(ctx context.Context, monitorID int64, since, now 
 		bars[i] = barVM{Class: s, Title: label + " · " + barStatusText(s)}
 	}
 
+	// Uptime is computed by a time-windowed SQL aggregate over the whole range,
+	// not from the (row-limited) rows above, so long ranges aren't truncated to
+	// the newest 10k checks. "—" is kept for a monitor with no checks yet.
 	uptime := "—"
-	if total > 0 {
-		uptime = fmt.Sprintf("%.2f%%", float64(upCount)/float64(total)*100)
+	if len(rows) > 0 {
+		if pct, err := p.q.UptimePercent(ctx, generated.UptimePercentParams{MonitorID: monitorID, CheckedAt: since}); err == nil {
+			uptime = fmt.Sprintf("%.2f%%", pct)
+		}
 	}
 	avg := "—"
 	if nMs > 0 {

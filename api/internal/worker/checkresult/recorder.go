@@ -40,12 +40,17 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		return fmt.Errorf("checked_at is required")
 	}
 
+	// Apply latency thresholds on top of the reported status. Record why the
+	// status was overridden so the UI shows a reason rather than a bare "down".
 	status := in.Status
+	errMsg := in.ErrorMessage
 	if status == "up" && in.ResponseTimeMs != nil {
 		if *in.ResponseTimeMs > monitor.DownThresholdMs {
 			status = "down"
+			errMsg = fmt.Sprintf("response time %dms exceeded down threshold %dms", *in.ResponseTimeMs, monitor.DownThresholdMs)
 		} else if *in.ResponseTimeMs > monitor.DegradedThresholdMs {
 			status = "degraded"
+			errMsg = fmt.Sprintf("response time %dms exceeded degraded threshold %dms", *in.ResponseTimeMs, monitor.DegradedThresholdMs)
 		}
 	}
 
@@ -62,7 +67,7 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		Status:         status,
 		ResponseTimeMs: in.ResponseTimeMs,
 		StatusCode:     in.StatusCode,
-		ErrorMessage:   in.ErrorMessage,
+		ErrorMessage:   errMsg,
 	})
 	if err != nil {
 		return fmt.Errorf("insert check result for monitor %d: %w", monitor.ID, err)

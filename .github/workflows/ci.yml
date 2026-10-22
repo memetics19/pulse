@@ -7,37 +7,64 @@ on:
 
 jobs:
   go:
-    name: Go (vet, fmt, test)
+    name: Go (vet, fmt, test, coverage)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Thresholds exclude generated (sqlc) code. api and agent sit at 85:
+          # both have unreachable defensive branches (OS syscall / filesystem /
+          # process-bootstrap error paths) that can't be exercised in tests.
+          - module: api
+            threshold: 85
+          - module: cli
+            threshold: 90
+          - module: agent
+            threshold: 85
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27.3"
-      # The workspace has three modules. Checking only api left agent and cli
-      # entirely unverified in CI.
+      # The workspace has three modules; each one is vetted, tested and gated.
       - name: go vet
-        run: |
-          set -euo pipefail
-          for module in api agent cli; do
-            echo "::group::vet $module"
-            (cd "$module" && go vet ./...)
-            echo "::endgroup::"
-          done
+        run: cd ${{ matrix.module }} && go vet ./...
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l $(find api agent cli -name '*.go' -not -path '*/internal/generated/*'))"
+          unformatted="$(gofmt -l $(find ${{ matrix.module }} -name '*.go' -not -path '*/internal/generated/*'))"
           if [ -n "$unformatted" ]; then
             echo "These files are not gofmt-formatted:"; echo "$unformatted"; exit 1
           fi
-      - name: go test
-        run: |
-          set -euo pipefail
-          for module in api agent cli; do
-            echo "::group::test $module"
-            (cd "$module" && go test ./... -count=1)
-            echo "::endgroup::"
-          done
+      - name: go test (race)
+        run: cd ${{ matrix.module }} && go test ./... -race -count=1
+      - name: coverage gate (excluding generated)
+        run: bash scripts/coverage.sh ${{ matrix.module }} ${{ matrix.threshold }}
+      - name: upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.module }}
+          path: |
+            ${{ matrix.module }}/coverage.html
+            ${{ matrix.module }}/coverage-badge.json
+          if-no-files-found: ignore
+
+  lint:
+    name: golangci-lint (advisory)
+    runs-on: ubuntu-latest
+    # Advisory for now: reports issues without blocking. Flip to blocking once
+    # the existing findings are cleared.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+      # golangci-lint must be built with a Go at least as new as go.mod's (1.27).
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9.3.0
+        with:
+          version: v2.15.0
+          working-directory: api
 
   ui:
     name: Admin UI build
@@ -57,6 +84,13 @@ jobs:
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - file: api/Dockerfile
+            tag: pulse:ci
+          - file: agent/Dockerfile
+            tag: pulse-agent:ci
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -64,6 +98,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: api/Dockerfile
+          file: ${{ matrix.file }}
           push: false
-          tags: pulse:ci
+          tags: ${{ matrix.tag }}

@@ -10,6 +10,11 @@ import (
 
 type pingChecker struct{ allowPrivate bool }
 
+// NewPing creates an ICMP/UDP ping checker. allowPrivate permits targets on
+// private/internal networks. pro-bing has no dial hook, so unless allowPrivate
+// is set the target is resolved once here, rejected if any address is internal
+// (SSRF guard), and the pinger is handed that concrete IP so it cannot
+// re-resolve the name to a private address.
 func NewPing(allowPrivate bool) Checker { return &pingChecker{allowPrivate: allowPrivate} }
 
 func (c *pingChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {
