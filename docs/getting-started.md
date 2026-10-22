@@ -13,13 +13,13 @@ To serve a public page over HTTPS, you also need a reverse proxy in front of Pul
 
 ## Quick start with the installer
 
-Pulse is a single static binary with the admin UI embedded — no Docker,
-Node.js, or database server required. The installer detects your OS and CPU
+Pulse is a single static binary with the admin UI embedded. It needs no Docker,
+Node.js or database server. The installer detects your OS and CPU
 architecture (Linux and macOS, amd64 and arm64), downloads the matching binary,
 verifies its checksum, and installs it to `/usr/local/bin`. It asks a few
 questions (port, data directory, HTTPS, whether monitors may target LAN
 addresses). On Linux with systemd it also installs an auto-starting `pulse`
-service; on macOS it prints the command to run.
+service. On macOS it prints the command to run.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/install.sh | sh

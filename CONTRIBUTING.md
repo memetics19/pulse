@@ -5,7 +5,7 @@ Thanks for contributing. This guide covers the dev setup, the commit policy
 
 ## Development setup
 
-Pulse is a Go workspace (`go.work`) with three modules — `api`, `agent`, `cli` —
+Pulse is a Go workspace (`go.work`) with three modules, `api`, `agent` and `cli`,
 plus a Next.js admin UI in `ui/`.
 
 ```sh
@@ -50,26 +50,27 @@ The repo ships hooks under `.githooks/` that enforce the rules above:
 git config core.hooksPath .githooks
 ```
 
-`commit-msg` rejects AI/co-author trailers; `pre-commit` rejects un-`gofmt`'d Go.
-(`--no-verify` bypasses git hooks — don't.)
+The `commit-msg` hook rejects AI and co-author trailers, and `pre-commit` rejects Go
+that is not `gofmt`'d. Don't skip them with `--no-verify`.
 
 ## Pull requests
 
 1. Push your branch and open a PR against `main`. The
-   [PR template](.github/PULL_REQUEST_TEMPLATE.md) loads automatically — fill in
+   [PR template](.github/PULL_REQUEST_TEMPLATE.md) loads automatically. Fill in
    every section (summary, type, changes, breaking changes, test plan, checklist).
 2. CI must be green (vet, gofmt, tests, UI build) before review.
-3. Keep PRs focused; one logical change per commit even if the PR bundles several.
-4. **Merge-commit** the PR (don't squash) so each Conventional Commit reaches
-   `main` — release-please relies on them for the changelog and the version bump.
-   If you must squash, the PR title itself must be a Conventional Commit and carry
-   any `BREAKING CHANGE:` footer.
+3. Keep PRs focused, with one logical change per commit.
+4. PRs are **squash-merged**, so the PR title becomes the commit on `main` that
+   release-please reads for the changelog and the version. The title must be a
+   Conventional Commit (CI checks it). Mark a breaking change with `!` in the
+   title, for example `feat!: ...`, and describe it in a `BREAKING CHANGE:` footer
+   in the squash message.
 
 ## Releases & deployment
 
 Versioning is automated with
 [release-please](https://github.com/googleapis/release-please): merging
-Conventional Commits to `main` maintains a release PR; merging that PR tags
+Conventional Commits to `main` keeps a release PR up to date. Merging that PR tags
 `vX.Y.Z`, publishes a GitHub release + `CHANGELOG.md`, and builds and pushes the
 image to GHCR. The homelab picks the new image up by itself. See
 [docs/deployment.md](docs/deployment.md) for the full flow.
