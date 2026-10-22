@@ -17,6 +17,11 @@ import (
 var migrations embed.FS
 
 func Open(sqlitePath string) (*sql.DB, error) {
+	// sqliteDSN uses modernc.org/sqlite's _pragma=name(value) syntax (not the
+	// mattn-style _journal_mode=WAL). WAL lets readers run concurrently with the
+	// single writer; busy_timeout makes a contending connection wait rather than
+	// fail with "database is locked". foreign_keys is per-connection, so it must
+	// be in the DSN to apply to every pooled connection.
 	dsn, err := sqliteDSN(sqlitePath)
 	if err != nil {
 		return nil, err
@@ -25,7 +30,17 @@ func Open(sqlitePath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.SetMaxOpenConns(1)
+	// With WAL + busy_timeout, multiple connections are safe: readers (status
+	// page, API GETs) no longer serialize behind the writer as they did under the
+	// old single-connection pool. SQLite still allows only one writer at a time,
+	// which busy_timeout serializes safely.
+	// An in-memory database exists per connection, so it must stay on one.
+	if isMemoryDB(sqlitePath) {
+		conn.SetMaxOpenConns(1)
+	} else {
+		conn.SetMaxOpenConns(8)
+		conn.SetMaxIdleConns(8)
+	}
 	if err := runMigrations(conn); err != nil {
 		conn.Close()
 		return nil, err
@@ -35,6 +50,10 @@ func Open(sqlitePath string) (*sql.DB, error) {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func isMemoryDB(sqlitePath string) bool {
+	return sqlitePath == ":memory:" || strings.Contains(sqlitePath, "mode=memory")
 }
 
 func sqliteDSN(sqlitePath string) (string, error) {

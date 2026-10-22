@@ -16,6 +16,14 @@ const config = [
       // desync from the prerendered HTML. Warn rather than block; revisiting
       // these belongs in its own change, not a dependency bump.
       'react-hooks/set-state-in-effect': 'warn',
+      // Native dialogs are inaccessible and block the event loop. Use the
+      // shared useConfirm() dialog (components/ConfirmDialog) instead.
+      'no-alert': 'error',
+      'no-restricted-globals': [
+        'error',
+        { name: 'confirm', message: 'Use the shared useConfirm() dialog instead of the native confirm().' },
+        { name: 'prompt', message: 'Use an in-app form/dialog instead of the native prompt().' },
+      ],
     },
   },
 ]

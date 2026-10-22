@@ -1,12 +1,25 @@
 name: Release
 
+# Builds and publishes a release: the image to GHCR (ghcr.io/memetics19/pulse:X.Y.Z, X.Y and
+# latest) and the binaries with SHA256SUMS on the GitHub Release. release-please calls it
+# with the tag it created. A vX.Y.Z tag pushed by hand runs it too. The homelab picks the
+# new image up by itself, so nothing here reaches into it.
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag, for example v2.0.0
+        type: string
+        required: true
 
 permissions:
   contents: write
   packages: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   test:
@@ -14,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27.3"
@@ -34,21 +49,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.PULSE_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ env.TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }}
             type=raw,value=latest
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -69,6 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -110,36 +129,9 @@ jobs:
       - name: Attach to GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
           files: |
             dist-bin/pulse_*
             dist-bin/pulse-agent_*
             dist-bin/pulse-cli_*
             dist-bin/SHA256SUMS
-
-  # Deploy runs only after the image is built and pushed, so the homelab never
-  # pulls a tag that does not exist yet. The GitHub release + changelog are
-  # created by release-please (see release-please.yml), not here.
-  deploy:
-    name: Deploy to homelab
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Join Netbird VPN
-        # Managed Netbird cloud — uses the default management URL, no self-hosted URL needed.
-        run: |
-          curl -fsSL https://pkgs.netbird.io/install.sh | sudo sh
-          sudo netbird up --setup-key "${{ secrets.NETBIRD_SETUP_KEY }}"
-          sudo netbird status
-      - name: Pull and restart on host over SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          script: |
-            cd ~/pulse
-            git fetch --tags && git pull --ff-only
-            docker compose -f deploy/docker-compose.homelab.yml pull
-            docker compose -f deploy/docker-compose.homelab.yml up -d
-            docker image prune -f

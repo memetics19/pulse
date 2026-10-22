@@ -102,6 +102,17 @@ func TestValidate(t *testing.T) {
 			want:         "127.0.0.1 is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)",
 		},
 		{
+			name:         "dns rejects a name resolving to a private address",
+			input:        monitorvalidation.Input{URL: "127.0.0.1", Type: "dns", IntervalSeconds: 60},
+			allowPrivate: false,
+			want:         "127.0.0.1 is a private or internal address (set PULSE_ALLOW_PRIVATE_MONITORS=true to allow)",
+		},
+		{
+			name:         "dns permits a private name when configured",
+			input:        monitorvalidation.Input{URL: "127.0.0.1", Type: "dns", IntervalSeconds: 60},
+			allowPrivate: true,
+		},
+		{
 			name:         "ping permits a private target when configured",
 			input:        monitorvalidation.Input{URL: "127.0.0.1", Type: "ping", IntervalSeconds: 60},
 			allowPrivate: true,

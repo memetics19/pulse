@@ -93,3 +93,26 @@ func TestCreateMonitor_Non201(t *testing.T) {
 	err := c.CreateMonitor(uptimekuma.PulseMonitor{Name: "X", Type: "http"}, 1)
 	assert.ErrorContains(t, err, "unexpected status 400")
 }
+
+func TestClient_NetworkError(t *testing.T) {
+	// Nothing listening on this address -> httpClient.Do returns an error.
+	c := pulseclient.New("http://127.0.0.1:1", "t")
+	if _, err := c.CreateGroup("g"); err == nil {
+		t.Error("CreateGroup should error when server unreachable")
+	}
+	if err := c.CreateMonitor(uptimekuma.PulseMonitor{Name: "m", URL: "http://x", Type: "http"}, 1); err == nil {
+		t.Error("CreateMonitor should error when server unreachable")
+	}
+}
+
+func TestCreateGroup_DecodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+	c := pulseclient.New(srv.URL, "t")
+	if _, err := c.CreateGroup("g"); err == nil {
+		t.Error("CreateGroup should error on undecodable 201 body")
+	}
+}

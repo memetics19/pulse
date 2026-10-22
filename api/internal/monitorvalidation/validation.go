@@ -54,7 +54,10 @@ func Validate(in Input, allowPrivate bool) string {
 			return err.Error()
 		}
 	}
-	if in.Type == "ping" {
+	// DNS monitors only resolve the name, but a name that resolves to an
+	// internal address would make Pulse an oracle for internal DNS, so the same
+	// host guard applies (the DNS checker re-checks the answer at run time).
+	if in.Type == "ping" || in.Type == "dns" {
 		if err := netguard.ValidateHost(in.URL, allowPrivate); err != nil {
 			return err.Error()
 		}

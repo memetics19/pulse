@@ -70,6 +70,6 @@ git config core.hooksPath .githooks
 Versioning is automated with
 [release-please](https://github.com/googleapis/release-please): merging
 Conventional Commits to `main` maintains a release PR; merging that PR tags
-`vX.Y.Z`, publishes a GitHub release + `CHANGELOG.md`, builds and pushes the
-image to GHCR, and deploys to the homelab. See
-[docs/deployment.md](docs/deployment.md) for the full flow and required secrets.
+`vX.Y.Z`, publishes a GitHub release + `CHANGELOG.md`, and builds and pushes the
+image to GHCR. The homelab picks the new image up by itself. See
+[docs/deployment.md](docs/deployment.md) for the full flow.

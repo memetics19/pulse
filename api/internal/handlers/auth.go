@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -11,13 +12,14 @@ import (
 )
 
 type Auth struct {
-	q       *generated.Queries
-	secure  bool
-	limiter *loginLimiter
+	q              *generated.Queries
+	secure         bool
+	limiter        *loginLimiter
+	trustedProxies []*net.IPNet
 }
 
-func NewAuth(q *generated.Queries, secure bool) *Auth {
-	return &Auth{q: q, secure: secure, limiter: newLoginLimiter()}
+func NewAuth(q *generated.Queries, secure bool, trustedProxies ...*net.IPNet) *Auth {
+	return &Auth{q: q, secure: secure, limiter: newLoginLimiter(), trustedProxies: trustedProxies}
 }
 
 // dummyPasswordHash is verified against when the username does not exist, so
@@ -111,7 +113,7 @@ func (a *Auth) Setup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
-	if !a.limiter.allow(clientIP(r)) {
+	if !a.limiter.allow(clientIP(r, a.trustedProxies)) {
 		http.Error(w, "too many attempts", http.StatusTooManyRequests)
 		return
 	}

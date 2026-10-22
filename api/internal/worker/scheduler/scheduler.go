@@ -51,9 +51,14 @@ type Scheduler struct {
 	clock        clock
 	checkers     map[string]checker.Checker
 	allowPrivate bool
+	beat         func() // called after each successful reconcile (worker liveness)
 	mu           sync.RWMutex
 	running      map[int64]runningMonitor
 }
+
+// SetHeartbeat registers a callback invoked after every successful reconcile,
+// letting /healthz observe that the worker loop is alive.
+func (s *Scheduler) SetHeartbeat(beat func()) { s.beat = beat }
 
 // runningMonitor tracks a live per-monitor goroutine. fingerprint captures
 // the check-relevant fields so reconcile can restart the goroutine when the
@@ -300,6 +305,9 @@ func (s *Scheduler) reconcile(ctx context.Context) error {
 			delete(s.running, id)
 			log.Printf("scheduler: stopped monitor %d (deleted or deactivated)", id)
 		}
+	}
+	if s.beat != nil {
+		s.beat()
 	}
 	return nil
 }

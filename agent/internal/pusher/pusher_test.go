@@ -73,3 +73,10 @@ func TestPush_ReturnsErrorWhenServerUnreachable(t *testing.T) {
 	err := p.Push(context.Background(), collector.Metrics{})
 	require.Error(t, err)
 }
+
+func TestPush_ErrorOnBadURL(t *testing.T) {
+	p := pusher.New("http://[::1]:namedport", "tok") // invalid port -> NewRequest fails
+	if err := p.Push(context.Background(), collector.Metrics{}); err == nil {
+		t.Fatal("expected error for malformed server URL")
+	}
+}

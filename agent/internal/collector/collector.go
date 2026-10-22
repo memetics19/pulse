@@ -36,6 +36,10 @@ func New() *Collector {
 // CPU measurement blocks for 500 ms (it needs two samples to calculate %).
 // Network values are the delta (bytes since the previous Snapshot call).
 // On the very first call, net deltas are 0.
+// Note: the `if err != nil` branches below guard OS syscall failures
+// (gopsutil reading /proc, sysctl, etc.). They cannot be triggered from a unit
+// test on a healthy host, so they are intentionally left uncovered — this is
+// why the agent module's coverage gate is 85%, not 90%.
 func (c *Collector) Snapshot() (Metrics, error) {
 	cpuPcts, err := cpu.Percent(500*time.Millisecond, false)
 	if err != nil {
