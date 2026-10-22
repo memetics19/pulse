@@ -41,7 +41,7 @@ func parseAndRun(ctx context.Context, args []string, stderr io.Writer) int {
 
 	tok, err := resolveToken(*token, *tokenFile)
 	if err != nil {
-		fmt.Fprintln(stderr, "pulse-agent:", err)
+		_, _ = fmt.Fprintln(stderr, "pulse-agent:", err)
 		return 1
 	}
 	if *diagnose {
@@ -53,11 +53,11 @@ func parseAndRun(ctx context.Context, args []string, stderr io.Writer) int {
 		return diagnoseOnce(ctx, *server, tok, fs.NArg(), os.Stdout, stderr)
 	}
 	if *server == "" || tok == "" {
-		fmt.Fprintln(stderr, "pulse-agent: --server and a token (PULSE_AGENT_TOKEN, --token-file, or --token) are required")
+		_, _ = fmt.Fprintln(stderr, "pulse-agent: --server and a token (PULSE_AGENT_TOKEN, --token-file, or --token) are required")
 		return 1
 	}
 	if *interval < 1 {
-		fmt.Fprintln(stderr, "pulse-agent: --interval must be >= 1")
+		_, _ = fmt.Fprintln(stderr, "pulse-agent: --interval must be >= 1")
 		return 1
 	}
 
@@ -140,7 +140,7 @@ const commandTimeout = 10 * time.Second
 // to stdout, which is the only mode available when Pulse itself is unreachable.
 func diagnoseOnce(ctx context.Context, server, token string, nargs int, stdout, stderr io.Writer) int {
 	if err := validateDiagnoseFlags(server, token, nargs); err != nil {
-		fmt.Fprintln(stderr, "pulse-agent:", err)
+		_, _ = fmt.Fprintln(stderr, "pulse-agent:", err)
 		return 1
 	}
 
@@ -153,7 +153,7 @@ func diagnoseOnce(ctx context.Context, server, token string, nargs int, stdout, 
 	// and a shared budget only let one slow section starve the others. Ctrl-C
 	// still aborts through ctx.
 	if err := runDiagnose(ctx, diagnostics.NewExecRunner(commandTimeout), p, stdout); err != nil {
-		fmt.Fprintln(stderr, "pulse-agent:", err)
+		_, _ = fmt.Fprintln(stderr, "pulse-agent:", err)
 		return 1
 	}
 	return 0

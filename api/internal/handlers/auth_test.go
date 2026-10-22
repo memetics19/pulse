@@ -25,7 +25,9 @@ func TestAuthSetupThenLoginThenStatus(t *testing.T) {
 		NeedsSetup    bool `json:"needs_setup"`
 		Authenticated bool `json:"authenticated"`
 	}
-	json.NewDecoder(rec.Body).Decode(&st)
+	if err := json.NewDecoder(rec.Body).Decode(&st); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if !st.NeedsSetup || st.Authenticated {
 		t.Fatalf("fresh DB: want needs_setup=true authenticated=false, got %+v", st)
 	}
@@ -86,7 +88,9 @@ func TestTwoFASetupEnableThenLoginEnforced(t *testing.T) {
 	var setupResp struct {
 		Secret string `json:"secret"`
 	}
-	json.NewDecoder(rec.Body).Decode(&setupResp)
+	if err := json.NewDecoder(rec.Body).Decode(&setupResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if setupResp.Secret == "" {
 		t.Fatal("2fa setup did not return a secret")
 	}
@@ -114,7 +118,9 @@ func TestTwoFASetupEnableThenLoginEnforced(t *testing.T) {
 	var needs struct {
 		Needs2FA bool `json:"needs_2fa"`
 	}
-	json.NewDecoder(rec.Body).Decode(&needs)
+	if err := json.NewDecoder(rec.Body).Decode(&needs); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if !needs.Needs2FA {
 		t.Fatal("login without code should report needs_2fa=true")
 	}

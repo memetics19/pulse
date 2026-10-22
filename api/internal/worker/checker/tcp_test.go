@@ -14,11 +14,11 @@ func TestTCPChecker_Up(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	go func() {
 		conn, _ := ln.Accept()
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 
@@ -38,7 +38,7 @@ func TestTCPChecker_BlocksPrivateTargetAtDialTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	result := checker.NewTCP(false).Check(context.Background(), ln.Addr().String(), 1)
 

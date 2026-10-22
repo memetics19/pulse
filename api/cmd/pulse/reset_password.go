@@ -35,7 +35,11 @@ func runResetPassword(args []string) {
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("db close: %v", err)
+		}
+	}()
 	if err := account.ResetPassword(context.Background(), generated.New(conn), *username, *password); err != nil {
 		log.Fatalf("reset-password: %v", err)
 	}

@@ -56,17 +56,21 @@ func TestStatusJSONScopesToPageGroups(t *testing.T) {
 	shown, _ := q.CreateGroup(ctx, generated.CreateGroupParams{Name: "shown"})
 	hidden, _ := q.CreateGroup(ctx, generated.CreateGroupParams{Name: "hidden"})
 	mk := func(name string, gid int64) {
-		q.CreateMonitor(ctx, generated.CreateMonitorParams{
+		if _, err := q.CreateMonitor(ctx, generated.CreateMonitorParams{
 			Name: name, Url: "http://example.com", Type: "http", IntervalSeconds: 60,
 			TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000,
 			IsActive: true, GroupID: &gid, Source: "internal",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mk("ShownMon", shown.ID)
 	mk("HiddenMon", hidden.ID)
 
 	page, _ := q.CreateStatusPage(ctx, generated.CreateStatusPageParams{Domain: "acme.com", Title: "Acme", Published: 1})
-	q.AddPageGroup(ctx, generated.AddPageGroupParams{StatusPageID: page.ID, GroupID: shown.ID})
+	if err := q.AddPageGroup(ctx, generated.AddPageGroupParams{StatusPageID: page.ID, GroupID: shown.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/status", nil)

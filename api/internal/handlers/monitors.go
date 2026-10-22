@@ -104,7 +104,7 @@ func (m *Monitors) List(w http.ResponseWriter, r *http.Request) {
 		monitors = []generated.Monitor{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(monitors)
+	encodeJSON(w, monitors)
 }
 
 func (m *Monitors) Get(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func (m *Monitors) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(monitor)
+	encodeJSON(w, monitor)
 }
 
 func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +160,7 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(monitor)
+	encodeJSON(w, monitor)
 }
 
 type monitorCreateResponse struct {
@@ -184,7 +184,9 @@ func (m *Monitors) createPush(w http.ResponseWriter, r *http.Request, params gen
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create monitor"})
 		return
 	}
-	defer tx.Rollback()
+	// Rollback is a no-op once Commit succeeds; on failure the response
+	// already reports the original error.
+	defer func() { _ = tx.Rollback() }()
 	q := generated.New(tx)
 	monitor, err := q.CreateMonitor(r.Context(), params)
 	if err != nil {
@@ -312,7 +314,7 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(monitor)
+	encodeJSON(w, monitor)
 }
 
 func (m *Monitors) Delete(w http.ResponseWriter, r *http.Request) {

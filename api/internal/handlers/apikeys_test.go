@@ -27,7 +27,9 @@ func TestAPIKeyCreateThenListHidesKey(t *testing.T) {
 		Prefix string   `json:"prefix"`
 		Scopes []string `json:"scopes"`
 	}
-	json.NewDecoder(rec.Body).Decode(&created)
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if !strings.HasPrefix(created.Key, "pulse_live_") {
 		t.Fatalf("missing full key: %q", created.Key)
 	}

@@ -55,7 +55,8 @@ func (c *Client) CreateGroup(name string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	// The body is only read, so a failed close loses nothing.
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		return 0, fmt.Errorf("unexpected status %d from POST /api/groups", resp.StatusCode)
@@ -117,7 +118,8 @@ func (c *Client) CreateMonitor(m uptimekuma.PulseMonitor, groupID int64) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	// Only the status code is used, so a failed close loses nothing.
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("unexpected status %d from POST /api/monitors (monitor: %s)", resp.StatusCode, m.Name)

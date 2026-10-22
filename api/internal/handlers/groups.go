@@ -28,7 +28,7 @@ func (g *Groups) List(w http.ResponseWriter, r *http.Request) {
 		groups = []generated.MonitorGroup{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(groups)
+	encodeJSON(w, groups)
 }
 
 func (g *Groups) Create(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +44,7 @@ func (g *Groups) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(group)
+	encodeJSON(w, group)
 }
 
 func (g *Groups) Update(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +66,7 @@ func (g *Groups) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(group)
+	encodeJSON(w, group)
 }
 
 func (g *Groups) Delete(w http.ResponseWriter, r *http.Request) {

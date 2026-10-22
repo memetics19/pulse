@@ -24,13 +24,13 @@ func TestCreateGroup_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":            float64(42),
 			"name":          "Imported",
 			"display_order": float64(0),
 			"description":   "",
 			"created_at":    "2026-06-04T00:00:00Z",
-		})
+		}))
 	}))
 	defer srv.Close()
 
@@ -67,7 +67,7 @@ func TestCreateMonitor_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(7), "name": "My API"})
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(7), "name": "My API"}))
 	}))
 	defer srv.Close()
 
@@ -108,7 +108,7 @@ func TestClient_NetworkError(t *testing.T) {
 func TestCreateGroup_DecodeError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
 	c := pulseclient.New(srv.URL, "t")

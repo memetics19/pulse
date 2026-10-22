@@ -26,7 +26,9 @@ func TestSetupCompleteErrors(t *testing.T) {
 	// sqlite_path whose parent is a file -> MkdirAll fails -> 400
 	dir := t.TempDir()
 	file := filepath.Join(dir, "afile")
-	os.WriteFile(file, []byte("x"), 0o600)
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	body := map[string]any{"username": "admin", "password": "s3cret-pass", "sqlite_path": filepath.Join(file, "db.sqlite")}
 	assert.Equal(t, http.StatusBadRequest, do(h.Complete, "POST", "/x", body).Code)
 

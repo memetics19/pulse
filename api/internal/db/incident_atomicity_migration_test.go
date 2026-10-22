@@ -34,7 +34,7 @@ func TestIncidentAtomicityMigration(t *testing.T) {
 
 	rows, err := db.QueryContext(ctx, `PRAGMA index_xinfo('idx_check_results_monitor_checked')`)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // read-only; rows.Err is checked below
 	type indexedColumn struct {
 		name string
 		desc int

@@ -26,6 +26,8 @@ func (c *tcpChecker) Check(ctx context.Context, target string, timeoutSec int64)
 	if err != nil {
 		return Result{Status: "down", ResponseTimeMs: elapsed, ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}
-	conn.Close()
+	// The connect itself is the check. Closing only releases the socket and
+	// cannot change the result.
+	_ = conn.Close()
 	return Result{Status: "up", ResponseTimeMs: elapsed, CheckedAt: time.Now()}
 }

@@ -16,7 +16,9 @@ func TestResolveToken(t *testing.T) {
 	t.Run("env wins over file and flag", func(t *testing.T) {
 		t.Setenv("PULSE_AGENT_TOKEN", "env-token")
 		f := filepath.Join(t.TempDir(), "tok")
-		os.WriteFile(f, []byte("file-token\n"), 0o600)
+		if err := os.WriteFile(f, []byte("file-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		got, err := resolveToken("flag-token", f)
 		if err != nil || got != "env-token" {
 			t.Fatalf("got %q, %v; want env-token", got, err)
@@ -26,7 +28,9 @@ func TestResolveToken(t *testing.T) {
 	t.Run("file wins over flag", func(t *testing.T) {
 		t.Setenv("PULSE_AGENT_TOKEN", "")
 		f := filepath.Join(t.TempDir(), "tok")
-		os.WriteFile(f, []byte("  file-token\n"), 0o600)
+		if err := os.WriteFile(f, []byte("  file-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		got, err := resolveToken("flag-token", f)
 		if err != nil || got != "file-token" {
 			t.Fatalf("got %q, %v; want file-token", got, err)

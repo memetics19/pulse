@@ -18,18 +18,22 @@ func TestPublicRendersNoDataAndResolvedIncident(t *testing.T) {
 
 	g, _ := q.CreateGroup(ctx, generated.CreateGroupParams{Name: "G"})
 	// A monitor with no check results -> "no data" bars / "—" uptime.
-	q.CreateMonitor(ctx, generated.CreateMonitorParams{
+	if _, err := q.CreateMonitor(ctx, generated.CreateMonitorParams{
 		Name: "Fresh", Url: "http://example.com", Type: "http", IntervalSeconds: 60,
 		TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000,
 		IsActive: true, GroupID: &g.ID, Source: "internal",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// A resolved incident -> PastIncidents branch.
 	rca := "root cause"
 	inc, _ := q.CreateIncident(ctx, generated.CreateIncidentParams{
 		Title: "Past outage", Severity: "minor", AffectedMonitorIds: "[]",
 		StartedAt: time.Now().Add(-time.Hour), Source: "internal",
 	})
-	q.UpdateIncidentStatus(ctx, generated.UpdateIncidentStatusParams{Status: "resolved", Rca: &rca, ID: inc.ID})
+	if _, err := q.UpdateIncidentStatus(ctx, generated.UpdateIncidentStatusParams{Status: "resolved", Rca: &rca, ID: inc.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := httptest.NewRecorder()
 	NewPublic(q).Get(rec, httptest.NewRequest(http.MethodGet, "/", nil))

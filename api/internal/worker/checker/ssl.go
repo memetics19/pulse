@@ -32,7 +32,8 @@ func (c *sslChecker) Check(ctx context.Context, target string, timeoutSec int64)
 	if err != nil {
 		return Result{Status: "down", ResponseTimeMs: elapsed, ErrorMessage: err.Error(), CheckedAt: time.Now()}
 	}
-	defer conn.Close()
+	// The handshake already happened; closing only releases the socket.
+	defer func() { _ = conn.Close() }()
 
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {

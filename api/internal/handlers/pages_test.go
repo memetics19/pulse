@@ -29,7 +29,9 @@ func TestPagesCreateList(t *testing.T) {
 		IsDefault bool    `json:"is_default"`
 		GroupIDs  []int64 `json:"group_ids"`
 	}
-	json.NewDecoder(rec.Body).Decode(&pages)
+	if err := json.NewDecoder(rec.Body).Decode(&pages); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if len(pages) < 2 {
 		t.Fatalf("want default + created, got %d", len(pages))
 	}

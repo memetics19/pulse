@@ -25,7 +25,9 @@ func TestRunResetPasswordHappyPath(t *testing.T) {
 	if _, err := q.CreateUser(context.Background(), generated.CreateUserParams{Username: "admin", PasswordHash: hash}); err != nil {
 		t.Fatal(err)
 	}
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Reset via the CLI entry point.
 	runResetPassword([]string{"--username", "admin", "--password", "brand-new-pass"})
@@ -35,7 +37,11 @@ func TestRunResetPasswordHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn2.Close()
+	t.Cleanup(func() {
+		if err := conn2.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 	u, err := generated.New(conn2).GetUserByUsername(context.Background(), "admin")
 	if err != nil {
 		t.Fatal(err)

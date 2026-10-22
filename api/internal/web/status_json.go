@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 
@@ -116,5 +117,8 @@ func (p *Public) StatusJSON(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		// Headers are already sent, so the client cannot be told. Log it.
+		log.Printf("web: write status JSON: %v", err)
+	}
 }

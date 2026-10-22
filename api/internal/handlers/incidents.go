@@ -57,7 +57,7 @@ func (h *Incidents) List(w http.ResponseWriter, r *http.Request) {
 		incidents = []generated.Incident{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(incidents)
+	encodeJSON(w, incidents)
 }
 
 func (h *Incidents) Create(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +87,7 @@ func (h *Incidents) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(incident)
+	encodeJSON(w, incident)
 }
 
 func (h *Incidents) UpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func (h *Incidents) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(incident)
+	encodeJSON(w, incident)
 }
 
 func (h *Incidents) Delete(w http.ResponseWriter, r *http.Request) {

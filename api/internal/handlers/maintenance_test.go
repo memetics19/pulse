@@ -30,7 +30,9 @@ func TestMaintenanceCreateListStartNow(t *testing.T) {
 		ID     int64  `json:"id"`
 		Status string `json:"status"`
 	}
-	json.NewDecoder(rec.Body).Decode(&created)
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if created.Status != "in_progress" {
 		t.Fatalf("start_now should be in_progress, got %q", created.Status)
 	}

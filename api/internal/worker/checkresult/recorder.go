@@ -58,7 +58,9 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 	if err != nil {
 		return fmt.Errorf("begin check result transaction: %w", err)
 	}
-	defer tx.Rollback()
+	// Rollback is a no-op once Commit succeeds; on failure the original
+	// error is the one returned.
+	defer func() { _ = tx.Rollback() }()
 	q := store.New(tx)
 
 	_, err = q.InsertCheckResult(ctx, store.InsertCheckResultParams{

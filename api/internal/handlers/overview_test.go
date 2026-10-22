@@ -21,7 +21,9 @@ func TestOverviewEmptyDB(t *testing.T) {
 	var o struct {
 		Overall string `json:"overall"`
 	}
-	json.NewDecoder(rec.Body).Decode(&o)
+	if err := json.NewDecoder(rec.Body).Decode(&o); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	if o.Overall != "operational" {
 		t.Fatalf("empty DB overall=%q want operational", o.Overall)
 	}
