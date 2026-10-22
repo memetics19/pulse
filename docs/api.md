@@ -20,6 +20,7 @@ Create API keys in the admin under API Keys. Each key is named and revocable. Th
 | `notifications:write` | Modify notification settings. |
 | `agents:read` | Read infra agents. |
 | `agents:write` | Manage infra agents. |
+| `diagnostics:read` | Read agent [diagnostic bundles](diagnostics.md). Separate from `agents:read` because bundles carry logs, process names, and paths. |
 | `theme:read` | Read theme settings. |
 | `theme:write` | Modify theme settings. |
 | `maintenance:read` | Read maintenance windows. |

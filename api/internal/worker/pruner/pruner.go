@@ -15,7 +15,8 @@ type Pruner struct {
 
 func New(q *store.Queries) *Pruner { return &Pruner{q: q} }
 
-// Run deletes check_results older than the configured retention period (default 90 days).
+// Run deletes check_results and diagnostic bundles older than the configured
+// retention period (default 90 days).
 func (p *Pruner) Run(ctx context.Context) error {
 	days := 90
 	if v, err := p.q.GetSetting(ctx, "retention_days"); err == nil {
@@ -26,6 +27,10 @@ func (p *Pruner) Run(ctx context.Context) error {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	if err := p.q.PruneCheckResults(ctx, cutoff); err != nil {
 		log.Printf("pruner: check_results: %v", err)
+		return err
+	}
+	if err := p.q.PruneAgentDiagnostics(ctx, cutoff); err != nil {
+		log.Printf("pruner: agent_diagnostics: %v", err)
 		return err
 	}
 	return nil

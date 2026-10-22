@@ -101,7 +101,7 @@ export default function SettingsPage() {
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Data retention</div>
           <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
-              Keep monitor history for
+              Keep monitor history and agent diagnostics for
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input

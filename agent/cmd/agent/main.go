@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/memetics19/pulse/agent/internal/collector"
+	"github.com/memetics19/pulse/agent/internal/diagnostics"
 	"github.com/memetics19/pulse/agent/internal/pusher"
 )
 
@@ -32,6 +33,8 @@ func parseAndRun(ctx context.Context, args []string, stderr io.Writer) int {
 	token := fs.String("token", "", "Bearer token (INSECURE: visible in ps/proc; prefer PULSE_AGENT_TOKEN or --token-file)")
 	tokenFile := fs.String("token-file", "", "File to read the bearer token from")
 	interval := fs.Int("interval", 30, "Push interval in seconds (default 30)")
+	diagnose := fs.Bool("diagnose", false,
+		"collect one diagnostic bundle, print it, and exit; also uploads it when --server and a token are set")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -40,6 +43,14 @@ func parseAndRun(ctx context.Context, args []string, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, "pulse-agent:", err)
 		return 1
+	}
+	if *diagnose {
+		// Local-only mode ignores a token from the environment: without --server
+		// there is nowhere to send it.
+		if *server == "" && *token == "" && *tokenFile == "" {
+			tok = ""
+		}
+		return diagnoseOnce(ctx, *server, tok, fs.NArg(), os.Stdout, stderr)
 	}
 	if *server == "" || tok == "" {
 		fmt.Fprintln(stderr, "pulse-agent: --server and a token (PULSE_AGENT_TOKEN, --token-file, or --token) are required")
@@ -118,4 +129,32 @@ func pushOnce(ctx context.Context, col *collector.Collector, psh *pusher.Pusher)
 	log.Printf("pushed: cpu=%.1f%% mem=%.1f%% disk=%.1f%% net_rx=%d net_tx=%d",
 		m.CpuPercent, m.MemPercent, m.DiskPercent, m.NetRxBytes, m.NetTxBytes)
 	return nil
+}
+
+// commandTimeout bounds each diagnostic command. A wedged host is exactly when
+// diagnostics matter, so no single command may hang the run.
+const commandTimeout = 10 * time.Second
+
+// diagnoseOnce performs a one-shot diagnostic collection and returns the exit
+// code. Uploading is optional: with no server configured the bundle still goes
+// to stdout, which is the only mode available when Pulse itself is unreachable.
+func diagnoseOnce(ctx context.Context, server, token string, nargs int, stdout, stderr io.Writer) int {
+	if err := validateDiagnoseFlags(server, token, nargs); err != nil {
+		fmt.Fprintln(stderr, "pulse-agent:", err)
+		return 1
+	}
+
+	var p diagnosticsPusher
+	if server != "" && token != "" {
+		p = pusher.New(server, token)
+	}
+
+	// No overall deadline: every command is already bounded by commandTimeout,
+	// and a shared budget only let one slow section starve the others. Ctrl-C
+	// still aborts through ctx.
+	if err := runDiagnose(ctx, diagnostics.NewExecRunner(commandTimeout), p, stdout); err != nil {
+		fmt.Fprintln(stderr, "pulse-agent:", err)
+		return 1
+	}
+	return 0
 }
