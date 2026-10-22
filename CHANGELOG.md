@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.0](https://github.com/memetics19/pulse/compare/v1.1.0...v2.0.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* GET /api/status is scoped to the status page of the request's Host and returns a sanitized DTO instead of raw monitor models.
+
+### Features
+
+* **agent:** collect and store host diagnostic bundles ([#20](https://github.com/memetics19/pulse/issues/20)) ([185b2b8](https://github.com/memetics19/pulse/commit/185b2b84b4e1c05bcd42b29087a4e5f341edb242))
+* import monitors and groups from an Uptime Kuma backup with the CLI ([8bfb0d7](https://github.com/memetics19/pulse/commit/8bfb0d7bfdb30b57c69954c14fddb8fd23fd7fce))
+
+
+### Bug Fixes
+
+* patch all known vulnerabilities and gate CI on Trivy ([#29](https://github.com/memetics19/pulse/issues/29)) ([bea114a](https://github.com/memetics19/pulse/commit/bea114ae9eb1e68ca6190d7849dc0cd6c7c8548f))
+* security and reliability hardening, agent token and proxy config, coverage gates ([e782450](https://github.com/memetics19/pulse/commit/e782450ab01702bd7729c71b81d44c5ba8f959f6))
+
 ## [1.1.0](https://github.com/memetics19/pulse/compare/v1.0.0...v1.1.0) (2026-07-04)
 
 
