@@ -1,19 +1,41 @@
 name: Release Please
 
+# Opens and updates the release PR from the conventional commits on main (the next version
+# and CHANGELOG.md). Merging it tags vX.Y.Z and creates the GitHub Release, then calls the
+# release workflow for that tag: a tag created with the default token starts no workflow
+# on its own. No personal token: the default GITHUB_TOKEN does it all. It needs "Allow
+# GitHub Actions to create and approve pull requests" in Settings, Actions, General.
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # The release PR carries labels (autorelease: pending), which are issue labels.
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
         with:
-          token: ${{ secrets.PULSE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  release:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}

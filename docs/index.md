@@ -4,7 +4,7 @@ Pulse is an open-source, self-hosted status page and monitoring tool. It runs as
 
 Pulse checks your services on a schedule, records uptime and latency, opens incidents when checks fail, and serves public status pages on your own domains. A live example runs at [status.shreeda.xyz](https://status.shreeda.xyz). These docs are hosted at [docs.shreeda.xyz](https://docs.shreeda.xyz).
 
-![Pulse status page](assets/status-page.gif)
+<!--![Pulse status page](assets/status-page.gif)-->
 
 ## Highlights
 
