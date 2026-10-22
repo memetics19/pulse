@@ -1,16 +1,8 @@
 # Pulse
 
 [![CI](https://github.com/memetics19/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/memetics19/pulse/actions/workflows/ci.yml)
-[![api coverage](https://img.shields.io/badge/api%20coverage-%E2%89%A585%25-green)](.github/workflows/ci.yml)
-[![cli coverage](https://img.shields.io/badge/cli%20coverage-%E2%89%A590%25-brightgreen)](.github/workflows/ci.yml)
-[![agent coverage](https://img.shields.io/badge/agent%20coverage-%E2%89%A585%25-green)](.github/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.work)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
-
-> Coverage is enforced in CI per module (excluding generated code); the badges
-> show the gate each module must clear. See the `go` job in
-> [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and
-> [`scripts/coverage.sh`](scripts/coverage.sh).
 
 Pulse is an open-source, self-hosted status page and monitoring tool. It ships as a single Go binary with a SQLite database. The monitoring worker runs in the same process, so there is no separate database server, Node.js runtime, or reverse proxy required to run it. Pulse checks your services, records uptime and latency, opens incidents when checks fail, and serves public status pages on your own domains.
 
@@ -33,9 +25,8 @@ A live status page runs at [status.shreeda.xyz](https://status.shreeda.xyz). The
 ## Architecture
 
 Pulse runs as one Go binary with an in-process monitoring worker and a single
-SQLite file. The optional `pulse-agent` pushes host metrics; everything else —
-REST API, public status pages, and the embedded admin SPA — is served from the
-same process.
+SQLite file. The optional `pulse-agent` pushes host metrics. The REST API, the
+public status pages and the embedded admin UI are all served by the same process.
 
 ```mermaid
 flowchart TB
@@ -67,9 +58,9 @@ flowchart TB
     ALERT --> CHANNELS["email · slack webhook"]
 ```
 
-Each monitor runs on its own interval. One check flows through latency
-thresholds, gets recorded, and — after two consecutive failures with no active
-maintenance window — opens an incident and fires alerts:
+Each monitor runs on its own interval. A check result goes through the latency
+thresholds and is recorded. After two failures in a row, outside a maintenance
+window, Pulse opens an incident and sends alerts:
 
 ```mermaid
 flowchart TD
@@ -89,13 +80,13 @@ flowchart TD
     DETECT -->|"suppressed"| DONE
 ```
 
-## Quick start (60 seconds)
+## Quick start
 
-Pulse is a single static binary — no Docker or runtime dependencies. The
-installer detects your OS and CPU architecture (Linux/macOS, amd64/arm64),
-downloads and checksum-verifies the matching binary, and installs it. It asks a
-few questions (port, data directory, HTTPS, homelab LAN monitoring). On Linux it
-sets up an auto-starting `systemd` service:
+Pulse is a single static binary with no runtime dependencies. The installer
+picks the binary for your OS and CPU (Linux or macOS, amd64 or arm64), checks
+its checksum and installs it. It asks for the port, the data directory, HTTPS,
+and whether monitors may reach your LAN. On Linux it also sets up a `systemd`
+service:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/install.sh | sh
@@ -128,6 +119,12 @@ Full documentation is at [docs.shreeda.xyz](https://docs.shreeda.xyz). The Markd
 - [Security](docs/security.md)
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the
+development setup, commit style and how releases work. Report security issues
+privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
