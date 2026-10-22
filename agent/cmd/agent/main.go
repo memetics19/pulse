@@ -72,6 +72,13 @@ func run(ctx context.Context, serverURL, token string, interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
+			// select picks randomly when the ticker and ctx.Done are both
+			// ready, so check for cancellation first. Otherwise shutdown can
+			// run several more ~500ms collections before it is noticed.
+			if ctx.Err() != nil {
+				log.Println("pulse-agent shutting down")
+				return
+			}
 			if err := pushOnce(ctx, col, psh); err != nil {
 				log.Printf("push error: %v", err)
 			}
