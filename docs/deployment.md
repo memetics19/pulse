@@ -1,124 +1,75 @@
 # Deployment
 
-Pulse ships as a single container image published to the GitHub Container
-Registry (GHCR) at `ghcr.io/memetics19/pulse`. Releases and deployment are
-automated: merge work to `main`, merge the release PR, and the new version is
-built, published, and rolled out to the homelab.
+Pulse ships as a container image on the GitHub Container Registry,
+`ghcr.io/memetics19/pulse`, and as binaries on each GitHub Release. Releases are automated:
+merge work to `main`, merge the release PR, and the new version is built and published.
 
-## Release & deploy flow
+## Release flow
 
 ```
-commit (Conventional Commits) ─▶ main
-        │
-        ├─ ci.yml            run tests on every push / PR
-        │
-        ├─ release-please.yml maintains a release PR from the commit history
-        │        │
-        │        └─ merge release PR ─▶ tag vX.Y.Z + GitHub release + CHANGELOG
-        │
-        └─ release.yml (on tag vX.Y.Z)
-                 ├─ test          re-run the suite
-                 ├─ release       build + push ghcr.io/memetics19/pulse:{version,latest}
-                 └─ deploy        join Netbird → SSH to the host → pull + restart
+commit (Conventional Commits) -> main
+   |
+   +- ci.yml, security.yml   tests, coverage gates, lint and Trivy on every push and PR
+   |
+   +- release-please.yml     keeps a release PR up to date from the commit history
+         |
+         +- merge the release PR -> tag vX.Y.Z, GitHub Release, CHANGELOG.md
+               |
+               +- release.yml (called for that tag)
+                     +- test       the whole suite again
+                     +- release    image ghcr.io/memetics19/pulse:X.Y.Z, X.Y and latest
+                     +- binaries   pulse_<os>_<arch> and SHA256SUMS on the Release
 ```
 
-Tests gate everything: `release.yml` re-runs them before building, and `deploy`
-only runs after `release` succeeds, so a broken build never reaches the homelab.
+Every workflow uses the repository's own `GITHUB_TOKEN`. There is no personal access token
+to renew. Release-please needs "Allow GitHub Actions to create and approve pull requests"
+under Settings, Actions, General. A `vX.Y.Z` tag pushed by hand runs `release.yml` too.
 
 ## Versioning
 
-Versions are computed by [release-please](https://github.com/googleapis/release-please)
-from Conventional Commit messages: `fix:` → patch, `feat:` → minor, `!` /
-`BREAKING CHANGE:` → major (minor while pre-1.0). The seed version lives in
+[release-please](https://github.com/googleapis/release-please) computes the version from
+Conventional Commit messages. `fix:` is a patch, `feat:` a minor version, and `!` or a
+`BREAKING CHANGE:` footer a major one. The current version is in
 `.release-please-manifest.json`.
 
-## Homelab host
+## Running it
 
-The status page runs on a private host reachable only over a
-[Netbird](https://netbird.io) VPN (the **managed cloud**, not self-hosted — so
-no management URL is needed). The host's address is a private VPN IP kept in the
-`DEPLOY_HOST` GitHub secret, not published here. The deploy job joins the same
-Netbird network from the GitHub runner with an ephemeral setup key, then
-connects over SSH.
-
-### One-time host setup
+Pulse needs nothing but its image and a volume for the SQLite file:
 
 ```sh
-# Docker + compose plugin must be installed.
-git clone https://github.com/memetics19/pulse.git ~/pulse
-cd ~/pulse
-# If the GHCR package is private, authenticate once (else make the package public):
-#   echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u memetics19 --password-stdin
-# Homelab monitors target LAN hosts, so relax the SSRF guard on this host:
-echo "PULSE_ALLOW_PRIVATE_MONITORS=true" >> .env
-docker compose -f deploy/docker-compose.homelab.yml up -d
+docker run -d --name pulse -p 8080:8080 -v pulse_data:/data ghcr.io/memetics19/pulse:latest
 ```
 
-`deploy/docker-compose.homelab.yml` pulls the `pulse` image from GHCR (no local
-build) and serves it, plus the docs site, behind Caddy (`deploy/Caddyfile`).
+`deploy/docker-compose.homelab.yml` runs the published image behind Caddy together with
+the docs site, and `deploy/docker-compose.prod.yml` builds the image locally instead. Put
+a reverse proxy that terminates TLS in front of either. See
+[Configuration](configuration.md) for `PULSE_SECURE_COOKIES`, `PULSE_TRUSTED_PROXIES` and
+`PULSE_ALLOW_PRIVATE_MONITORS`. Without the last one, monitors that point at private
+addresses (10.x, 192.168.x) are refused, because that guard stops monitor URLs from probing
+internal networks.
 
-> Without `PULSE_ALLOW_PRIVATE_MONITORS=true` in the host's `.env`, HTTP(S)
-> monitors pointing at private addresses (10.x, 192.168.x, …) are rejected —
-> that guard exists to stop monitor URLs probing internal networks (SSRF).
-> See [Configuration](configuration.md) for `PULSE_SECURE_COOKIES` and
-> `PULSE_CORS_ORIGINS` as well.
+## status.shreeda.xyz and docs.shreeda.xyz
 
-### Required GitHub secrets
+The public instance runs in a homelab managed by
+[anvil](https://github.com/memetics19/anvil). Nothing on GitHub can reach that host, and
+the repository holds no SSH key, password or VPN key for it. The host pulls instead:
 
-| Secret | Purpose |
-|---|---|
-| `PULSE_TOKEN` | GHCR push (already configured) |
-| `NETBIRD_SETUP_KEY` | Ephemeral key so the runner joins the managed Netbird network |
-| `SSH_PASSWORD` | Password for the deploy user on the host |
-| `DEPLOY_HOST` | Private VPN IP of the deploy host |
-| `DEPLOY_USER` | SSH user on the deploy host |
+- Every 10 minutes it looks for a newer `vX.Y.Z` tag. It pulls that image, copies the data
+  volume, switches over, and checks `/healthz`. If the new version does not answer within
+  90 seconds, it goes back to the previous image and the copied data.
+- On the same run it rebuilds the docs site from the head of `main` with mkdocs.
 
-> SSH uses password auth. The host must allow it: set `PasswordAuthentication yes`
-> in `/etc/ssh/sshd_config` and `sudo systemctl restart ssh`. (Key-based auth with
-> `SSH_PRIVATE_KEY` + `SSH_HOST_FINGERPRINT` is more secure if you prefer to switch
-> back.)
-
-### What the deploy job runs on the host
-
-```sh
-cd ~/pulse && git fetch --tags && git pull --ff-only
-docker compose -f deploy/docker-compose.homelab.yml pull
-docker compose -f deploy/docker-compose.homelab.yml up -d
-docker image prune -f
-```
-
-## Docs deployment
-
-The documentation site (`docs.shreeda.xyz`) deploys to the **same host over the
-same Netbird network**, on its own schedule, via `.github/workflows/deploy-docs.yml`:
-
-- **On pull requests** touching `docs/**` or `mkdocs.yml`, it runs `mkdocs build`
-  to validate the docs (CI gate).
-- **On push to `main`** touching those paths, it joins Netbird, SSHes to the host,
-  `git pull`s, and re-renders the docs:
-  ```sh
-  docker compose -f deploy/docker-compose.homelab.yml run --rm docs-build
-  ```
-  The `docs-build` one-shot writes the static site into the `docs_site` volume,
-  which the already-running Caddy serves live — no Caddy restart needed.
-
-Docs changes therefore ship on merge to `main` without waiting for an app
-release. (App releases also re-render the docs as part of `compose up -d`.)
+So a merged release reaches status.shreeda.xyz within about 10 minutes, and a docs change
+on `main` reaches docs.shreeda.xyz the same way, without waiting for a release.
 
 ## Rollback
 
-Pin the previous version and bring the stack back up on the host:
+On a host you run yourself, start the previous version's image on the same volume:
 
 ```sh
-cd ~/pulse
-docker compose -f deploy/docker-compose.homelab.yml pull pulse  # or edit the image tag
-docker run ... ghcr.io/memetics19/pulse:<previous-version>       # or set the tag and `up -d`
+docker stop pulse && docker rm pulse
+docker run -d --name pulse -p 8080:8080 -v pulse_data:/data ghcr.io/memetics19/pulse:<previous-version>
 ```
 
-The simplest rollback is to re-point the `pulse` image tag to the previous
-`vX.Y.Z` and run `docker compose ... up -d`.
-
-## Manual / local production stack
-
-For a self-built stack (no GHCR), `deploy/docker-compose.prod.yml` builds the
-image locally instead of pulling it.
+A release can change the database schema. Keep a copy of the volume from before the upgrade
+if you might need to go back.
