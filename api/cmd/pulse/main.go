@@ -25,7 +25,7 @@ func main() {
 	}
 
 	cfg := config.Load()
-	dataDir := dataDir()
+	dataDir := config.DataDir()
 
 	boot, err := bootstrap.Load(dataDir)
 	if err != nil {
@@ -34,7 +34,7 @@ func main() {
 
 	a := app.New()
 	if boot.Configured {
-		conn, err := db.Open(boot.SQLitePath)
+		conn, err := db.Open(databaseFile(dataDir, boot, cfg))
 		if err != nil {
 			log.Fatalf("db: %v", err)
 		}
@@ -119,14 +119,20 @@ func runWorker(ctx context.Context, a *app.App, cfg config.Config) {
 	}
 }
 
-// dataDir resolves the directory holding the bootstrap config and SQLite file:
-// PULSE_DATA_DIR, else the directory of PULSE_DB, else /data.
-func dataDir() string {
-	if d := os.Getenv("PULSE_DATA_DIR"); d != "" {
-		return d
+// databaseFile returns the SQLite file that serve and reset-password open.
+// Before setup it is cfg.SQLitePath: PULSE_DB, else pulse.db in
+// PULSE_DATA_DIR, else /data/pulse.db. The setup wizard creates that file and
+// records it in pulse.json. After setup the recorded file is used, so an
+// install keeps the database it was set up with. If PULSE_DB names another
+// file, that is logged, because Pulse does not move a database by itself.
+func databaseFile(dataDir string, boot bootstrap.Config, cfg config.Config) string {
+	if !boot.Configured || boot.SQLitePath == "" {
+		return cfg.SQLitePath
 	}
-	if p := config.Env("PULSE_DB"); p != "" {
-		return filepath.Dir(p)
+	if cfg.SQLitePathSet && filepath.Clean(cfg.SQLitePath) != filepath.Clean(boot.SQLitePath) {
+		log.Printf("PULSE_DB is %s, but setup recorded the database %s in %s. Using the recorded file. "+
+			"To use PULSE_DB, stop Pulse, move the file there and update sqlite_path in that file",
+			cfg.SQLitePath, boot.SQLitePath, bootstrap.Path(dataDir))
 	}
-	return "/data"
+	return boot.SQLitePath
 }

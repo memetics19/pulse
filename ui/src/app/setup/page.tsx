@@ -28,11 +28,13 @@ export default function SetupWizard() {
   const [siteName, setSiteName] = useState('')
   const [logoURL, setLogoURL] = useState('')
   const [sqlitePath, setSqlitePath] = useState('')
+  const [sqlitePathFixed, setSqlitePathFixed] = useState(false)
 
   useEffect(() => {
     setupState().then(s => {
       if (s.configured) { window.location.href = '/admin/'; return }
       setSqlitePath(s.default_sqlite_path)
+      setSqlitePathFixed(!!s.sqlite_path_fixed)
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
@@ -97,7 +99,11 @@ export default function SetupWizard() {
             <input type="radio" checked readOnly />
             <span><div style={{ fontWeight: 600, fontSize: 14 }}>SQLite <span style={{ color: '#6b7280', fontWeight: 400 }}>· recommended</span></div><div style={{ fontSize: 12, color: '#6b7280' }}>A single file, zero setup. Perfect for self-hosting.</div></span>
           </label>
-          <div className="form-group"><label className="form-label">Database file path</label><input className="form-input" value={sqlitePath} onChange={e => setSqlitePath(e.target.value)} /></div>
+          <div className="form-group">
+            <label className="form-label">Database file path</label>
+            <input className="form-input" value={sqlitePath} readOnly={sqlitePathFixed} onChange={e => setSqlitePath(e.target.value)} />
+            {sqlitePathFixed && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Set by PULSE_DB on the server.</div>}
+          </div>
           <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', border: '1px solid #e6e8eb', borderRadius: 8, padding: '10px 12px', opacity: .6 }}>
             <input type="radio" disabled />
             <span><div style={{ fontWeight: 600, fontSize: 14 }}>PostgreSQL <span style={{ color: '#9aa0a8', fontWeight: 400 }}>· coming soon</span></div><div style={{ fontSize: 12, color: '#9aa0a8' }}>External Postgres support is on the roadmap.</div></span>

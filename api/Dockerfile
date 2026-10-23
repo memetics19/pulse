@@ -39,6 +39,7 @@ USER pulse
 ENV PULSE_DATA_DIR=/data
 EXPOSE 8080
 VOLUME /data
+# Probe the port the server listens on: PULSE_PORT, else API_PORT, else 8080.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1
+  CMD ["sh", "-c", "wget -qO- \"http://127.0.0.1:${PULSE_PORT:-${API_PORT:-8080}}/healthz\" >/dev/null 2>&1 || exit 1"]
 ENTRYPOINT ["pulse"]

@@ -4,16 +4,54 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
 
 // renamed maps each setting renamed in 3.0 to the name it replaced. The old
 // name is still read when the new one is unset, with a warning, until 4.0.
+//
+// PULSE_DATABASE_URL has no entry: its old name, DATABASE_URL, is a variable
+// that hosting platforms (Heroku, Railway, Dokku) inject on their own, and
+// nothing uses the value, so reading it only logged a misleading warning.
 var renamed = map[string]string{
-	"PULSE_PORT":         "API_PORT",
-	"PULSE_DB":           "SQLITE_PATH",
-	"PULSE_DATABASE_URL": "DATABASE_URL",
+	"PULSE_PORT": "API_PORT",
+	"PULSE_DB":   "SQLITE_PATH",
+}
+
+// DefaultDataDir is the data directory when neither PULSE_DATA_DIR nor
+// PULSE_DB is set.
+const DefaultDataDir = "/data"
+
+// DBFileName is the name of the database file Pulse creates in the data
+// directory when PULSE_DB is unset.
+const DBFileName = "pulse.db"
+
+// DataDir returns the directory that holds the setup state (pulse.json):
+// PULSE_DATA_DIR, else the directory of PULSE_DB, else /data. Every release
+// has used this rule, so an existing install finds its setup state, and
+// through it the database file it was set up with.
+func DataDir() string {
+	if d := os.Getenv("PULSE_DATA_DIR"); d != "" {
+		return d
+	}
+	if p := Env("PULSE_DB"); p != "" {
+		return filepath.Dir(p)
+	}
+	return DefaultDataDir
+}
+
+// DBPath returns the SQLite database file for this instance: PULSE_DB as a
+// full path, else pulse.db in PULSE_DATA_DIR, else /data/pulse.db.
+func DBPath() string {
+	if p := Env("PULSE_DB"); p != "" {
+		return p
+	}
+	if d := os.Getenv("PULSE_DATA_DIR"); d != "" {
+		return filepath.Join(d, DBFileName)
+	}
+	return filepath.Join(DefaultDataDir, DBFileName)
 }
 
 // warned records the old names already reported, so each warning is logged
@@ -41,8 +79,12 @@ func Env(name string) string {
 }
 
 type Config struct {
-	DatabaseURL     string
-	SQLitePath      string
+	DatabaseURL string
+	// SQLitePath is the database file, resolved by DBPath.
+	SQLitePath string
+	// SQLitePathSet reports that PULSE_DB (or the old SQLITE_PATH) names the
+	// file, so the setup wizard may not choose a different one.
+	SQLitePathSet   bool
 	ResendAPIKey    string
 	SlackWebhookURL string
 	Port            string
@@ -88,7 +130,8 @@ func Load() Config {
 	}
 	return Config{
 		DatabaseURL:          Env("PULSE_DATABASE_URL"),
-		SQLitePath:           Env("PULSE_DB"),
+		SQLitePath:           DBPath(),
+		SQLitePathSet:        Env("PULSE_DB") != "",
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		SlackWebhookURL:      os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:                 port,

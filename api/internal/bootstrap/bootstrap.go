@@ -14,11 +14,12 @@ type Config struct {
 	SQLitePath string `json:"sqlite_path"`
 }
 
-func file(dataDir string) string { return filepath.Join(dataDir, "pulse.json") }
+// Path returns the bootstrap file in dataDir.
+func Path(dataDir string) string { return filepath.Join(dataDir, "pulse.json") }
 
 // Load reads the bootstrap config; a missing file yields a zero Config (unconfigured).
 func Load(dataDir string) (Config, error) {
-	b, err := os.ReadFile(file(dataDir))
+	b, err := os.ReadFile(Path(dataDir))
 	if errors.Is(err, os.ErrNotExist) {
 		return Config{}, nil
 	}
@@ -41,5 +42,5 @@ func Save(dataDir string, c Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(file(dataDir), b, 0o600)
+	return os.WriteFile(Path(dataDir), b, 0o600)
 }

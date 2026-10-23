@@ -32,7 +32,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Use(middleware.SetupGate(a))
 
 	// Setup wizard (always reachable, even unconfigured)
-	setupH := handlers.NewSetup(a, dataDir, cfg.SecureCookies)
+	setupH := handlers.NewSetup(a, dataDir, cfg)
 	r.Get("/api/setup/state", setupH.State)
 	r.Post("/api/setup", setupH.Complete)
 

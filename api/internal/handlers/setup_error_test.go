@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/memetics19/pulse/api/internal/app"
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/handlers"
 	"github.com/stretchr/testify/assert"
 )
@@ -16,7 +17,7 @@ func TestSetupCompleteErrors(t *testing.T) {
 
 	// bad body -> 400
 	a := app.New()
-	h := handlers.NewSetup(a, t.TempDir(), false)
+	h := handlers.NewSetup(a, t.TempDir(), config.Config{})
 	assert.Equal(t, http.StatusBadRequest, do(h.Complete, "POST", "/x", "not json").Code)
 
 	// short password -> 400
@@ -34,7 +35,7 @@ func TestSetupCompleteErrors(t *testing.T) {
 
 	// sqlite_path that is a directory -> db.Open fails -> 400
 	body2 := map[string]any{"username": "admin", "password": "s3cret-pass", "sqlite_path": t.TempDir()}
-	assert.Equal(t, http.StatusBadRequest, do(handlers.NewSetup(app.New(), t.TempDir(), false).Complete, "POST", "/x", body2).Code)
+	assert.Equal(t, http.StatusBadRequest, do(handlers.NewSetup(app.New(), t.TempDir(), config.Config{}).Complete, "POST", "/x", body2).Code)
 
 	_ = valid
 }
