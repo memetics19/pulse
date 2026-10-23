@@ -1,0 +1,27 @@
+# nfpm: the pulse-agent package, from the binary that build-packages.sh stages.
+name: pulse-agent
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: memetics19 <https://github.com/memetics19/pulse/issues>
+description: |-
+  Pushes host metrics and diagnostic bundles to a Pulse server.
+  Configure /etc/pulse-agent/agent.env and /etc/pulse-agent/token, then enable the service.
+homepage: https://github.com/memetics19/pulse
+license: MIT
+contents:
+  - src: dist-bin/stage/pulse-agent
+    dst: /usr/bin/pulse-agent
+    file_info: {mode: 0755}
+  - src: packaging/pulse-agent.service
+    dst: /lib/systemd/system/pulse-agent.service
+    file_info: {mode: 0644}
+  - src: packaging/pulse-agent.env
+    dst: /etc/pulse-agent/agent.env
+    type: config|noreplace
+    file_info: {mode: 0644}
+scripts:
+  postinstall: packaging/pulse-agent.postinst
+  preremove: packaging/pulse-agent.prerm

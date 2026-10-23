@@ -1,0 +1,18 @@
+#!/bin/sh
+# pulse-agent package: the service user and an empty token file. The service is not
+# started: it needs the server address and a token first.
+set -e
+if ! getent passwd pulse-agent >/dev/null; then
+  useradd --system --user-group --no-create-home --shell /usr/sbin/nologin pulse-agent
+fi
+if [ ! -e /etc/pulse-agent/token ]; then
+  install -m 0640 -o root -g pulse-agent /dev/null /etc/pulse-agent/token
+fi
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload
+  if systemctl is-enabled --quiet pulse-agent.service; then
+    systemctl restart pulse-agent.service
+  else
+    echo "pulse-agent: set PULSE_SERVER in /etc/pulse-agent/agent.env and the token in /etc/pulse-agent/token, then: sudo systemctl enable --now pulse-agent"
+  fi
+fi

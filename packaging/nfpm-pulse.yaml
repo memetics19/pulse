@@ -1,0 +1,28 @@
+# nfpm: the pulse server package. Built by .github/workflows/release.yml (and CI) with
+# VERSION and ARCH set, from the binary that build-packages.sh stages.
+name: pulse
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: memetics19 <https://github.com/memetics19/pulse/issues>
+description: |-
+  Self-hosted status page and uptime monitoring in a single binary with SQLite.
+  Runs as the pulse service on port 8080. Settings: /etc/pulse/pulse.env.
+homepage: https://github.com/memetics19/pulse
+license: MIT
+contents:
+  - src: dist-bin/stage/pulse
+    dst: /usr/bin/pulse
+    file_info: {mode: 0755}
+  - src: packaging/pulse.service
+    dst: /lib/systemd/system/pulse.service
+    file_info: {mode: 0644}
+  - src: packaging/pulse.env
+    dst: /etc/pulse/pulse.env
+    type: config|noreplace
+    file_info: {mode: 0640}
+scripts:
+  postinstall: packaging/pulse.postinst
+  preremove: packaging/pulse.prerm

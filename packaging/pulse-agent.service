@@ -1,0 +1,22 @@
+[Unit]
+Description=Pulse agent: host metrics for a Pulse server
+Documentation=https://docs.shreeda.xyz
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pulse-agent
+Group=pulse-agent
+# PULSE_SERVER and PULSE_INTERVAL. The token is in /etc/pulse-agent/token.
+EnvironmentFile=/etc/pulse-agent/agent.env
+ExecStart=/usr/bin/pulse-agent --server ${PULSE_SERVER} --token-file /etc/pulse-agent/token --interval ${PULSE_INTERVAL}
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+#!/bin/sh
+# pulse package: stop the service on removal, not on upgrade (postinst restarts it).
+set -e
+if [ -d /run/systemd/system ] && [ "$1" = remove ]; then
+  systemctl disable --now pulse.service >/dev/null 2>&1 || true
+fi
