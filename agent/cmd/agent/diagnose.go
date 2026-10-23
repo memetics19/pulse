@@ -28,13 +28,13 @@ const uploadTimeout = 30 * time.Second
 const maxBundleBytes = 900 << 10
 
 // validateDiagnoseFlags rejects invocations that would do something other than
-// what was asked. Supplying only one of --server or --token used to fall back
+// what was asked. Supplying only one of --server or a token used to fall back
 // to local-only mode and exit 0, so automation could believe evidence reached
 // the server when it never did. A stray positional argument is a typo, not an
 // instruction.
 func validateDiagnoseFlags(server, token string, nargs int) error {
 	if (server == "") != (token == "") {
-		return errors.New("--server and --token must be given together")
+		return errors.New("--server and a token (--token-file or PULSE_AGENT_TOKEN) must be given together")
 	}
 	if nargs > 0 {
 		return errors.New("unexpected positional arguments; --diagnose takes none")
