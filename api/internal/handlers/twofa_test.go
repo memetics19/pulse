@@ -42,11 +42,25 @@ func (f *twoFAFixture) call(hf http.HandlerFunc, body string) *httptest.Response
 	return rec
 }
 
+// codeAt returns the code for secret a number of 30 second steps from now.
+// Each code is accepted once, so a test that needs a second valid code uses
+// the next step, which is still inside the accepted window.
+func codeAt(t *testing.T, secret string, steps int) string {
+	t.Helper()
+	code, err := totp.GenerateCode(secret, time.Now().Add(time.Duration(steps)*30*time.Second))
+	require.NoError(t, err)
+	return code
+}
+
 func codeBody(t *testing.T, secret string) string {
 	t.Helper()
-	code, err := totp.GenerateCode(secret, time.Now())
-	require.NoError(t, err)
-	return `{"code":"` + code + `"}`
+	return `{"code":"` + codeAt(t, secret, 0) + `"}`
+}
+
+// nextCodeBody is a code one step ahead, for use after codeBody was spent.
+func nextCodeBody(t *testing.T, secret string) string {
+	t.Helper()
+	return `{"code":"` + codeAt(t, secret, 1) + `"}`
 }
 
 // startSetup runs setup and returns the pending secret.
@@ -100,7 +114,7 @@ func TestTwoFADisableWithValidCode(t *testing.T) {
 	f := newTwoFAFixture(t)
 	secret := f.enable(t)
 
-	rec := f.call(f.h.TwoFADisable, codeBody(t, secret))
+	rec := f.call(f.h.TwoFADisable, nextCodeBody(t, secret))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	u := f.user(t)
@@ -196,9 +210,7 @@ func TestTwoFASetupWhileOnIsRefused(t *testing.T) {
 
 	// Login still demands a code from the original secret.
 	assert.Equal(t, http.StatusUnauthorized, f.login(t, "").Code)
-	code, err := totp.GenerateCode(secret, time.Now())
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, f.login(t, code).Code)
+	assert.Equal(t, http.StatusOK, f.login(t, codeAt(t, secret, 1)).Code)
 }
 
 func TestTwoFAEnableWhileOnIsRefused(t *testing.T) {
@@ -234,23 +246,50 @@ func TestTwoFAPendingSecretNotUsedForLogin(t *testing.T) {
 	active := f2.enable(t)
 	stray, _, err := auth.GenerateTOTP("admin")
 	require.NoError(t, err)
-	strayCode, err := totp.GenerateCode(stray, time.Now())
-	require.NoError(t, err)
-	activeCode, err := totp.GenerateCode(active, time.Now())
-	require.NoError(t, err)
+	strayCode := codeAt(t, stray, 1)
+	activeCode := codeAt(t, active, 1)
 	if strayCode != activeCode {
 		assert.Equal(t, http.StatusUnauthorized, f2.login(t, strayCode).Code)
 	}
 	assert.Equal(t, http.StatusOK, f2.login(t, activeCode).Code)
 }
 
-func TestTwoFADisableSaveError(t *testing.T) {
-	f := newTwoFAFixture(t)
-	secret := f.enable(t)
+// The disable handler makes these queries in order: GetSession,
+// GetUserByID, ClaimTOTPStep, SetUserTOTP, DeleteOtherUserSessions. Failing
+// each write in turn must give a 500 and never a silent success.
+func TestTwoFADisableWriteErrors(t *testing.T) {
+	t.Run("claim fails", func(t *testing.T) {
+		f := newTwoFAFixture(t)
+		secret := f.enable(t)
+		broken := NewAuth(generated.New(testutil.FailAfter(f.db, 2)), false)
+		rec := f.call(broken.TwoFADisable, nextCodeBody(t, secret))
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		f.assertOn(t, secret)
+	})
+	t.Run("save fails", func(t *testing.T) {
+		f := newTwoFAFixture(t)
+		secret := f.enable(t)
+		broken := NewAuth(generated.New(testutil.FailAfter(f.db, 3)), false)
+		rec := f.call(broken.TwoFADisable, nextCodeBody(t, secret))
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		f.assertOn(t, secret)
+	})
+	t.Run("sign out fails", func(t *testing.T) {
+		f := newTwoFAFixture(t)
+		secret := f.enable(t)
+		broken := NewAuth(generated.New(testutil.FailAfter(f.db, 4)), false)
+		rec := f.call(broken.TwoFADisable, nextCodeBody(t, secret))
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		assert.Contains(t, rec.Body.String(), "other sessions could not be signed out")
+	})
+}
 
-	// currentUser makes two queries. The third, the write, fails.
-	broken := NewAuth(generated.New(testutil.FailAfter(f.db, 2)), false)
-	rec := f.call(broken.TwoFADisable, codeBody(t, secret))
+func TestTwoFAEnableSignOutError(t *testing.T) {
+	f := newTwoFAFixture(t)
+	secret := f.startSetup(t)
+	// GetSession, GetUserByID, ClaimTOTPStep, SetUserTOTP succeed, then
+	// DeleteOtherUserSessions fails.
+	broken := NewAuth(generated.New(testutil.FailAfter(f.db, 4)), false)
+	rec := f.call(broken.TwoFAEnable, codeBody(t, secret))
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	f.assertOn(t, secret)
 }

@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+const claimTOTPStep = `-- name: ClaimTOTPStep :execrows
+UPDATE users SET totp_last_step = ?1
+WHERE id = ?2 AND totp_last_step < ?1
+`
+
+type ClaimTOTPStepParams struct {
+	Step int64 `json:"step"`
+	ID   int64 `json:"id"`
+}
+
+// Records step as the last accepted TOTP step, only when it is newer than the
+// one already stored. Zero rows affected means the code was already used.
+func (q *Queries) ClaimTOTPStep(ctx context.Context, arg ClaimTOTPStepParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, claimTOTPStep, arg.Step, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 `
@@ -26,7 +46,7 @@ INSERT INTO users (username, password_hash, name, email)
 SELECT CAST(?1 AS TEXT), CAST(?2 AS TEXT),
        CAST(?3 AS TEXT), CAST(?4 AS TEXT)
 WHERE NOT EXISTS (SELECT 1 FROM users)
-RETURNING id, username, password_hash, totp_secret, totp_enabled, created_at, name, email
+RETURNING id, username, password_hash, totp_secret, totp_enabled, created_at, name, email, totp_last_step
 `
 
 type CreateFirstUserParams struct {
@@ -57,6 +77,7 @@ func (q *Queries) CreateFirstUser(ctx context.Context, arg CreateFirstUserParams
 		&i.CreatedAt,
 		&i.Name,
 		&i.Email,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
@@ -77,7 +98,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (username, password_hash, name, email) VALUES (?, ?, ?, ?) RETURNING id, username, password_hash, totp_secret, totp_enabled, created_at, name, email
+INSERT INTO users (username, password_hash, name, email) VALUES (?, ?, ?, ?) RETURNING id, username, password_hash, totp_secret, totp_enabled, created_at, name, email, totp_last_step
 `
 
 type CreateUserParams struct {
@@ -104,6 +125,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.Name,
 		&i.Email,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
@@ -131,6 +153,23 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSe
 	return result.RowsAffected()
 }
 
+const deleteOtherUserSessions = `-- name: DeleteOtherUserSessions :execrows
+DELETE FROM sessions WHERE user_id = ? AND token <> ?
+`
+
+type DeleteOtherUserSessionsParams struct {
+	UserID int64  `json:"user_id"`
+	Token  string `json:"token"`
+}
+
+func (q *Queries) DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOtherUserSessions, arg.UserID, arg.Token)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE token = ?
 `
@@ -138,6 +177,18 @@ DELETE FROM sessions WHERE token = ?
 func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	_, err := q.db.ExecContext(ctx, deleteSession, token)
 	return err
+}
+
+const deleteUserSessions = `-- name: DeleteUserSessions :execrows
+DELETE FROM sessions WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserSessions, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getSession = `-- name: GetSession :one
@@ -166,7 +217,7 @@ func (q *Queries) GetSession(ctx context.Context, token string) (GetSessionRow, 
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, totp_secret, totp_enabled, created_at, name, email FROM users WHERE id = ?
+SELECT id, username, password_hash, totp_secret, totp_enabled, created_at, name, email, totp_last_step FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -181,12 +232,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.CreatedAt,
 		&i.Name,
 		&i.Email,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, totp_secret, totp_enabled, created_at, name, email FROM users WHERE username = ?
+SELECT id, username, password_hash, totp_secret, totp_enabled, created_at, name, email, totp_last_step FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -201,6 +253,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.CreatedAt,
 		&i.Name,
 		&i.Email,
+		&i.TotpLastStep,
 	)
 	return i, err
 }

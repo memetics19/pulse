@@ -45,19 +45,26 @@ type credentials struct {
 
 // currentUser resolves the authenticated user from the request's session cookie.
 func (a *Auth) currentUser(r *http.Request) (generated.User, bool) {
+	u, _, ok := a.currentSession(r)
+	return u, ok
+}
+
+// currentSession is currentUser plus the session token, for handlers that
+// must keep this session while signing out the user's others.
+func (a *Auth) currentSession(r *http.Request) (generated.User, string, bool) {
 	c, err := r.Cookie(auth.SessionCookieName)
 	if err != nil {
-		return generated.User{}, false
+		return generated.User{}, "", false
 	}
 	sess, err := a.q.GetSession(r.Context(), c.Value)
 	if err != nil || !sess.ExpiresAt.After(time.Now()) {
-		return generated.User{}, false
+		return generated.User{}, "", false
 	}
 	u, err := a.q.GetUserByID(r.Context(), sess.UserID)
 	if err != nil {
-		return generated.User{}, false
+		return generated.User{}, "", false
 	}
-	return u, true
+	return u, c.Value, true
 }
 
 func (a *Auth) Status(w http.ResponseWriter, r *http.Request) {
@@ -144,8 +151,11 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]bool{"needs_2fa": true})
 			return
 		}
-		if u.TotpSecret == nil || !auth.ValidateTOTP(*u.TotpSecret, c.Code) {
-			http.Error(w, "invalid 2FA code", http.StatusUnauthorized)
+		if u.TotpSecret == nil {
+			http.Error(w, msg2FABadCode, http.StatusUnauthorized)
+			return
+		}
+		if !a.useCode(w, r, u.ID, *u.TotpSecret, strings.TrimSpace(c.Code), http.StatusUnauthorized) {
 			return
 		}
 	}
@@ -163,6 +173,7 @@ const (
 	msg2FACodeNeeded = "a current 2FA code is required"
 	msg2FABadCode    = "invalid 2FA code"
 	msg2FATooMany    = "too many attempts"
+	msg2FAUsed       = "this 2FA code was already used, wait for the next one"
 )
 
 // readCode decodes a {"code": "..."} body. A malformed body yields "", which
@@ -180,6 +191,40 @@ func readCode(r *http.Request) string {
 // cannot brute force the six digit code from many addresses.
 func (a *Auth) allowCode(userID int64) bool {
 	return a.codeLimiter.allow("user:" + strconv.FormatInt(userID, 10))
+}
+
+// useCode checks code against secret and claims its time step for the user,
+// so each code is accepted at most once. The claim is a single conditional
+// UPDATE, so two requests racing with the same code cannot both win. On
+// failure it writes the response (badStatus for a wrong or reused code) and
+// returns false.
+func (a *Auth) useCode(w http.ResponseWriter, r *http.Request, userID int64, secret, code string, badStatus int) bool {
+	step, ok := auth.MatchTOTP(secret, code, time.Now())
+	if !ok {
+		http.Error(w, msg2FABadCode, badStatus)
+		return false
+	}
+	n, err := a.q.ClaimTOTPStep(r.Context(), generated.ClaimTOTPStepParams{Step: step, ID: userID})
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return false
+	}
+	if n == 0 {
+		http.Error(w, msg2FAUsed, badStatus)
+		return false
+	}
+	return true
+}
+
+// signOutOthers deletes every session of the user except the current one.
+// It runs after a 2FA change, so a session opened before the change (for
+// example a stolen one) does not outlive it.
+func (a *Auth) signOutOthers(w http.ResponseWriter, r *http.Request, userID int64, token string) bool {
+	if _, err := a.q.DeleteOtherUserSessions(r.Context(), generated.DeleteOtherUserSessionsParams{UserID: userID, Token: token}); err != nil {
+		http.Error(w, "2FA changed, but other sessions could not be signed out", http.StatusInternalServerError)
+		return false
+	}
+	return true
 }
 
 // TwoFASetup generates a fresh TOTP secret for the current user and returns
@@ -213,9 +258,10 @@ func (a *Auth) TwoFASetup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"secret": secret, "otpauth_url": uri, "qr": qr})
 }
 
-// TwoFAEnable confirms the pending TOTP secret with a valid code and enables 2FA.
+// TwoFAEnable confirms the pending TOTP secret with a valid code and enables
+// 2FA. Every other session of the user is then signed out.
 func (a *Auth) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.currentUser(r)
+	u, token, ok := a.currentSession(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -237,12 +283,14 @@ func (a *Auth) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg2FATooMany, http.StatusTooManyRequests)
 		return
 	}
-	if !auth.ValidateTOTP(*u.TotpSecret, code) {
-		http.Error(w, msg2FABadCode, http.StatusBadRequest)
+	if !a.useCode(w, r, u.ID, *u.TotpSecret, code, http.StatusBadRequest) {
 		return
 	}
 	if err := a.q.SetUserTOTP(r.Context(), generated.SetUserTOTPParams{TotpSecret: u.TotpSecret, TotpEnabled: 1, ID: u.ID}); err != nil {
 		http.Error(w, "could not enable", http.StatusInternalServerError)
+		return
+	}
+	if !a.signOutOthers(w, r, u.ID, token) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -251,9 +299,10 @@ func (a *Auth) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 // TwoFADisable turns 2FA off for the current user. It needs a valid code from
 // the active secret, so a session cookie alone (for example one taken from an
 // unlocked browser) cannot strip the second factor. A missing code is a 400,
-// a wrong code is a 403, and in both cases 2FA stays on.
+// a wrong or reused code is a 403, and in all those cases 2FA stays on. On
+// success every other session of the user is signed out.
 func (a *Auth) TwoFADisable(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.currentUser(r)
+	u, token, ok := a.currentSession(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -271,12 +320,14 @@ func (a *Auth) TwoFADisable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg2FATooMany, http.StatusTooManyRequests)
 		return
 	}
-	if !auth.ValidateTOTP(*u.TotpSecret, code) {
-		http.Error(w, msg2FABadCode, http.StatusForbidden)
+	if !a.useCode(w, r, u.ID, *u.TotpSecret, code, http.StatusForbidden) {
 		return
 	}
 	if err := a.q.SetUserTOTP(r.Context(), generated.SetUserTOTPParams{TotpSecret: nil, TotpEnabled: 0, ID: u.ID}); err != nil {
 		http.Error(w, "could not disable", http.StatusInternalServerError)
+		return
+	}
+	if !a.signOutOthers(w, r, u.ID, token) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)

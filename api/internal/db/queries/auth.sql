@@ -46,3 +46,15 @@ DELETE FROM sessions WHERE rowid IN (
 
 -- name: SetUserTOTP :exec
 UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?;
+
+-- name: ClaimTOTPStep :execrows
+-- Records step as the last accepted TOTP step, only when it is newer than the
+-- one already stored. Zero rows affected means the code was already used.
+UPDATE users SET totp_last_step = sqlc.arg(step)
+WHERE id = sqlc.arg(id) AND totp_last_step < sqlc.arg(step);
+
+-- name: DeleteOtherUserSessions :execrows
+DELETE FROM sessions WHERE user_id = ? AND token <> ?;
+
+-- name: DeleteUserSessions :execrows
+DELETE FROM sessions WHERE user_id = ?;

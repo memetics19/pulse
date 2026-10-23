@@ -125,8 +125,9 @@ func TestTwoFASetupEnableThenLoginEnforced(t *testing.T) {
 		t.Fatal("login without code should report needs_2fa=true")
 	}
 
-	// Login with a valid code succeeds and sets a session cookie.
-	loginCode, err := totp.GenerateCode(setupResp.Secret, time.Now())
+	// Login with a valid code succeeds and sets a session cookie. The code
+	// used to enable is spent, so take the next one.
+	loginCode, err := totp.GenerateCode(setupResp.Secret, time.Now().Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("generate login code: %v", err)
 	}

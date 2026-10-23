@@ -218,4 +218,5 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 	Name         string    `json:"name"`
 	Email        string    `json:"email"`
+	TotpLastStep int64     `json:"totp_last_step"`
 }
