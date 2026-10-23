@@ -122,11 +122,19 @@ The agent targets Linux. On macOS the `processes` section degrades, because
 Collect and upload in one step by supplying the agent's credentials:
 
 ```sh
-pulse-agent --diagnose --server https://status.example.com --token <agent-token>
+PULSE_AGENT_TOKEN=<agent-token> pulse-agent --diagnose --server https://status.example.com
 ```
 
-The token is the one shown once when the agent was created. See
-[Architecture](architecture.md) for how agents are registered.
+On a host with the `pulse-agent` package, read the token from its file instead:
+
+```sh
+sudo pulse-agent --diagnose --server https://status.example.com --token-file /etc/pulse-agent/token
+```
+
+The token is the one shown once when the agent was created. The agent never
+takes the token as a command line argument, because any local user can read
+arguments through `ps` and `/proc`. See [Architecture](architecture.md) for how
+agents are registered.
 
 ## API
 

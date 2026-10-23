@@ -86,3 +86,5 @@ Pulse serves multiple [status pages](status-pages.md) from one process. It resol
 ## Infra agent
 
 The `pulse-agent` binary runs on a host you want to monitor and pushes CPU, memory, disk, and network metrics to Pulse. Because the agent pushes outbound, no inbound port is required on the monitored host. The metrics feed `infra` type monitors. The agent can also collect read-only [diagnostic bundles](diagnostics.md) describing why a host failed.
+
+The agent reads its token from the file named by `--token-file` or, when that flag is not set, from the `PULSE_AGENT_TOKEN` environment variable. The file wins when both are present. The `--token` flag was removed in 3.0 because a token on the command line is visible to every local user through `ps` and `/proc`. Passing it now fails with exit code 2 and a message naming the replacements.
