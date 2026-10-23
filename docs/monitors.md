@@ -49,4 +49,6 @@ After two consecutive down checks for a monitor, the worker auto-creates an inci
 
 A configurable retention window controls how long history is kept. The default is 90 days. The worker prunes anything older than the window.
 
-The window covers two data classes: raw check history, and agent [diagnostic bundles](diagnostics.md). Lowering it discards both, so choose it with the diagnostic evidence in mind and not only uptime storage.
+The window covers three data classes: raw check history, agent [diagnostic bundles](diagnostics.md), and the 1-minute agent metrics behind the host charts. Lowering it discards all three, so choose it with the diagnostic evidence in mind and not only uptime storage.
+
+Raw agent samples are rolled up into 1-minute averages and kept for 24 hours. Login sessions are deleted as soon as they expire.

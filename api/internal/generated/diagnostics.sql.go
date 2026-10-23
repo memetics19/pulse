@@ -66,11 +66,22 @@ func (q *Queries) ListAgentDiagnostics(ctx context.Context, arg ListAgentDiagnos
 	return items, nil
 }
 
-const pruneAgentDiagnostics = `-- name: PruneAgentDiagnostics :exec
-DELETE FROM agent_diagnostics WHERE collected_at < ?
+const pruneAgentDiagnostics = `-- name: PruneAgentDiagnostics :execrows
+DELETE FROM agent_diagnostics WHERE id IN (
+  SELECT old.id FROM agent_diagnostics AS old WHERE old.collected_at < ?1
+  LIMIT ?2
+)
 `
 
-func (q *Queries) PruneAgentDiagnostics(ctx context.Context, collectedAt time.Time) error {
-	_, err := q.db.ExecContext(ctx, pruneAgentDiagnostics, collectedAt)
-	return err
+type PruneAgentDiagnosticsParams struct {
+	Cutoff    time.Time `json:"cutoff"`
+	BatchSize int64     `json:"batch_size"`
+}
+
+func (q *Queries) PruneAgentDiagnostics(ctx context.Context, arg PruneAgentDiagnosticsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneAgentDiagnostics, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

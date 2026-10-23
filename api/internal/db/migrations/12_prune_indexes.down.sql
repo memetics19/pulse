@@ -1,0 +1,5 @@
+DROP INDEX idx_sessions_expires_at;
+DROP INDEX idx_infra_metrics_1m_bucket_at;
+DROP INDEX idx_infra_metrics_raw_collected_at;
+DROP INDEX idx_agent_diagnostics_collected_at;
+DROP INDEX idx_check_results_checked_at;
