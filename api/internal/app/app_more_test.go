@@ -14,7 +14,14 @@ func TestWorkerLiveness(t *testing.T) {
 	if a.WorkerHealthy(time.Minute) {
 		t.Fatal("no beat yet -> should be unhealthy")
 	}
+	if !a.WorkerLastBeat().IsZero() {
+		t.Fatal("no beat yet -> last beat should be the zero time")
+	}
+	before := time.Now()
 	a.MarkWorkerAlive()
+	if beat := a.WorkerLastBeat(); beat.Before(before) || beat.After(time.Now()) {
+		t.Fatalf("last beat %v not within the call window", beat)
+	}
 	if !a.WorkerHealthy(time.Minute) {
 		t.Fatal("should be healthy right after a beat")
 	}

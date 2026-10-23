@@ -12,6 +12,7 @@ import (
 	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/handlers"
+	"github.com/memetics19/pulse/api/internal/metrics"
 	"github.com/memetics19/pulse/api/internal/middleware"
 	"github.com/memetics19/pulse/api/internal/web"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
@@ -42,6 +43,10 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Handle("/static/*", web.StaticHandler())
 
 	r.Get("/healthz", handlers.NewHealth(a).Get)
+	// Prometheus metrics: off by default, opt in with PULSE_METRICS=true.
+	if ms := metrics.SettingsFromEnv(); ms.Enabled {
+		r.Handle("/metrics", metrics.Handler(a, ms.Token))
+	}
 	r.Get("/api/status", pub.StatusJSON)
 	ingestH := handlers.NewIngest(q)
 	r.Post("/api/ingest/metrics", ingestH.PostMetrics)

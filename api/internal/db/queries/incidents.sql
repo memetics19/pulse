@@ -25,3 +25,6 @@ UPDATE incidents SET rca = ? WHERE id = ? RETURNING *;
 
 -- name: DeleteIncident :exec
 DELETE FROM incidents WHERE id = ?;
+
+-- name: CountOpenIncidents :one
+SELECT COUNT(*) FROM incidents WHERE status != 'resolved';

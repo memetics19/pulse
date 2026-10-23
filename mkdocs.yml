@@ -21,6 +21,7 @@ nav:
   - Incidents: incidents.md
   - Diagnostics: diagnostics.md
   - Maintenance: maintenance.md
+  - Metrics: metrics.md
   - Status pages: status-pages.md
   - Theming: theming.md
   - API: api.md

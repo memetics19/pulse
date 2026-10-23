@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+const countOpenIncidents = `-- name: CountOpenIncidents :one
+SELECT COUNT(*) FROM incidents WHERE status != 'resolved'
+`
+
+func (q *Queries) CountOpenIncidents(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOpenIncidents)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAutoIncident = `-- name: CreateAutoIncident :one
 INSERT INTO incidents (title, severity, status, affected_monitor_ids, started_at, source, external_id)
 VALUES (?, 'major', 'detected', ?, ?, 'monitor', ?)

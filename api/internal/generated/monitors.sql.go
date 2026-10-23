@@ -181,6 +181,66 @@ func (q *Queries) ListActiveMonitors(ctx context.Context) ([]Monitor, error) {
 	return items, nil
 }
 
+const listMonitorMetrics = `-- name: ListMonitorMetrics :many
+SELECT
+  m.name,
+  m.type,
+  CAST(COALESCE(g.name, '') AS TEXT) AS group_name,
+  cr.status AS last_status,
+  cr.response_time_ms AS last_response_time_ms
+FROM monitors m
+LEFT JOIN monitor_groups g ON g.id = m.group_id
+LEFT JOIN check_results cr ON cr.id = (
+  SELECT c.id FROM check_results c
+  WHERE c.monitor_id = m.id
+  ORDER BY c.checked_at DESC, c.id DESC
+  LIMIT 1
+)
+WHERE m.is_active = 1
+ORDER BY m.id
+`
+
+type ListMonitorMetricsRow struct {
+	Name               string  `json:"name"`
+	Type               string  `json:"type"`
+	GroupName          string  `json:"group_name"`
+	LastStatus         *string `json:"last_status"`
+	LastResponseTimeMs *int64  `json:"last_response_time_ms"`
+}
+
+// One row per active monitor with its latest check result, for the /metrics
+// scrape. The status and response time are NULL until a monitor has a check.
+// Only names, types and groups are selected: targets (URLs, hosts) must never
+// reach metric labels.
+func (q *Queries) ListMonitorMetrics(ctx context.Context) ([]ListMonitorMetricsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMonitorMetrics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMonitorMetricsRow
+	for rows.Next() {
+		var i ListMonitorMetricsRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Type,
+			&i.GroupName,
+			&i.LastStatus,
+			&i.LastResponseTimeMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMonitors = `-- name: ListMonitors :many
 SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors ORDER BY created_at ASC
 `
