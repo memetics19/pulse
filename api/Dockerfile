@@ -1,15 +1,19 @@
 # syntax=docker/dockerfile:1
 
-# 1. Build the admin UI as a static export.
-FROM node:24-alpine AS ui
+# The build stages run on the build machine's own platform ($BUILDPLATFORM) and Go
+# cross-compiles for the target, so a multi-arch build emulates only the runtime stage.
+
+# 1. Build the admin UI as a static export. The output is plain files, the same on
+#    every architecture, so this stage runs once for all targets.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS ui
 WORKDIR /ui
 COPY ui/package*.json ./
 RUN NEXT_PUBLIC_API_URL="" npm ci
 COPY ui/ ./
 RUN NEXT_PUBLIC_API_URL="" npm run build
 
-# 2. Build the single Go binary, embedding the admin export.
-FROM golang:1.27.3-alpine AS build
+# 2. Build the single Go binary for the target platform, embedding the admin export.
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
 WORKDIR /src
 COPY go.work go.work.sum ./
 COPY agent/ agent/
@@ -17,7 +21,9 @@ COPY api/ api/
 COPY cli/ cli/
 COPY --from=ui /ui/out/ api/internal/web/dist/
 WORKDIR /src/api
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/pulse ./cmd/pulse
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/pulse ./cmd/pulse
 
 # 3. Minimal runtime: one static binary plus a SQLite file.
 FROM alpine:3.24
