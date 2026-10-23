@@ -55,11 +55,6 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	r.Get("/api/push/{token}", pushH.Heartbeat)
 	r.Post("/api/push/{token}", pushH.Heartbeat)
 
-	// Public read-only (status page client-side fetches)
-	r.Get("/api/monitors/{monitorID}/checks", handlers.NewCheckResults(q).List)
-	r.Get("/api/monitors/{monitorID}/checks/uptime", handlers.NewCheckResults(q).Uptime)
-	r.Get("/api/incidents/{incidentID}/updates", handlers.NewIncidentUpdates(q).List)
-
 	authH := handlers.NewAuth(q, cfg.SecureCookies, cfg.TrustedProxies...)
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/logout", authH.Logout)
@@ -113,7 +108,16 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 			r.Delete("/{id}", h.Delete)
 		})
 
-		r.Post("/api/incidents/{incidentID}/updates", handlers.NewIncidentUpdates(q).Create)
+		// Raw check rows carry status codes and dialer errors that name internal
+		// hosts and ports, and incident updates carry their author. Both stay behind auth: the public
+		// page renders its own sanitized view server side (see web.Public).
+		checksH := handlers.NewCheckResults(q)
+		r.Get("/api/monitors/{monitorID}/checks", checksH.List)
+		r.Get("/api/monitors/{monitorID}/checks/uptime", checksH.Uptime)
+
+		updatesH := handlers.NewIncidentUpdates(q)
+		r.Get("/api/incidents/{incidentID}/updates", updatesH.List)
+		r.Post("/api/incidents/{incidentID}/updates", updatesH.Create)
 
 		r.Route("/api/notifications", func(r chi.Router) {
 			h := handlers.NewNotifications(q, cfg.AllowPrivateMonitors)

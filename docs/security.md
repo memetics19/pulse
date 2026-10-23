@@ -49,6 +49,12 @@ API keys are named and scoped. See [API](api.md) for the scope list and Bearer u
 - Keys are revocable. Revoke a key to invalidate it immediately.
 - Each key carries only the scopes you assign, so you can grant least privilege for a given integration.
 
+## Public endpoints
+
+The status page, its JSON at `/api/status`, and its Atom feed are public. They show only the monitors and incidents of the page that matches the request Host. Monitors appear by name and status alone. Targets, raw check errors and status codes, and incident update authors are never public.
+
+Raw check results (`/api/monitors/{id}/checks`) and incident updates (`/api/incidents/{id}/updates`) need a session, or an API key with `monitors:read` or `incidents:read`. Pulse 3.0.0 and earlier served them to anyone. Their errors can name internal hosts and ports, so treat an older instance that was reachable from the internet as having exposed that detail. See [API](api.md#public-endpoints) for the full list of public routes.
+
 ## Verify a release
 
 Every release is built by `.github/workflows/release.yml` in GitHub Actions. Nothing is
