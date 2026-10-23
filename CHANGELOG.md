@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/memetics19/pulse/compare/v2.0.0...v2.1.0) (2026-10-23)
+
+
+### Features
+
+* .deb and .rpm packages for pulse, pulse-agent and pulse-cli ([#36](https://github.com/memetics19/pulse/issues/36)) ([fb91448](https://github.com/memetics19/pulse/commit/fb91448b6ec520fd36f00cf5768f14a177c30c88))
+
 ## [2.0.0](https://github.com/memetics19/pulse/compare/v1.1.0...v2.0.0) (2026-10-22)
 
 
