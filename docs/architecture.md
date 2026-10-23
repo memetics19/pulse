@@ -67,7 +67,8 @@ The monitoring worker runs inside the same process as the HTTP server. The worke
 - Auto-creates an incident after two consecutive down checks for a monitor.
 - Transitions maintenance windows through their states at their boundaries.
 - Suppresses alerts and auto-incidents for monitors under an active maintenance window.
-- Prunes raw check history and agent diagnostic bundles older than the retention window.
+- Rolls raw agent samples up into 1-minute averages. Each pass only rebuilds the minutes that received new samples.
+- Prunes check history, agent diagnostic bundles and 1-minute agent metrics older than the retention window, and deletes expired login sessions. Deletes run in small batches so they never hold the database for long.
 
 Because the worker is in-process, there is no separate scheduler service to deploy or coordinate.
 

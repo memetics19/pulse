@@ -182,13 +182,27 @@ func (q *Queries) ListCheckResults(ctx context.Context, arg ListCheckResultsPara
 	return items, nil
 }
 
-const pruneCheckResults = `-- name: PruneCheckResults :exec
-DELETE FROM check_results WHERE checked_at < ?
+const pruneCheckResults = `-- name: PruneCheckResults :execrows
+DELETE FROM check_results WHERE id IN (
+  SELECT old.id FROM check_results AS old WHERE old.checked_at < ?1
+  LIMIT ?2
+)
 `
 
-func (q *Queries) PruneCheckResults(ctx context.Context, checkedAt time.Time) error {
-	_, err := q.db.ExecContext(ctx, pruneCheckResults, checkedAt)
-	return err
+type PruneCheckResultsParams struct {
+	Cutoff    time.Time `json:"cutoff"`
+	BatchSize int64     `json:"batch_size"`
+}
+
+// PruneCheckResults deletes at most batch_size rows older than the
+// cutoff and reports how many went, so the pruner can loop in short write
+// transactions instead of holding the SQLite writer for one huge DELETE.
+func (q *Queries) PruneCheckResults(ctx context.Context, arg PruneCheckResultsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneCheckResults, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const uptimePercent = `-- name: UptimePercent :one

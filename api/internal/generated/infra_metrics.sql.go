@@ -131,13 +131,100 @@ func (q *Queries) ListRawMetrics(ctx context.Context, arg ListRawMetricsParams) 
 	return items, nil
 }
 
-const pruneRawMetrics = `-- name: PruneRawMetrics :exec
-DELETE FROM infra_metrics_raw WHERE collected_at < ?
+const listRawMetricsAfterID = `-- name: ListRawMetricsAfterID :many
+SELECT agent_id, collected_at FROM infra_metrics_raw
+WHERE id > ?1 AND id <= ?2
+  AND collected_at >= ?3
+ORDER BY id ASC
 `
 
-func (q *Queries) PruneRawMetrics(ctx context.Context, collectedAt time.Time) error {
-	_, err := q.db.ExecContext(ctx, pruneRawMetrics, collectedAt)
-	return err
+type ListRawMetricsAfterIDParams struct {
+	AfterID   int64     `json:"after_id"`
+	ThroughID int64     `json:"through_id"`
+	Since     time.Time `json:"since"`
+}
+
+type ListRawMetricsAfterIDRow struct {
+	AgentID     int64     `json:"agent_id"`
+	CollectedAt time.Time `json:"collected_at"`
+}
+
+// ListRawMetricsAfterID returns the raw rows inserted since the last rollup
+// (ids are AUTOINCREMENT, so they only grow). The collected_at bound matches
+// the window ListRawMetrics uses for a full rollup.
+func (q *Queries) ListRawMetricsAfterID(ctx context.Context, arg ListRawMetricsAfterIDParams) ([]ListRawMetricsAfterIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRawMetricsAfterID, arg.AfterID, arg.ThroughID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRawMetricsAfterIDRow
+	for rows.Next() {
+		var i ListRawMetricsAfterIDRow
+		if err := rows.Scan(&i.AgentID, &i.CollectedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const maxRawMetricID = `-- name: MaxRawMetricID :one
+SELECT CAST(COALESCE(MAX(id), 0) AS INTEGER) AS max_id FROM infra_metrics_raw
+`
+
+// MaxRawMetricID is the rollup watermark: the newest raw row that exists now.
+func (q *Queries) MaxRawMetricID(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, maxRawMetricID)
+	var max_id int64
+	err := row.Scan(&max_id)
+	return max_id, err
+}
+
+const prune1mMetrics = `-- name: Prune1mMetrics :execrows
+DELETE FROM infra_metrics_1m WHERE id IN (
+  SELECT old.id FROM infra_metrics_1m AS old WHERE old.bucket_at < ?1
+  LIMIT ?2
+)
+`
+
+type Prune1mMetricsParams struct {
+	Cutoff    time.Time `json:"cutoff"`
+	BatchSize int64     `json:"batch_size"`
+}
+
+func (q *Queries) Prune1mMetrics(ctx context.Context, arg Prune1mMetricsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, prune1mMetrics, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const pruneRawMetrics = `-- name: PruneRawMetrics :execrows
+DELETE FROM infra_metrics_raw WHERE id IN (
+  SELECT old.id FROM infra_metrics_raw AS old WHERE old.collected_at < ?1
+  LIMIT ?2
+)
+`
+
+type PruneRawMetricsParams struct {
+	Cutoff    time.Time `json:"cutoff"`
+	BatchSize int64     `json:"batch_size"`
+}
+
+func (q *Queries) PruneRawMetrics(ctx context.Context, arg PruneRawMetricsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneRawMetrics, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsert1mMetric = `-- name: Upsert1mMetric :exec

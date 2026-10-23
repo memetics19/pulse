@@ -24,8 +24,14 @@ WHERE s.token = ?;
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE token = ?;
 
--- name: DeleteExpiredSessions :exec
-DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP;
+-- DeleteExpiredSessions removes sessions that expired before the cutoff. The
+-- cutoff is bound from Go so it is formatted exactly like expires_at, which Go
+-- also writes. Comparing against CURRENT_TIMESTAMP would mix formats.
+-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions WHERE rowid IN (
+  SELECT old.rowid FROM sessions AS old WHERE old.expires_at < sqlc.arg(cutoff)
+  LIMIT sqlc.arg(batch_size)
+);
 
 -- name: SetUserTOTP :exec
 UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?;

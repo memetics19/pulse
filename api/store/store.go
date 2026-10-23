@@ -80,6 +80,19 @@ type ThemeConfig = generated.ThemeConfig
 type CreateAgentParams = generated.CreateAgentParams
 
 // ---------------------------------------------------------------------------
+// Param types — auth
+// ---------------------------------------------------------------------------
+
+// CreateUserParams is the public alias for the generated parameter type.
+type CreateUserParams = generated.CreateUserParams
+
+// CreateSessionParams is the public alias for the generated parameter type.
+type CreateSessionParams = generated.CreateSessionParams
+
+// DeleteExpiredSessionsParams is the public alias for the generated parameter type.
+type DeleteExpiredSessionsParams = generated.DeleteExpiredSessionsParams
+
+// ---------------------------------------------------------------------------
 // Param types — diagnostics
 // ---------------------------------------------------------------------------
 
@@ -88,6 +101,9 @@ type InsertAgentDiagnosticParams = generated.InsertAgentDiagnosticParams
 
 // ListAgentDiagnosticsParams is the public alias for the generated parameter type.
 type ListAgentDiagnosticsParams = generated.ListAgentDiagnosticsParams
+
+// PruneAgentDiagnosticsParams is the public alias for the generated parameter type.
+type PruneAgentDiagnosticsParams = generated.PruneAgentDiagnosticsParams
 
 // ---------------------------------------------------------------------------
 // Param types — check_results
@@ -98,6 +114,9 @@ type InsertCheckResultParams = generated.InsertCheckResultParams
 
 // ListCheckResultsParams is the public alias for the generated parameter type.
 type ListCheckResultsParams = generated.ListCheckResultsParams
+
+// PruneCheckResultsParams is the public alias for the generated parameter type.
+type PruneCheckResultsParams = generated.PruneCheckResultsParams
 
 // UptimePercentParams is the public alias for the generated parameter type.
 type UptimePercentParams = generated.UptimePercentParams
@@ -169,6 +188,15 @@ type List1mMetricsParams = generated.List1mMetricsParams
 
 // ListRawMetricsParams is the public alias for the generated parameter type.
 type ListRawMetricsParams = generated.ListRawMetricsParams
+
+// ListRawMetricsAfterIDParams is the public alias for the generated parameter type.
+type ListRawMetricsAfterIDParams = generated.ListRawMetricsAfterIDParams
+
+// Prune1mMetricsParams is the public alias for the generated parameter type.
+type Prune1mMetricsParams = generated.Prune1mMetricsParams
+
+// PruneRawMetricsParams is the public alias for the generated parameter type.
+type PruneRawMetricsParams = generated.PruneRawMetricsParams
 
 // Upsert1mMetricParams is the public alias for the generated parameter type.
 type Upsert1mMetricParams = generated.Upsert1mMetricParams

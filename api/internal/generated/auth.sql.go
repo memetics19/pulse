@@ -68,13 +68,27 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
-const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
-DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions WHERE rowid IN (
+  SELECT old.rowid FROM sessions AS old WHERE old.expires_at < ?1
+  LIMIT ?2
+)
 `
 
-func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteExpiredSessions)
-	return err
+type DeleteExpiredSessionsParams struct {
+	Cutoff    time.Time `json:"cutoff"`
+	BatchSize int64     `json:"batch_size"`
+}
+
+// DeleteExpiredSessions removes sessions that expired before the cutoff. The
+// cutoff is bound from Go so it is formatted exactly like expires_at, which Go
+// also writes. Comparing against CURRENT_TIMESTAMP would mix formats.
+func (q *Queries) DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSessionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteExpiredSessions, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteSession = `-- name: DeleteSession :exec

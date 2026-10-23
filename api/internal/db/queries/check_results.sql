@@ -27,8 +27,14 @@ SELECT
 FROM check_results
 WHERE monitor_id = ? AND checked_at >= ?;
 
--- name: PruneCheckResults :exec
-DELETE FROM check_results WHERE checked_at < ?;
+-- PruneCheckResults deletes at most batch_size rows older than the
+-- cutoff and reports how many went, so the pruner can loop in short write
+-- transactions instead of holding the SQLite writer for one huge DELETE.
+-- name: PruneCheckResults :execrows
+DELETE FROM check_results WHERE id IN (
+  SELECT old.id FROM check_results AS old WHERE old.checked_at < sqlc.arg(cutoff)
+  LIMIT sqlc.arg(batch_size)
+);
 
 -- name: LatestStatuses :many
 SELECT cr.monitor_id, cr.status
