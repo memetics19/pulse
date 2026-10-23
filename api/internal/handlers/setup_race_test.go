@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/memetics19/pulse/api/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,7 +83,7 @@ func TestSetupConcurrentRequestsCreateOneAdmin(t *testing.T) {
 	const n = 32
 	dataDir := t.TempDir()
 	a := app.New()
-	h := handlers.NewSetup(a, dataDir, false)
+	h := handlers.NewSetup(a, dataDir, config.Config{})
 
 	codes := fireSetups(func(int) http.HandlerFunc { return h.Complete }, n, filepath.Join(dataDir, "pulse.db"))
 	onlyWinner(t, codes)
@@ -107,7 +108,7 @@ func TestSetupConcurrentServersShareOneDatabase(t *testing.T) {
 	hs := make([]*handlers.Setup, n)
 	for i := range n {
 		apps[i], dirs[i] = app.New(), t.TempDir()
-		hs[i] = handlers.NewSetup(apps[i], dirs[i], false)
+		hs[i] = handlers.NewSetup(apps[i], dirs[i], config.Config{})
 	}
 
 	codes := fireSetups(func(i int) http.HandlerFunc { return hs[i].Complete }, n, path)
@@ -133,7 +134,7 @@ func TestSetupFailureLeavesNothingBehind(t *testing.T) {
 	notADir := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o600))
 
-	broken := handlers.NewSetup(app.New(), filepath.Join(notADir, "data"), false)
+	broken := handlers.NewSetup(app.New(), filepath.Join(notADir, "data"), config.Config{})
 	rec := httptest.NewRecorder()
 	broken.Complete(rec, httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(setupBody("admin", path))))
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -145,7 +146,7 @@ func TestSetupFailureLeavesNothingBehind(t *testing.T) {
 
 	a := app.New()
 	rec = httptest.NewRecorder()
-	handlers.NewSetup(a, t.TempDir(), false).Complete(rec,
+	handlers.NewSetup(a, t.TempDir(), config.Config{}).Complete(rec,
 		httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(setupBody("admin", path))))
 	require.Equal(t, http.StatusCreated, rec.Code)
 	t.Cleanup(func() { _ = a.DB().Close() })

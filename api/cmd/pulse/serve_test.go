@@ -26,29 +26,6 @@ func freePort(t *testing.T) string {
 	return port
 }
 
-func TestDataDir(t *testing.T) {
-	t.Setenv("PULSE_DATA_DIR", "/custom")
-	if got := dataDir(); got != "/custom" {
-		t.Fatalf("dataDir=%q want /custom", got)
-	}
-	t.Setenv("PULSE_DATA_DIR", "")
-	t.Setenv("SQLITE_PATH", "")
-	t.Setenv("PULSE_DB", "/var/lib/pulse/pulse.db")
-	if got := dataDir(); got != "/var/lib/pulse" {
-		t.Fatalf("dataDir=%q want /var/lib/pulse", got)
-	}
-	// The pre-3.0 name still works when PULSE_DB is unset.
-	t.Setenv("PULSE_DB", "")
-	t.Setenv("SQLITE_PATH", "/srv/old/pulse.db")
-	if got := dataDir(); got != "/srv/old" {
-		t.Fatalf("dataDir=%q want /srv/old", got)
-	}
-	t.Setenv("SQLITE_PATH", "")
-	if got := dataDir(); got != "/data" {
-		t.Fatalf("dataDir=%q want /data", got)
-	}
-}
-
 func TestRunWorkerStopsOnCancel(t *testing.T) {
 	// Unconfigured app: runWorker polls, then returns on cancel.
 	a := app.New()

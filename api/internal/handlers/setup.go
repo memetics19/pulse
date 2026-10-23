@@ -14,6 +14,7 @@ import (
 	"github.com/memetics19/pulse/api/internal/app"
 	"github.com/memetics19/pulse/api/internal/auth"
 	"github.com/memetics19/pulse/api/internal/bootstrap"
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/db"
 	"github.com/memetics19/pulse/api/internal/generated"
 )
@@ -22,6 +23,10 @@ import (
 type Setup struct {
 	app     *app.App
 	dataDir string
+	// dbPath is the database file the wizard creates unless the form names
+	// another. dbFixed means PULSE_DB set it, and the form may not change it.
+	dbPath  string
+	dbFixed bool
 	secure  bool
 
 	// mu serializes Complete, so the configured check, the database open and
@@ -32,18 +37,26 @@ type Setup struct {
 // setupDone is the reply to every setup attempt after the one that won.
 const setupDone = "setup is already complete"
 
-// NewSetup constructs a Setup handler bound to the given app and data directory.
-// secure controls whether session cookies are marked Secure.
-func NewSetup(a *app.App, dataDir string, secure bool) *Setup {
-	return &Setup{app: a, dataDir: dataDir, secure: secure}
+// NewSetup constructs a Setup handler bound to the given app and data
+// directory. The database file comes from cfg.SQLitePath, or pulse.db in
+// dataDir when that is empty. cfg.SecureCookies controls whether session
+// cookies are marked Secure.
+func NewSetup(a *app.App, dataDir string, cfg config.Config) *Setup {
+	dbPath := cfg.SQLitePath
+	if dbPath == "" {
+		dbPath = filepath.Join(dataDir, config.DBFileName)
+	}
+	return &Setup{app: a, dataDir: dataDir, dbPath: dbPath, dbFixed: cfg.SQLitePathSet, secure: cfg.SecureCookies}
 }
 
 // State reports whether the instance has been configured yet and provides the
-// default SQLite path so the frontend can pre-fill the form.
+// default SQLite path so the frontend can pre-fill the form. When PULSE_DB
+// sets the path, sqlite_path_fixed tells the form not to offer another.
 func (s *Setup) State(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"configured":          s.app.Configured(),
-		"default_sqlite_path": s.dataDir + "/pulse.db",
+		"default_sqlite_path": s.dbPath,
+		"sqlite_path_fixed":   s.dbFixed,
 	})
 }
 
@@ -77,7 +90,11 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 
 	path := req.SQLitePath
 	if path == "" {
-		path = s.dataDir + "/pulse.db"
+		path = s.dbPath
+	}
+	if s.dbFixed && filepath.Clean(path) != filepath.Clean(s.dbPath) {
+		http.Error(w, "the database file is set by PULSE_DB on the server: "+s.dbPath, http.StatusBadRequest)
+		return
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

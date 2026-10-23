@@ -76,6 +76,9 @@ func clearRenamed(t *testing.T) {
 		t.Setenv(newName, "")
 		t.Setenv(old, "")
 	}
+	for _, name := range []string{"PULSE_DATA_DIR", "PULSE_DATABASE_URL", "DATABASE_URL"} {
+		t.Setenv(name, "")
+	}
 	warned.Clear()
 	t.Cleanup(func() { warned.Clear() })
 }
@@ -114,9 +117,8 @@ func TestLoadFallsBackToOldNames(t *testing.T) {
 	logs := captureLog(t)
 	t.Setenv("API_PORT", "7070")
 	t.Setenv("SQLITE_PATH", "/old/pulse.db")
-	t.Setenv("DATABASE_URL", "postgres://old/pulse")
 	c := Load()
-	if c.Port != "7070" || c.SQLitePath != "/old/pulse.db" || c.DatabaseURL != "postgres://old/pulse" {
+	if c.Port != "7070" || c.SQLitePath != "/old/pulse.db" || !c.SQLitePathSet {
 		t.Fatalf("Load did not fall back to the old names: %+v", c)
 	}
 	for newName, old := range renamed {
@@ -169,6 +171,112 @@ func TestEnvNotRenamed(t *testing.T) {
 	t.Setenv("PULSE_DATA_DIR", "")
 	if got := Env("PULSE_DATA_DIR"); got != "" {
 		t.Errorf("unset setting should be empty, got %q", got)
+	}
+}
+
+// A platform such as Heroku, Railway or Dokku injects DATABASE_URL on its own.
+// Pulse must neither read it nor warn about it. PULSE_DATABASE_URL still works.
+func TestPlatformDatabaseURLIgnored(t *testing.T) {
+	clearRenamed(t)
+	logs := captureLog(t)
+	t.Setenv("DATABASE_URL", "postgres://platform/db")
+	if c := Load(); c.DatabaseURL != "" {
+		t.Errorf("DatabaseURL = %q, want empty: DATABASE_URL is not a Pulse setting", c.DatabaseURL)
+	}
+	if logs.Len() != 0 {
+		t.Errorf("DATABASE_URL should not warn, got %q", logs.String())
+	}
+	t.Setenv("PULSE_DATABASE_URL", "postgres://pulse/db")
+	if c := Load(); c.DatabaseURL != "postgres://pulse/db" {
+		t.Errorf("DatabaseURL = %q, want the PULSE_DATABASE_URL value", c.DatabaseURL)
+	}
+}
+
+func TestDataDir(t *testing.T) {
+	cases := []struct {
+		name, dataDir, db, sqlitePath, want string
+	}{
+		{"PULSE_DATA_DIR wins", "/custom", "/var/lib/pulse/pulse.db", "", "/custom"},
+		{"directory of PULSE_DB", "", "/var/lib/pulse/custom.db", "", "/var/lib/pulse"},
+		{"directory of the old SQLITE_PATH", "", "", "/srv/old/pulse.db", "/srv/old"},
+		{"default", "", "", "", "/data"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearRenamed(t)
+			captureLog(t)
+			t.Setenv("PULSE_DATA_DIR", tc.dataDir)
+			t.Setenv("PULSE_DB", tc.db)
+			t.Setenv("SQLITE_PATH", tc.sqlitePath)
+			if got := DataDir(); got != tc.want {
+				t.Errorf("DataDir() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDBPathPrecedence(t *testing.T) {
+	cases := []struct {
+		name, dataDir, db, sqlitePath, want string
+		set                                 bool
+	}{
+		{"PULSE_DB is the full path", "", "/srv/pulse/custom.db", "", "/srv/pulse/custom.db", true},
+		{"PULSE_DB wins over PULSE_DATA_DIR", "/data", "/srv/pulse/custom.db", "", "/srv/pulse/custom.db", true},
+		{"PULSE_DB wins over SQLITE_PATH", "", "/new/pulse.db", "/old/pulse.db", "/new/pulse.db", true},
+		{"old SQLITE_PATH is the full path", "", "", "/srv/old/custom.db", "/srv/old/custom.db", true},
+		{"pulse.db in PULSE_DATA_DIR", "/var/lib/pulse", "", "", "/var/lib/pulse/pulse.db", false},
+		{"default", "", "", "", "/data/pulse.db", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearRenamed(t)
+			captureLog(t)
+			t.Setenv("PULSE_DATA_DIR", tc.dataDir)
+			t.Setenv("PULSE_DB", tc.db)
+			t.Setenv("SQLITE_PATH", tc.sqlitePath)
+			if got := DBPath(); got != tc.want {
+				t.Errorf("DBPath() = %q, want %q", got, tc.want)
+			}
+			c := Load()
+			if c.SQLitePath != tc.want || c.SQLitePathSet != tc.set {
+				t.Errorf("Load() SQLitePath=%q SQLitePathSet=%v, want %q %v", c.SQLitePath, c.SQLitePathSet, tc.want, tc.set)
+			}
+		})
+	}
+}
+
+// The settings each shipped way of running Pulse passes must resolve to the
+// file those installs use today, pulse.db in their data directory, so an
+// upgrade does not move anyone's database.
+func TestShippedInstallsKeepTheirDatabase(t *testing.T) {
+	cases := []struct {
+		name            string
+		env             map[string]string
+		wantDir, wantDB string
+	}{
+		{"deb 2.1", map[string]string{"SQLITE_PATH": "/var/lib/pulse/pulse.db", "PULSE_DATA_DIR": "/var/lib/pulse"}, "/var/lib/pulse", "/var/lib/pulse/pulse.db"},
+		{"deb 3.0", map[string]string{"PULSE_DB": "/var/lib/pulse/pulse.db", "PULSE_DATA_DIR": "/var/lib/pulse"}, "/var/lib/pulse", "/var/lib/pulse/pulse.db"},
+		{"image 2.1", map[string]string{"SQLITE_PATH": "/data/pulse.db", "PULSE_DATA_DIR": "/data"}, "/data", "/data/pulse.db"},
+		{"image 3.0", map[string]string{"PULSE_DATA_DIR": "/data"}, "/data", "/data/pulse.db"},
+		{"image 3.0 with Compose PULSE_DB", map[string]string{"PULSE_DATA_DIR": "/data", "PULSE_DB": "/data/pulse.db"}, "/data", "/data/pulse.db"},
+		{"homelab", map[string]string{"PULSE_DATA_DIR": "/data", "SQLITE_PATH": "/data/pulse.db"}, "/data", "/data/pulse.db"},
+		{"installer", map[string]string{"SQLITE_PATH": "/home/u/.pulse/pulse.db", "PULSE_DATA_DIR": "/home/u/.pulse"}, "/home/u/.pulse", "/home/u/.pulse/pulse.db"},
+		{"bare binary", map[string]string{}, "/data", "/data/pulse.db"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearRenamed(t)
+			captureLog(t)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if got := DataDir(); got != tc.wantDir {
+				t.Errorf("DataDir() = %q, want %q", got, tc.wantDir)
+			}
+			if got := DBPath(); got != tc.wantDB {
+				t.Errorf("DBPath() = %q, want %q", got, tc.wantDB)
+			}
+		})
 	}
 }
 

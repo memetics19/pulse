@@ -176,7 +176,7 @@ export async function fetchOverview(): Promise<Overview> {
   return res.json()
 }
 
-export type SetupState = { configured: boolean; default_sqlite_path: string }
+export type SetupState = { configured: boolean; default_sqlite_path: string; sqlite_path_fixed?: boolean }
 export async function setupState(): Promise<SetupState> {
   const res = await fetch(`${BASE}/api/setup/state`, { cache: 'no-store' })
   return res.json()

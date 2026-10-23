@@ -105,8 +105,8 @@ sudo apt update && sudo apt install pulse
 ```
 
 Settings are in `/etc/pulse/pulse.env`. Every server setting has a `PULSE_` name, such as
-`PULSE_PORT` and `PULSE_DB`. Pulse 3.0 renamed `API_PORT`, `SQLITE_PATH` and
-`DATABASE_URL`, and the old names work with a warning until 4.0. See
+`PULSE_PORT` and `PULSE_DB`. Pulse 3.0 renamed `API_PORT` and `SQLITE_PATH`, and the
+old names work with a warning until 4.0. See
 [Configuration](docs/configuration.md). `pulse-agent` and `pulse-cli` are packages there
 too. Each release also has `.deb` and `.rpm` files.
 
