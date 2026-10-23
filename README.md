@@ -92,6 +92,21 @@ service:
 curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/install.sh | sh
 ```
 
+On Debian or Ubuntu, install the package from the signed apt repository instead. It runs
+Pulse as a `systemd` service under its own user, keeps its data in `/var/lib/pulse`, and
+`apt upgrade` brings new releases:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://apt.shreeda.xyz/key.gpg | sudo tee /etc/apt/keyrings/memetics19.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/memetics19.gpg] https://apt.shreeda.xyz stable main" |
+  sudo tee /etc/apt/sources.list.d/memetics19.list
+sudo apt update && sudo apt install pulse
+```
+
+Settings are in `/etc/pulse/pulse.env`. `pulse-agent` and `pulse-cli` are packages there
+too. Each release also has `.deb` and `.rpm` files.
+
 Prefer containers? Run it with Docker Compose instead:
 
 ```bash

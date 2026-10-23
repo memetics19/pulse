@@ -28,6 +28,39 @@ curl -fsSL https://raw.githubusercontent.com/memetics19/pulse/main/deploy/instal
 Manage the Linux service with `systemctl status pulse`, `journalctl -u pulse -f`,
 and `systemctl restart pulse`.
 
+## Install with apt (Debian and Ubuntu)
+
+The signed apt repository has every release for amd64 and arm64:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://apt.shreeda.xyz/key.gpg | sudo tee /etc/apt/keyrings/memetics19.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/memetics19.gpg] https://apt.shreeda.xyz stable main" |
+  sudo tee /etc/apt/sources.list.d/memetics19.list
+sudo apt update && sudo apt install pulse
+```
+
+The `pulse` package runs Pulse as a `systemd` service under the `pulse` user. It starts
+right away on port 8080, so open `http://<host>:8080/setup` to finish. Its settings are in
+`/etc/pulse/pulse.env` (the same variables as [Configuration](configuration.md)), and an
+upgrade keeps your changes:
+
+```bash
+sudo nano /etc/pulse/pulse.env
+sudo systemctl restart pulse
+```
+
+The data is in `/var/lib/pulse`. Removing the package stops the service and keeps the data.
+
+`pulse-agent` sends a host's metrics to Pulse. After `sudo apt install pulse-agent`, set
+`PULSE_SERVER` in `/etc/pulse-agent/agent.env`, put the agent token in
+`/etc/pulse-agent/token`, then `sudo systemctl enable --now pulse-agent`. `pulse-cli` is
+the command line client.
+
+On Fedora or RHEL, download the `.rpm` from the
+[Releases](https://github.com/memetics19/pulse/releases) page and install it with
+`sudo dnf install ./pulse-<version>-1.x86_64.rpm`.
+
 ## Quick start with Docker Compose
 
 Alternatively, run it as a container. Clone the repository and start it:
@@ -110,8 +143,8 @@ grep " pulse-cli_${OS}_${ARCH}\$" SHA256SUMS | sed "s|pulse-cli_${OS}_${ARCH}|pu
 chmod +x pulse-cli && sudo mv pulse-cli /usr/local/bin/
 ```
 
-The checksum step is the same one `install.sh` performs for the server binary;
-skip it only if you have another way to verify the download.
+The checksum step is the same one `install.sh` performs for the server binary. Skip it
+only if you have another way to verify the download, for example the apt package.
 
 ### Run the import
 
