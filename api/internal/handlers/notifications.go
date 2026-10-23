@@ -7,14 +7,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
+	"github.com/memetics19/pulse/api/internal/worker/alerter"
 )
 
 type Notifications struct {
-	q *generated.Queries
+	q            *generated.Queries
+	allowPrivate bool
 }
 
-func NewNotifications(q *generated.Queries) *Notifications {
-	return &Notifications{q: q}
+// NewNotifications serves the notification API. allowPrivate is
+// PULSE_ALLOW_PRIVATE_MONITORS: it decides whether a webhook may point at a
+// private or internal address (see alerter.ValidateNotification).
+func NewNotifications(q *generated.Queries, allowPrivate bool) *Notifications {
+	return &Notifications{q: q, allowPrivate: allowPrivate}
 }
 
 func (h *Notifications) List(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +38,10 @@ func (h *Notifications) List(w http.ResponseWriter, r *http.Request) {
 func (h *Notifications) Create(w http.ResponseWriter, r *http.Request) {
 	var params generated.CreateNotificationParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := alerter.ValidateNotification(params.Channel, params.ConfigJson, h.allowPrivate); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -55,6 +64,10 @@ func (h *Notifications) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var params generated.UpdateNotificationParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := alerter.ValidateNotification(params.Channel, params.ConfigJson, h.allowPrivate); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

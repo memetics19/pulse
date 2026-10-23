@@ -35,3 +35,16 @@ The public status page shows each incident with its full update timeline. Incide
 ## Notifications
 
 When configured, Pulse sends incident notifications by email (through Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
+
+Each notification has a channel and a small JSON config, checked when it is saved:
+
+| Channel | Config | Rules |
+| --- | --- | --- |
+| `email` | `{"to": "ops@example.com"}` | One plain address. |
+| `slack` | `{"webhook_url": "https://hooks.slack.com/services/..."}` | `https` only, no credentials in the URL. Leave it out to use `SLACK_WEBHOOK_URL`. |
+
+Other keys are refused. A webhook may not point at a private or internal address (the
+LAN, loopback, link-local or cloud metadata addresses) unless
+`PULSE_ALLOW_PRIVATE_MONITORS=true`, the same rule monitors follow. The address is checked
+when the notification is saved, again before every send, and once more when the connection
+is opened. Redirects are not followed.

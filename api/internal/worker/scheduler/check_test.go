@@ -38,7 +38,7 @@ func TestCheckPersistsAndAppliesThresholds(t *testing.T) {
 	mon := makeMonitor(t, q)
 
 	det := incident.NewDetector(q)
-	disp := alerter.NewDispatcher(q, "", "")
+	disp := alerter.NewDispatcher(q, "", "", false)
 	s := New(db, checkresult.New(db, det, disp), true)
 
 	var beats int

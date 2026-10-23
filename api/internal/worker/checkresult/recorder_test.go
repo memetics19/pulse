@@ -113,7 +113,7 @@ func TestRecorder_TwoDownResultsCreateOneIncident(t *testing.T) {
 func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 	var hits atomic.Int64
 	var texts []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		hits.Add(1)
 		var payload struct {
 			Text string `json:"text"`
@@ -131,7 +131,7 @@ func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r := checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, "", ""))
+	r := checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, "", "", true, alerter.WithHTTPClient(srv.Client())))
 	now := time.Now()
 
 	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
@@ -235,7 +235,7 @@ func TestRecorder_RollsBackResultWhenIncidentInsertFails(t *testing.T) {
 
 func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
 	var alertHits atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		alertHits.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -254,8 +254,8 @@ func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r1 := checkresult.New(db1, incident.NewDetector(q1), alerter.NewDispatcher(q1, "", ""))
-	r2 := checkresult.New(db2, incident.NewDetector(q2), alerter.NewDispatcher(q2, "", ""))
+	r1 := checkresult.New(db1, incident.NewDetector(q1), alerter.NewDispatcher(q1, "", "", true, alerter.WithHTTPClient(srv.Client())))
+	r2 := checkresult.New(db2, incident.NewDetector(q2), alerter.NewDispatcher(q2, "", "", true, alerter.WithHTTPClient(srv.Client())))
 	now := time.Now()
 	require.NoError(t, r1.Record(context.Background(), mon, checkresult.Input{
 		Status: "down", CheckedAt: now,
