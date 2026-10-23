@@ -77,7 +77,7 @@ The admin interface is built as static assets and embedded into the Go binary. T
 
 ## SQLite
 
-SQLite is the only data store. A single file holds the admin account, monitors and groups, check history, incidents and updates, maintenance windows, status pages, themes, API keys, and notification settings. The path is set by `SQLITE_PATH`. See [Configuration](configuration.md) for persistence guidance.
+SQLite is the only data store. A single file holds the admin account, monitors and groups, check history, incidents and updates, maintenance windows, status pages, themes, API keys, and notification settings. The path is set by `PULSE_DB`. See [Configuration](configuration.md) for persistence guidance.
 
 ## Host-based page resolution
 

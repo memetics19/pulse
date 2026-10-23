@@ -119,12 +119,13 @@ func runWorker(ctx context.Context, a *app.App, cfg config.Config) {
 	}
 }
 
-// dataDir resolves the directory holding the bootstrap config and SQLite file.
+// dataDir resolves the directory holding the bootstrap config and SQLite file:
+// PULSE_DATA_DIR, else the directory of PULSE_DB, else /data.
 func dataDir() string {
 	if d := os.Getenv("PULSE_DATA_DIR"); d != "" {
 		return d
 	}
-	if p := os.Getenv("SQLITE_PATH"); p != "" {
+	if p := config.Env("PULSE_DB"); p != "" {
 		return filepath.Dir(p)
 	}
 	return "/data"

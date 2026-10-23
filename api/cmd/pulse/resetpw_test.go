@@ -13,7 +13,7 @@ func TestRunResetPasswordHappyPath(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/pulse.db"
 	t.Setenv("PULSE_DATA_DIR", dir)
-	t.Setenv("SQLITE_PATH", path)
+	t.Setenv("PULSE_DB", path)
 
 	// Create the DB (runs migrations) and an admin user to reset.
 	conn, err := db.Open(path)

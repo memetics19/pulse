@@ -12,7 +12,7 @@ services:
   pulse:
     image: ghcr.io/memetics19/pulse:latest
     environment:
-      SQLITE_PATH: /data/pulse.db
+      PULSE_DB: /data/pulse.db
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}

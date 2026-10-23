@@ -9,7 +9,7 @@ services:
     environment:
       # SQLite is the default store; the database file lives on the volume.
       # The first visit shows a setup wizard to create the admin account.
-      SQLITE_PATH: /data/pulse.db
+      PULSE_DB: /data/pulse.db
       # Optional notification channels. Leave unset to disable.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}

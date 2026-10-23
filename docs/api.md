@@ -4,7 +4,7 @@ Pulse exposes a REST API for automation. Requests authenticate with a scoped API
 
 ## Base path
 
-The API is served by the same process as the rest of Pulse, on the port set by `API_PORT` (default `8080`). API routes are under `/api`. The examples below assume Pulse is reachable at `https://status.shreeda.xyz`.
+The API is served by the same process as the rest of Pulse, on the port set by `PULSE_PORT` (default `8080`). API routes are under `/api`. The examples below assume Pulse is reachable at `https://status.shreeda.xyz`.
 
 ## API keys and scopes
 
