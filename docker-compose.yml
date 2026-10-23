@@ -8,7 +8,8 @@ services:
       - "8080:8080"
     environment:
       # SQLite is the default store; the database file lives on the volume.
-      # The first visit shows a setup wizard to create the admin account.
+      # The first visit shows a setup wizard to create the admin account. It asks
+      # for the setup token in the log: docker compose logs pulse | grep "setup token"
       PULSE_DB: /data/pulse.db
       # Optional notification channels. Leave unset to disable.
       RESEND_API_KEY: ${RESEND_API_KEY:-}

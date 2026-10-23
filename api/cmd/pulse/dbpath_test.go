@@ -57,6 +57,7 @@ func TestDatabaseFile(t *testing.T) {
 		{"PULSE_DB naming the recorded file is quiet", recorded, config.Config{SQLitePath: "/data/./pulse.db", SQLitePathSet: true}, "/data/pulse.db", false},
 		{"PULSE_DB naming another file keeps the recorded one and warns", recorded, config.Config{SQLitePath: "/data/custom.db", SQLitePathSet: true}, "/data/pulse.db", true},
 		{"a record without a path falls back to the configured file", bootstrap.Config{Configured: true}, config.Config{SQLitePath: "/data/pulse.db"}, "/data/pulse.db", false},
+		{"a file chosen in the wizard before #61 stays in use", bootstrap.Config{Configured: true, SQLitePath: "/srv/chosen.db"}, config.Config{SQLitePath: "/data/pulse.db"}, "/srv/chosen.db", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -116,12 +117,13 @@ func TestSetupAndResetPasswordAgree(t *testing.T) {
 			}
 			want := tc.want(dir)
 
-			// The wizard offers the file, and creates it when the form keeps it.
+			// The wizard shows the file the server chose, and setup creates it.
+			t.Setenv("PULSE_SETUP_TOKEN", "off")
 			h := server.New(app.New(), config.DataDir(), config.Load())
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/setup/state", nil))
 			var st struct {
-				Path string `json:"default_sqlite_path"`
+				Path string `json:"sqlite_path"`
 			}
 			if err := json.NewDecoder(rec.Body).Decode(&st); err != nil {
 				t.Fatal(err)
@@ -129,7 +131,7 @@ func TestSetupAndResetPasswordAgree(t *testing.T) {
 			if st.Path != want {
 				t.Fatalf("wizard offers %q, want %q", st.Path, want)
 			}
-			body, _ := json.Marshal(map[string]string{"username": "admin", "password": "original-pass", "sqlite_path": st.Path})
+			body, _ := json.Marshal(map[string]string{"username": "admin", "password": "original-pass"})
 			rec = httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(body)))
 			if rec.Code != http.StatusCreated {
@@ -154,6 +156,42 @@ func TestSetupAndResetPasswordAgree(t *testing.T) {
 			}
 			assertPassword(t, want, "admin", "brand-new-pass")
 		})
+	}
+}
+
+// Through the real router, a fresh server with no PULSE_SETUP_TOKEN logs a
+// token and refuses setup without it.
+func TestFreshServerRequiresSetupToken(t *testing.T) {
+	clearDBEnv(t)
+	t.Setenv("PULSE_SETUP_TOKEN", "")
+	logs := captureLog(t)
+	dir := t.TempDir()
+	t.Setenv("PULSE_DATA_DIR", dir)
+	a := app.New()
+	h := server.New(a, config.DataDir(), config.Load())
+
+	const prefix = "open /setup and enter this token: "
+	i := strings.Index(logs.String(), prefix)
+	if i < 0 {
+		t.Fatalf("no setup token in the log: %q", logs.String())
+	}
+	token := strings.TrimSpace(strings.SplitN(logs.String()[i+len(prefix):], "\n", 2)[0])
+
+	post := func(body map[string]string) int {
+		b, _ := json.Marshal(body)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(b)))
+		return rec.Code
+	}
+	if code := post(map[string]string{"username": "admin", "password": "original-pass"}); code != http.StatusUnauthorized {
+		t.Fatalf("setup without the token = %d, want 401", code)
+	}
+	if code := post(map[string]string{"username": "admin", "password": "original-pass", "setup_token": token}); code != http.StatusCreated {
+		t.Fatalf("setup with the token = %d, want 201", code)
+	}
+	t.Cleanup(func() { _ = a.DB().Close() })
+	if _, err := os.Stat(filepath.Join(dir, "pulse.db")); err != nil {
+		t.Fatalf("setup did not create the server's file: %v", err)
 	}
 }
 

@@ -61,9 +61,10 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	t.Setenv("PULSE_ALLOW_PRIVATE_MONITORS", "true")
 	t.Setenv("PULSE_CORS_ORIGINS", "https://a.com,https://b.com")
 	t.Setenv("PULSE_TRUSTED_PROXIES", "10.0.0.0/8")
+	t.Setenv("PULSE_SETUP_TOKEN", " a-setup-token ")
 	c := Load()
 	if c.Port != "9999" || c.SQLitePath != "/tmp/x.db" || !c.AllowPrivateMonitors ||
-		len(c.CORSOrigins) != 2 || len(c.TrustedProxies) != 1 {
+		len(c.CORSOrigins) != 2 || len(c.TrustedProxies) != 1 || c.SetupToken != "a-setup-token" {
 		t.Fatalf("Load did not populate config from env: %+v", c)
 	}
 }
@@ -76,7 +77,7 @@ func clearRenamed(t *testing.T) {
 		t.Setenv(newName, "")
 		t.Setenv(old, "")
 	}
-	for _, name := range []string{"PULSE_DATA_DIR", "PULSE_DATABASE_URL", "DATABASE_URL"} {
+	for _, name := range []string{"PULSE_DATA_DIR", "PULSE_DATABASE_URL", "DATABASE_URL", "PULSE_SETUP_TOKEN"} {
 		t.Setenv(name, "")
 	}
 	warned.Clear()

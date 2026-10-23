@@ -118,7 +118,7 @@ cd pulse
 docker compose up -d
 ```
 
-Open `http://localhost:8080`. On first start, every route redirects to a setup wizard. Create the admin account, set branding, and choose the SQLite path. After setup the app runs normally.
+Open `http://localhost:8080`. On first start, every route redirects to a setup wizard. Enter the setup token that Pulse prints in its log (`docker compose logs pulse | grep "setup token"`), create the admin account and set branding. The server picks the SQLite file from `PULSE_DB` or `PULSE_DATA_DIR`. After setup the app runs normally.
 
 To serve a public page such as `status.shreeda.xyz` over HTTPS, run a reverse proxy in front of Pulse that terminates TLS and forwards to port 8080. See the status pages documentation for Caddy and nginx examples.
 

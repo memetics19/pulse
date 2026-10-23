@@ -176,14 +176,17 @@ export async function fetchOverview(): Promise<Overview> {
   return res.json()
 }
 
-export type SetupState = { configured: boolean; default_sqlite_path: string; sqlite_path_fixed?: boolean }
+// SetupState describes a fresh instance. sqlite_path is the database file the
+// server chose (PULSE_DB or PULSE_DATA_DIR), shown read-only. The token itself
+// is only in the server log.
+export type SetupState = { configured: boolean; sqlite_path?: string; setup_token_required?: boolean }
 export async function setupState(): Promise<SetupState> {
   const res = await fetch(`${BASE}/api/setup/state`, { cache: 'no-store' })
   return res.json()
 }
 export async function runSetup(payload: {
   name: string; email: string; username: string; password: string
-  site_name: string; logo_url: string; sqlite_path: string
+  site_name: string; logo_url: string; setup_token?: string
 }): Promise<void> {
   const res = await fetch(`${BASE}/api/setup`, {
     method: 'POST', credentials: 'include',

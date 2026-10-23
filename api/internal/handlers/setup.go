@@ -2,12 +2,17 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,11 +28,14 @@ import (
 type Setup struct {
 	app     *app.App
 	dataDir string
-	// dbPath is the database file the wizard creates unless the form names
-	// another. dbFixed means PULSE_DB set it, and the form may not change it.
-	dbPath  string
-	dbFixed bool
-	secure  bool
+	// dbPath is the database file setup creates. Only the server decides it:
+	// PULSE_DB, else pulse.db in PULSE_DATA_DIR, else the default. A request
+	// can never name another file.
+	dbPath string
+	// token is the one-time setup token a request must carry. Empty means no
+	// token is required, which only PULSE_SETUP_TOKEN=off allows.
+	token  string
+	secure bool
 
 	// mu serializes Complete, so the configured check, the database open and
 	// the admin insert run for one request at a time in this process.
@@ -37,26 +45,67 @@ type Setup struct {
 // setupDone is the reply to every setup attempt after the one that won.
 const setupDone = "setup is already complete"
 
+// setupFailed is the reply to every setup attempt that fails on the server.
+// The detail goes to the server log, never to the client.
+const setupFailed = "setup failed, see the server log"
+
 // NewSetup constructs a Setup handler bound to the given app and data
 // directory. The database file comes from cfg.SQLitePath, or pulse.db in
 // dataDir when that is empty. cfg.SecureCookies controls whether session
 // cookies are marked Secure.
+//
+// Until the app is configured, setup needs a token: cfg.SetupToken when set,
+// else a random one generated here and logged once. cfg.SetupToken set to
+// "off" turns the check off, for automated installs.
 func NewSetup(a *app.App, dataDir string, cfg config.Config) *Setup {
 	dbPath := cfg.SQLitePath
 	if dbPath == "" {
 		dbPath = filepath.Join(dataDir, config.DBFileName)
 	}
-	return &Setup{app: a, dataDir: dataDir, dbPath: dbPath, dbFixed: cfg.SQLitePathSet, secure: cfg.SecureCookies}
+	return &Setup{app: a, dataDir: dataDir, dbPath: dbPath, token: setupToken(a, cfg.SetupToken), secure: cfg.SecureCookies}
 }
 
-// State reports whether the instance has been configured yet and provides the
-// default SQLite path so the frontend can pre-fill the form. When PULSE_DB
-// sets the path, sqlite_path_fixed tells the form not to offer another.
+// setupToken returns the token setup requires, or "" for none. It logs how
+// setup is guarded, and prints a generated token once, only while the app is
+// not configured.
+func setupToken(a *app.App, configured string) string {
+	if a.Configured() {
+		return ""
+	}
+	switch {
+	case strings.EqualFold(configured, config.SetupTokenOff):
+		log.Printf("setup token: off (PULSE_SETUP_TOKEN=off). Anyone who reaches /setup first can create the admin account")
+		return ""
+	case configured != "":
+		log.Printf("setup token: open /setup and enter the value of PULSE_SETUP_TOKEN")
+		return configured
+	}
+	token := rand.Text()
+	log.Printf("setup token: open /setup and enter this token: %s", token)
+	return token
+}
+
+// tokenMatches compares the submitted token with the expected one in constant
+// time. Both are hashed first, so the comparison does not leak the length of
+// the expected token either.
+func tokenMatches(want, got string) bool {
+	w := sha256.Sum256([]byte(want))
+	g := sha256.Sum256([]byte(got))
+	return subtle.ConstantTimeCompare(w[:], g[:]) == 1
+}
+
+// State reports whether the instance has been configured yet. Before setup it
+// also reports the database file the server will create, for the wizard to
+// show read-only, and whether setup needs a token. It never returns the token.
 func (s *Setup) State(w http.ResponseWriter, r *http.Request) {
+	if s.app.Configured() {
+		writeJSON(w, http.StatusOK, map[string]any{"configured": true})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"configured":          s.app.Configured(),
-		"default_sqlite_path": s.dbPath,
-		"sqlite_path_fixed":   s.dbFixed,
+		"configured":           false,
+		"sqlite_path":          s.dbPath,
+		"setup_token_required": s.token != "",
 	})
 }
 
@@ -67,13 +116,21 @@ type setupReq struct {
 	Password   string `json:"password"`
 	SiteName   string `json:"site_name"`
 	LogoURL    string `json:"logo_url"`
+	SetupToken string `json:"setup_token"`
+	// SQLitePath is no longer accepted. It is decoded only to refuse it.
 	SQLitePath string `json:"sqlite_path"`
 }
 
-// Complete performs the one-time setup: opens (or creates) the database,
-// creates the admin user, seeds the theme config, persists the bootstrap
-// config, and issues a session cookie for the new admin. Only one call can
-// ever succeed. Every other call gets 409 and changes nothing.
+// failSetup logs the detail of a failed setup and sends the client a generic 500.
+func failSetup(w http.ResponseWriter, what string, err error) {
+	log.Printf("setup: %s: %v", what, err)
+	http.Error(w, setupFailed, http.StatusInternalServerError)
+}
+
+// Complete performs the one-time setup: opens (or creates) the database the
+// server chose, creates the admin user, seeds the theme config, persists the
+// bootstrap config, and issues a session cookie for the new admin. Only one
+// call can ever succeed. Every other call gets 409 and changes nothing.
 func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -83,27 +140,31 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req setupReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || len(req.Password) < 8 {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if s.token != "" && !tokenMatches(s.token, strings.TrimSpace(req.SetupToken)) {
+		http.Error(w, "missing or wrong setup token, see the server log", http.StatusUnauthorized)
+		return
+	}
+	if req.SQLitePath != "" {
+		http.Error(w, "sqlite_path is not accepted: the server sets the database file from PULSE_DB or PULSE_DATA_DIR", http.StatusBadRequest)
+		return
+	}
+	if req.Username == "" || len(req.Password) < 8 {
 		http.Error(w, "username and password (min 8) required", http.StatusBadRequest)
 		return
 	}
 
-	path := req.SQLitePath
-	if path == "" {
-		path = s.dbPath
-	}
-	if s.dbFixed && filepath.Clean(path) != filepath.Clean(s.dbPath) {
-		http.Error(w, "the database file is set by PULSE_DB on the server: "+s.dbPath, http.StatusBadRequest)
-		return
-	}
-
+	path := s.dbPath
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		http.Error(w, "could not create data directory: "+err.Error(), http.StatusBadRequest)
+		failSetup(w, "create the data directory", err)
 		return
 	}
 	conn, err := db.Open(path)
 	if err != nil {
-		http.Error(w, "could not open database: "+err.Error(), http.StatusBadRequest)
+		failSetup(w, "open the database "+path, err)
 		return
 	}
 	installed := false
@@ -115,7 +176,7 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		http.Error(w, "hash error", http.StatusInternalServerError)
+		failSetup(w, "hash the password", err)
 		return
 	}
 
@@ -126,7 +187,7 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithoutCancel(r.Context())
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
+		failSetup(w, "begin the transaction", err)
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -146,7 +207,7 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not create admin", http.StatusInternalServerError)
+		failSetup(w, "create the admin", err)
 		return
 	}
 
@@ -164,7 +225,7 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 
 	token, err := auth.NewSessionToken()
 	if err != nil {
-		http.Error(w, "session error", http.StatusInternalServerError)
+		failSetup(w, "create a session token", err)
 		return
 	}
 	if err := q.CreateSession(ctx, generated.CreateSessionParams{
@@ -172,16 +233,16 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		UserID:    u.ID,
 		ExpiresAt: time.Now().Add(auth.SessionDuration),
 	}); err != nil {
-		http.Error(w, "could not create session", http.StatusInternalServerError)
+		failSetup(w, "create the session", err)
 		return
 	}
 
 	if err := bootstrap.Save(s.dataDir, bootstrap.Config{Configured: true, SQLitePath: path}); err != nil {
-		http.Error(w, "could not persist config", http.StatusInternalServerError)
+		failSetup(w, "save "+bootstrap.Path(s.dataDir), err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		http.Error(w, "could not save setup", http.StatusInternalServerError)
+		failSetup(w, "commit", err)
 		return
 	}
 	s.app.SetDB(conn)

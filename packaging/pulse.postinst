@@ -15,5 +15,13 @@ if [ -d /run/systemd/system ]; then
   port=$(sed -n 's/^PULSE_PORT=//p' /etc/pulse/pulse.env)
   [ -n "$port" ] || port=$(sed -n 's/^API_PORT=//p' /etc/pulse/pulse.env)
   [ -n "$port" ] || port=8080
-  echo "pulse: running on port ${port}. Finish setup at http://localhost:${port}/setup"
+  datadir=$(sed -n 's/^PULSE_DATA_DIR=//p' /etc/pulse/pulse.env)
+  [ -n "$datadir" ] || datadir=/var/lib/pulse
+  if [ ! -f "${datadir}/pulse.json" ]; then
+    echo "pulse: running on port ${port}. Finish setup at http://localhost:${port}/setup"
+    echo "pulse: the wizard asks for the setup token in the log:"
+    echo "  sudo journalctl -u pulse | grep \"setup token\" | tail -n 1"
+  else
+    echo "pulse: running on port ${port}."
+  fi
 fi

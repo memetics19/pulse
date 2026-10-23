@@ -2,8 +2,6 @@ package handlers_test
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/memetics19/pulse/api/internal/app"
@@ -12,30 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Bad input is the client's fault and gets a 400 that names the problem.
+// Server-side failures are covered in setup_test.go.
 func TestSetupCompleteErrors(t *testing.T) {
-	valid := map[string]any{"username": "admin", "password": "s3cret-pass"}
+	h := handlers.NewSetup(app.New(), t.TempDir(), config.Config{SetupToken: config.SetupTokenOff})
 
-	// bad body -> 400
-	a := app.New()
-	h := handlers.NewSetup(a, t.TempDir(), config.Config{})
 	assert.Equal(t, http.StatusBadRequest, do(h.Complete, "POST", "/x", "not json").Code)
-
-	// short password -> 400
 	assert.Equal(t, http.StatusBadRequest,
 		do(h.Complete, "POST", "/x", map[string]any{"username": "a", "password": "short"}).Code)
-
-	// sqlite_path whose parent is a file -> MkdirAll fails -> 400
-	dir := t.TempDir()
-	file := filepath.Join(dir, "afile")
-	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	body := map[string]any{"username": "admin", "password": "s3cret-pass", "sqlite_path": filepath.Join(file, "db.sqlite")}
-	assert.Equal(t, http.StatusBadRequest, do(h.Complete, "POST", "/x", body).Code)
-
-	// sqlite_path that is a directory -> db.Open fails -> 400
-	body2 := map[string]any{"username": "admin", "password": "s3cret-pass", "sqlite_path": t.TempDir()}
-	assert.Equal(t, http.StatusBadRequest, do(handlers.NewSetup(app.New(), t.TempDir(), config.Config{}).Complete, "POST", "/x", body2).Code)
-
-	_ = valid
+	assert.Equal(t, http.StatusBadRequest,
+		do(h.Complete, "POST", "/x", map[string]any{"password": "s3cret-pass"}).Code)
 }

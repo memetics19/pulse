@@ -28,13 +28,14 @@ export default function SetupWizard() {
   const [siteName, setSiteName] = useState('')
   const [logoURL, setLogoURL] = useState('')
   const [sqlitePath, setSqlitePath] = useState('')
-  const [sqlitePathFixed, setSqlitePathFixed] = useState(false)
+  const [tokenRequired, setTokenRequired] = useState(false)
+  const [setupToken, setSetupToken] = useState('')
 
   useEffect(() => {
     setupState().then(s => {
       if (s.configured) { window.location.href = '/admin/'; return }
-      setSqlitePath(s.default_sqlite_path)
-      setSqlitePathFixed(!!s.sqlite_path_fixed)
+      setSqlitePath(s.sqlite_path ?? '')
+      setTokenRequired(!!s.setup_token_required)
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
@@ -42,6 +43,7 @@ export default function SetupWizard() {
   function next() {
     setError('')
     if (step === 0) {
+      if (tokenRequired && !setupToken.trim()) { setError('Enter the setup token from the server log.'); return }
       if (!username || password.length < 8) { setError('Username and a password of at least 8 characters are required.'); return }
       if (password !== confirm) { setError("Passwords don't match."); return }
     }
@@ -52,9 +54,14 @@ export default function SetupWizard() {
   async function finish() {
     setError('')
     try {
-      await runSetup({ name, email, username, password, site_name: siteName, logo_url: logoURL, sqlite_path: sqlitePath })
+      await runSetup({ name, email, username, password, site_name: siteName, logo_url: logoURL, ...(tokenRequired ? { setup_token: setupToken.trim() } : {}) })
       window.location.href = '/admin/'
-    } catch (e) { setError(e instanceof Error ? e.message : 'Setup failed') }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Setup failed'
+      // A wrong token is fixed on the first step, where its field is.
+      if (tokenRequired && msg.includes('setup token')) setStep(0)
+      setError(msg)
+    }
   }
 
   if (loading) return null
@@ -74,10 +81,17 @@ export default function SetupWizard() {
         </div>
 
         {step === 0 && (<>
+          {tokenRequired && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="wiz-token">Setup token</label>
+              <input id="wiz-token" className="form-input" value={setupToken} onChange={e => setSetupToken(e.target.value)} autoComplete="off" spellCheck={false} autoFocus />
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Pulse printed it in the server log at startup, after &quot;enter this token:&quot;. With systemd run <code>journalctl -u pulse | grep &quot;setup token&quot;</code>. With Docker run <code>docker compose logs pulse | grep &quot;setup token&quot;</code>.</div>
+            </div>
+          )}
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Create your admin account</div>
           <div className="form-group"><input className="form-input" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} /></div>
           <div className="form-group"><input className="form-input" type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} /></div>
-          <div className="form-group"><input className="form-input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoFocus /></div>
+          <div className="form-group"><input className="form-input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoFocus={!tokenRequired} /></div>
           <div className="form-group"><input className="form-input" type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} /></div>
           <div className="form-group"><input className="form-input" type="password" placeholder="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} /></div>
         </>)}
@@ -99,11 +113,13 @@ export default function SetupWizard() {
             <input type="radio" checked readOnly />
             <span><div style={{ fontWeight: 600, fontSize: 14 }}>SQLite <span style={{ color: '#6b7280', fontWeight: 400 }}>· recommended</span></div><div style={{ fontSize: 12, color: '#6b7280' }}>A single file, zero setup. Perfect for self-hosting.</div></span>
           </label>
-          <div className="form-group">
-            <label className="form-label">Database file path</label>
-            <input className="form-input" value={sqlitePath} readOnly={sqlitePathFixed} onChange={e => setSqlitePath(e.target.value)} />
-            {sqlitePathFixed && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Set by PULSE_DB on the server.</div>}
-          </div>
+          {sqlitePath && (
+            <div className="form-group">
+              <div className="form-label">Database file</div>
+              <code style={{ display: 'block', fontSize: 13, background: '#f4f5f7', border: '1px solid #e6e8eb', borderRadius: 6, padding: '8px 10px', wordBreak: 'break-all' }}>{sqlitePath}</code>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>The server sets this from PULSE_DB or PULSE_DATA_DIR. To use another file, change those settings and restart Pulse before you finish setup.</div>
+            </div>
+          )}
           <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', border: '1px solid #e6e8eb', borderRadius: 8, padding: '10px 12px', opacity: .6 }}>
             <input type="radio" disabled />
             <span><div style={{ fontWeight: 600, fontSize: 14 }}>PostgreSQL <span style={{ color: '#9aa0a8', fontWeight: 400 }}>· coming soon</span></div><div style={{ fontSize: 12, color: '#9aa0a8' }}>External Postgres support is on the roadmap.</div></span>
