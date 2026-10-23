@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/memetics19/pulse/api/internal/app"
@@ -19,7 +23,14 @@ type Setup struct {
 	app     *app.App
 	dataDir string
 	secure  bool
+
+	// mu serializes Complete, so the configured check, the database open and
+	// the admin insert run for one request at a time in this process.
+	mu sync.Mutex
 }
+
+// setupDone is the reply to every setup attempt after the one that won.
+const setupDone = "setup is already complete"
 
 // NewSetup constructs a Setup handler bound to the given app and data directory.
 // secure controls whether session cookies are marked Secure.
@@ -48,10 +59,13 @@ type setupReq struct {
 
 // Complete performs the one-time setup: opens (or creates) the database,
 // creates the admin user, seeds the theme config, persists the bootstrap
-// config, and issues a session cookie for the new admin.
+// config, and issues a session cookie for the new admin. Only one call can
+// ever succeed. Every other call gets 409 and changes nothing.
 func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.app.Configured() {
-		http.Error(w, "already configured", http.StatusForbidden)
+		http.Error(w, setupDone, http.StatusConflict)
 		return
 	}
 
@@ -75,8 +89,12 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not open database: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	q := generated.New(conn)
+	installed := false
+	defer func() {
+		if !installed {
+			_ = conn.Close()
+		}
+	}()
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -84,12 +102,32 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := q.CreateUser(r.Context(), generated.CreateUserParams{
+	// The admin, theme and session rows commit together, after the bootstrap
+	// config is saved, so a failed setup leaves nothing behind and can be
+	// retried. The transaction ignores client cancellation so it cannot roll
+	// back after the config is written.
+	ctx := context.WithoutCancel(r.Context())
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := generated.New(tx)
+
+	// CreateFirstUser inserts only into an empty users table, in one
+	// statement. That holds across processes and for a database that already
+	// has users.
+	u, err := q.CreateFirstUser(ctx, generated.CreateFirstUserParams{
 		Username:     req.Username,
 		PasswordHash: hash,
 		Name:         req.Name,
 		Email:        req.Email,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, setupDone, http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, "could not create admin", http.StatusInternalServerError)
 		return
@@ -101,24 +139,18 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 	})
 	// UpsertTheme is an INSERT … ON CONFLICT DO UPDATE, so it is safe to call
 	// on a fresh database that has no existing row yet.
-	_, _ = q.UpsertTheme(r.Context(), generated.UpsertThemeParams{
+	_, _ = q.UpsertTheme(ctx, generated.UpsertThemeParams{
 		Preset:     "default-light",
 		CustomCss:  "",
 		ConfigJson: string(cfg),
 	})
-
-	if err := bootstrap.Save(s.dataDir, bootstrap.Config{Configured: true, SQLitePath: path}); err != nil {
-		http.Error(w, "could not persist config", http.StatusInternalServerError)
-		return
-	}
-	s.app.SetDB(conn)
 
 	token, err := auth.NewSessionToken()
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
-	if err := q.CreateSession(r.Context(), generated.CreateSessionParams{
+	if err := q.CreateSession(ctx, generated.CreateSessionParams{
 		Token:     token,
 		UserID:    u.ID,
 		ExpiresAt: time.Now().Add(auth.SessionDuration),
@@ -126,6 +158,17 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
+
+	if err := bootstrap.Save(s.dataDir, bootstrap.Config{Configured: true, SQLitePath: path}); err != nil {
+		http.Error(w, "could not persist config", http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "could not save setup", http.StatusInternalServerError)
+		return
+	}
+	s.app.SetDB(conn)
+	installed = true
 	auth.SetSessionCookie(w, token, s.secure)
 
 	w.WriteHeader(http.StatusCreated)
