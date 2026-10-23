@@ -16,7 +16,8 @@ COPY agent/ agent/
 COPY api/ api/
 COPY cli/ cli/
 COPY --from=ui /ui/out/ api/internal/web/dist/
-RUN cd api && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/pulse ./cmd/pulse
+WORKDIR /src/api
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/pulse ./cmd/pulse
 
 # 3. Minimal runtime: one static binary plus a SQLite file.
 FROM alpine:3.24

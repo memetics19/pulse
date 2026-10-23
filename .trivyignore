@@ -1,0 +1,7 @@
+# Findings Trivy reports that do not apply to Pulse. Each entry says why and how it is
+# checked. Remove an entry when the reason stops being true.
+
+# golang.org/x/crypto/openpgp is deprecated and unsafe by design (GO-2026-5932), and no
+# fixed version exists. Pulse never imports it: govulncheck in .github/workflows/security.yml
+# fails the build if any code path ever reaches it.
+GO-2026-5932
