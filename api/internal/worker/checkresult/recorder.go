@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/memetics19/pulse/api/internal/metrics"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/incident"
 	"github.com/memetics19/pulse/api/store"
@@ -79,6 +80,7 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit check result transaction: %w", err)
 		}
+		metrics.ObserveCheck(monitor.Name, status)
 		return nil
 	}
 	created, err := r.detector.MaybeCreateIncidentWithQueries(ctx, q, monitor.ID)
@@ -88,6 +90,7 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit check result transaction: %w", err)
 	}
+	metrics.ObserveCheck(monitor.Name, status)
 	if created && r.alerter != nil {
 		monitorID := monitor.ID
 		r.alerter.Notify(ctx, alerter.Alert{

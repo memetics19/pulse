@@ -36,6 +36,16 @@ func (a *App) WorkerHealthy(maxAge time.Duration) bool {
 	return last != 0 && time.Since(time.Unix(0, last)) < maxAge
 }
 
+// WorkerLastBeat returns the time of the worker's last successful reconcile,
+// or the zero time before the first beat.
+func (a *App) WorkerLastBeat() time.Time {
+	last := a.workerBeat.Load()
+	if last == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, last)
+}
+
 // SetDB installs an open, migrated database and marks the app configured.
 func (a *App) SetDB(db *sql.DB) {
 	a.mu.Lock()

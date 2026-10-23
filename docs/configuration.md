@@ -18,6 +18,8 @@ Every server setting starts with `PULSE_`, apart from the two notification keys.
 | `PULSE_CORS_ORIGINS` | (unset) | Comma-separated list of origins allowed to call the API cross-origin. Leave it unset (the default) to send no CORS headers. The embedded UI is served from the same origin and needs none. |
 | `PULSE_ALLOW_PRIVATE_MONITORS` | `false` | Allow HTTP(S) monitors to target private/internal addresses (loopback, LAN, link-local). **Set to `true` for homelab setups that monitor LAN services.** Off by default so monitor URLs cannot be used to probe the server's internal network (SSRF). |
 | `PULSE_TRUSTED_PROXIES` | (unset) | Comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` header the login rate limiter may trust. Set it when Pulse runs behind a proxy such as Caddy. Leave it unset to ignore proxy headers. |
+| `PULSE_METRICS` | `false` | Set to `true` to serve Prometheus metrics at `/metrics`. Off by default. See [Metrics](metrics.md). |
+| `PULSE_METRICS_TOKEN` | (unset) | When set, `/metrics` requires the header `Authorization: Bearer <token>`. Leave unset to serve metrics without a token. |
 
 Set these in the `environment` block of `docker-compose.yml` or in your container runtime.
 

@@ -24,5 +24,6 @@ func SetupGate(a *app.App) func(http.Handler) http.Handler {
 func allowedDuringSetup(p string) bool {
 	return p == "/setup" || strings.HasPrefix(p, "/setup/") ||
 		strings.HasPrefix(p, "/_next/") || strings.HasPrefix(p, "/static/") ||
-		strings.HasPrefix(p, "/api/setup") || p == "/favicon.ico" || p == "/healthz"
+		strings.HasPrefix(p, "/api/setup") || p == "/favicon.ico" || p == "/healthz" ||
+		p == "/metrics"
 }
