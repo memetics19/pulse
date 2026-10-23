@@ -4,6 +4,17 @@ SELECT COUNT(*) FROM users;
 -- name: CreateUser :one
 INSERT INTO users (username, password_hash, name, email) VALUES (?, ?, ?, ?) RETURNING *;
 
+-- name: CreateFirstUser :one
+-- Inserts the user only when the table is empty. It is one statement, so
+-- SQLite takes the write lock before the NOT EXISTS check runs: across
+-- connections and processes at most one first user can ever be created. A
+-- loser gets sql.ErrNoRows.
+INSERT INTO users (username, password_hash, name, email)
+SELECT CAST(sqlc.arg(username) AS TEXT), CAST(sqlc.arg(password_hash) AS TEXT),
+       CAST(sqlc.arg(name) AS TEXT), CAST(sqlc.arg(email) AS TEXT)
+WHERE NOT EXISTS (SELECT 1 FROM users)
+RETURNING *;
+
 -- name: GetUserByUsername :one
 SELECT * FROM users WHERE username = ?;
 

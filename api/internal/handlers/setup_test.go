@@ -45,7 +45,7 @@ func TestSetupStateAndComplete(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	h.Complete(rec, httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(body)))
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("second setup = %d, want 403", rec.Code)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("second setup = %d, want 409", rec.Code)
 	}
 }

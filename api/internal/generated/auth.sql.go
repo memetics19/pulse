@@ -21,6 +21,46 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const createFirstUser = `-- name: CreateFirstUser :one
+INSERT INTO users (username, password_hash, name, email)
+SELECT CAST(?1 AS TEXT), CAST(?2 AS TEXT),
+       CAST(?3 AS TEXT), CAST(?4 AS TEXT)
+WHERE NOT EXISTS (SELECT 1 FROM users)
+RETURNING id, username, password_hash, totp_secret, totp_enabled, created_at, name, email
+`
+
+type CreateFirstUserParams struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+}
+
+// Inserts the user only when the table is empty. It is one statement, so
+// SQLite takes the write lock before the NOT EXISTS check runs: across
+// connections and processes at most one first user can ever be created. A
+// loser gets sql.ErrNoRows.
+func (q *Queries) CreateFirstUser(ctx context.Context, arg CreateFirstUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, createFirstUser,
+		arg.Username,
+		arg.PasswordHash,
+		arg.Name,
+		arg.Email,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.TotpSecret,
+		&i.TotpEnabled,
+		&i.CreatedAt,
+		&i.Name,
+		&i.Email,
+	)
+	return i, err
+}
+
 const createSession = `-- name: CreateSession :exec
 INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)
 `
