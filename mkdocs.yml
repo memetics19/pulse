@@ -29,6 +29,7 @@ nav:
   - Architecture: architecture.md
   - Deployment: deployment.md
   - Roadmap: roadmap.md
+  - Changelog: changelog.md
 
 # Internal planning notes live under docs/superpowers and are not published.
 exclude_docs: |
@@ -36,6 +37,10 @@ exclude_docs: |
 
 markdown_extensions:
   - admonition
+  # docs/changelog.md includes CHANGELOG.md from the repository root.
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
   - tables
   - pymdownx.highlight
   - pymdownx.superfences:
