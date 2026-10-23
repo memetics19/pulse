@@ -11,5 +11,9 @@ if [ -d /run/systemd/system ]; then
   systemctl daemon-reload
   systemctl enable pulse.service >/dev/null 2>&1
   systemctl restart pulse.service
-  echo "pulse: running on port $(sed -n 's/^API_PORT=//p' /etc/pulse/pulse.env). Finish setup at http://localhost:$(sed -n 's/^API_PORT=//p' /etc/pulse/pulse.env)/setup"
+  # An env file kept from before 3.0 may still say API_PORT.
+  port=$(sed -n 's/^PULSE_PORT=//p' /etc/pulse/pulse.env)
+  [ -n "$port" ] || port=$(sed -n 's/^API_PORT=//p' /etc/pulse/pulse.env)
+  [ -n "$port" ] || port=8080
+  echo "pulse: running on port ${port}. Finish setup at http://localhost:${port}/setup"
 fi

@@ -33,9 +33,10 @@ RUN apk add --no-cache ca-certificates tzdata wget \
  && chown pulse:pulse /data
 COPY --from=build /out/pulse /usr/local/bin/pulse
 USER pulse
-ENV SQLITE_PATH=/data/pulse.db \
-    PULSE_DATA_DIR=/data \
-    API_PORT=8080
+# PULSE_PORT (8080) and PULSE_DB (/data/pulse.db) keep their built-in defaults.
+# Setting them here would hide API_PORT and SQLITE_PATH from older deployments,
+# which Pulse still reads with a warning until 4.0.
+ENV PULSE_DATA_DIR=/data
 EXPOSE 8080
 VOLUME /data
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \

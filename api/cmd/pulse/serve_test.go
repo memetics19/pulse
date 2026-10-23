@@ -32,9 +32,16 @@ func TestDataDir(t *testing.T) {
 		t.Fatalf("dataDir=%q want /custom", got)
 	}
 	t.Setenv("PULSE_DATA_DIR", "")
-	t.Setenv("SQLITE_PATH", "/var/lib/pulse/pulse.db")
+	t.Setenv("SQLITE_PATH", "")
+	t.Setenv("PULSE_DB", "/var/lib/pulse/pulse.db")
 	if got := dataDir(); got != "/var/lib/pulse" {
 		t.Fatalf("dataDir=%q want /var/lib/pulse", got)
+	}
+	// The pre-3.0 name still works when PULSE_DB is unset.
+	t.Setenv("PULSE_DB", "")
+	t.Setenv("SQLITE_PATH", "/srv/old/pulse.db")
+	if got := dataDir(); got != "/srv/old" {
+		t.Fatalf("dataDir=%q want /srv/old", got)
 	}
 	t.Setenv("SQLITE_PATH", "")
 	if got := dataDir(); got != "/data" {

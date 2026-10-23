@@ -68,6 +68,17 @@ a reverse proxy that terminates TLS in front of either. See
 addresses (10.x, 192.168.x) are refused, because that guard stops monitor URLs from probing
 internal networks.
 
+The server reads only `PULSE_*` settings, apart from `RESEND_API_KEY` and
+`SLACK_WEBHOOK_URL`. Pulse 3.0 renamed `API_PORT` to `PULSE_PORT`, `SQLITE_PATH` to
+`PULSE_DB` and `DATABASE_URL` to `PULSE_DATABASE_URL`. The old names still work until 4.0
+and log a warning at startup. See [Renamed in 3.0](configuration.md#renamed-in-30).
+
+To run on another port inside the container, set `PULSE_PORT` and publish that port:
+
+```sh
+docker run -d --name pulse -p 9090:9090 -e PULSE_PORT=9090 -v pulse_data:/data ghcr.io/memetics19/pulse:latest
+```
+
 ## status.shreeda.xyz and docs.shreeda.xyz
 
 The public instance runs in a homelab managed by

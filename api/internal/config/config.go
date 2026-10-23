@@ -5,7 +5,40 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 )
+
+// renamed maps each setting renamed in 3.0 to the name it replaced. The old
+// name is still read when the new one is unset, with a warning, until 4.0.
+var renamed = map[string]string{
+	"PULSE_PORT":         "API_PORT",
+	"PULSE_DB":           "SQLITE_PATH",
+	"PULSE_DATABASE_URL": "DATABASE_URL",
+}
+
+// warned records the old names already reported, so each warning is logged
+// once per process even when settings are read more than once.
+var warned sync.Map
+
+// Env returns the value of the named setting. For a setting renamed in 3.0,
+// an unset or empty new name falls back to the old name, and the first use of
+// that old name logs a deprecation warning. The new name wins when both are set.
+func Env(name string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	old, ok := renamed[name]
+	if !ok {
+		return ""
+	}
+	v := os.Getenv(old)
+	if v != "" {
+		if _, seen := warned.LoadOrStore(old, struct{}{}); !seen {
+			log.Printf("%s is deprecated, use %s; the old name stops working in 4.0", old, name)
+		}
+	}
+	return v
+}
 
 type Config struct {
 	DatabaseURL     string
@@ -49,13 +82,13 @@ func envBool(name string) bool {
 }
 
 func Load() Config {
-	port := os.Getenv("API_PORT")
+	port := Env("PULSE_PORT")
 	if port == "" {
 		port = "8080"
 	}
 	return Config{
-		DatabaseURL:          os.Getenv("DATABASE_URL"),
-		SQLitePath:           os.Getenv("SQLITE_PATH"),
+		DatabaseURL:          Env("PULSE_DATABASE_URL"),
+		SQLitePath:           Env("PULSE_DB"),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		SlackWebhookURL:      os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:                 port,

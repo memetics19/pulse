@@ -122,8 +122,8 @@ askbool PRIVATE "Allow monitors to target private/LAN addresses? (homelab)" "no"
 
 write_env() { # write_env <path> ; caller sets $DATADIR
     cat <<EOF
-API_PORT=${PORT}
-SQLITE_PATH=${DATADIR}/pulse.db
+PULSE_PORT=${PORT}
+PULSE_DB=${DATADIR}/pulse.db
 PULSE_DATA_DIR=${DATADIR}
 PULSE_SECURE_COOKIES=${SECURE}
 PULSE_ALLOW_PRIVATE_MONITORS=${PRIVATE}

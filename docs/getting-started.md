@@ -80,7 +80,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SQLITE_PATH: /data/pulse.db
+      PULSE_DB: /data/pulse.db
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
@@ -93,7 +93,7 @@ volumes:
   pulse_data:
 ```
 
-Data persists on the `pulse_data` volume. The SQLite file lives at the path set by `SQLITE_PATH`, which defaults to `/data/pulse.db`. See [Configuration](configuration.md) for the full list of environment variables.
+Data persists on the `pulse_data` volume. The SQLite file lives at the path set by `PULSE_DB`, which defaults to `/data/pulse.db`. See [Configuration](configuration.md) for the full list of environment variables.
 
 ## First-run setup wizard
 
