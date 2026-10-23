@@ -20,4 +20,7 @@ RUN apk add --no-cache ca-certificates \
  && adduser -D -u 10001 agent
 COPY --from=builder /pulse-agent /usr/local/bin/pulse-agent
 USER agent
+# The agent listens on nothing (it pushes to the server), so there is nothing to probe. A
+# stalled agent shows up on the server as a host whose metrics stopped.
+HEALTHCHECK NONE
 ENTRYPOINT ["/usr/local/bin/pulse-agent"]

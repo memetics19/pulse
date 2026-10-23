@@ -56,6 +56,24 @@ jobs:
           format: table
           exit-code: "1"
 
+  govulncheck:
+    name: govulncheck (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [api, agent, cli]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+      # Reachability: fails only when Pulse's own code calls a vulnerable function, which
+      # also keeps the .trivyignore entries honest.
+      - name: govulncheck
+        working-directory: ${{ matrix.module }}
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
   image:
     name: Trivy (${{ matrix.name }} image)
     runs-on: ubuntu-latest
