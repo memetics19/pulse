@@ -2,7 +2,11 @@ version: "2"
 sql:
   - engine: "sqlite"
     queries: "queries/"
-    schema: "migrations/"
+    # Single-digit migrations first, then two-digit ones. A plain directory is
+    # read in lexical order, which puts 13_* before 2_auth (users table).
+    schema:
+      - "migrations/?_*.up.sql"
+      - "migrations/??_*.up.sql"
     gen:
       go:
         package: "generated"

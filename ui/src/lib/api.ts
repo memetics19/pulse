@@ -281,9 +281,14 @@ export async function authLogin(username: string, password: string, code?: strin
     body: JSON.stringify({ username, password, code: code ?? '' }),
   })
   if (res.ok) return 'ok'
+  const text = (await res.text().catch(() => '')).trim()
   if (res.status === 401) {
-    try { const b = await res.json(); if (b && b.needs_2fa) return 'needs_2fa' } catch {}
+    try { const b = JSON.parse(text); if (b && b.needs_2fa) return 'needs_2fa' } catch {}
+    // 2FA failures ("invalid 2FA code", or a code that was already used) are
+    // worth showing as they are. Password failures stay generic.
+    if (text.includes('2FA')) throw new Error(text)
   }
+  if (res.status === 429) throw new Error('Too many attempts, try again in a minute')
   throw new Error('Invalid username or password')
 }
 // twoFASetup starts enrollment. The server refuses it while 2FA is on, so

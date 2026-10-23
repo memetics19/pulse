@@ -10,6 +10,11 @@ Admin passwords are hashed with Argon2id. The plaintext password is never stored
 
 Login uses a username and password. On success, Pulse sets an HttpOnly session cookie. The HttpOnly flag prevents client-side scripts from reading the cookie.
 
+Some changes sign out sessions, so a session opened before the change cannot outlive it. This matters when a cookie may have been stolen.
+
+- Turning 2FA on or off signs out every other session of that user. The browser that made the change stays signed in.
+- Resetting the password with `pulse reset-password` signs out every session of that user, because there is no current session on the command line.
+
 ## Two-factor authentication (TOTP)
 
 Pulse supports optional time-based one-time password (TOTP) two-factor authentication with an authenticator app.
@@ -21,6 +26,8 @@ Pulse supports optional time-based one-time password (TOTP) two-factor authentic
 
 These rules stop someone who only holds a session cookie, for example from an unlocked browser, from removing the second factor.
 
+Each code works once. Pulse records the time step of the last code it accepted for each user and refuses any code from that step or an older one. This applies to login, enabling and disabling. The check and the record happen in one database update, so two requests racing with the same code cannot both succeed. A code that was already used gets a clear error. Wait for the next code in your app and try again. The code you used to turn 2FA on cannot also be used to log in or to turn it off.
+
 The 2FA endpoints accept only a logged-in session. API keys are refused, whatever their scopes. Each account gets 10 code attempts on these endpoints, refilled at one every 6 seconds. That is the same budget login gives each IP address. Pulse compares codes in constant time.
 
 ## Resetting the admin password
@@ -31,7 +38,7 @@ If you are locked out, reset the admin password from the command line with the `
 pulse reset-password
 ```
 
-Run this against the same data directory and SQLite file the server uses so the change applies to the running configuration.
+Run this against the same data directory and SQLite file the server uses so the change applies to the running configuration. The reset signs out every session of that user. It fails with an error when no user has that name.
 
 ## API key handling
 
