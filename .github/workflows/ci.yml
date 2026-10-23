@@ -137,8 +137,9 @@ jobs:
           [ "$(ps -o user= -C pulse | sort -u)" = pulse ]
           echo "settings: $(stat -c '%a %U %G' /etc/pulse/pulse.env)"
           [ "$(stat -c '%a %U %G' /etc/pulse/pulse.env)" = "640 root pulse" ]
-          sudo ls -la /var/lib/pulse
-          sudo test -f /var/lib/pulse/pulse.db
+          # The database appears at first setup: before that the data directory is empty.
+          echo "data: $(stat -c '%a %U %G' /var/lib/pulse)"
+          [ "$(stat -c '%a %U %G' /var/lib/pulse)" = "750 pulse pulse" ]
           test -x /usr/bin/pulse-cli
       - name: The agent waits for its settings
         run: |
@@ -163,4 +164,4 @@ jobs:
           set -euo pipefail
           sudo apt-get remove -y -qq pulse
           ! systemctl is-active --quiet pulse
-          sudo test -f /var/lib/pulse/pulse.db
+          [ -d /var/lib/pulse ]
