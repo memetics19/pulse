@@ -19,7 +19,10 @@ func GenerateTOTP(account string) (secret, uri string, err error) {
 	return key.Secret(), key.URL(), nil
 }
 
-// ValidateTOTP reports whether code is currently valid for secret.
+// ValidateTOTP reports whether code is currently valid for secret. The
+// library compares the expected and given codes with
+// crypto/subtle.ConstantTimeCompare, so the check does not leak how many
+// leading digits matched.
 func ValidateTOTP(secret, code string) bool {
 	return totp.Validate(code, secret)
 }

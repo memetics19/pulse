@@ -286,16 +286,28 @@ export async function authLogin(username: string, password: string, code?: strin
   }
   throw new Error('Invalid username or password')
 }
+// twoFASetup starts enrollment. The server refuses it while 2FA is on, so
+// switching authenticators means disabling with a code first.
 export async function twoFASetup(): Promise<{ secret: string; otpauth_url: string; qr: string }> {
   const res = await fetch(`${BASE}/api/auth/2fa/setup`, { method: 'POST', credentials: 'include' })
-  if (!res.ok) throw new Error(await res.text()); return res.json()
+  if (!res.ok) throw await twoFAError(res, 'Setup failed')
+  return res.json()
+}
+// twoFAError turns a failed 2FA response into an Error carrying the server's
+// message (for example "invalid 2FA code" or "too many attempts").
+async function twoFAError(res: Response, fallback: string): Promise<Error> {
+  const text = (await res.text().catch(() => '')).trim()
+  return new Error(text || fallback)
 }
 export async function twoFAEnable(code: string): Promise<void> {
   const res = await fetch(`${BASE}/api/auth/2fa/enable`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
-  if (!res.ok) throw new Error('Invalid code')
+  if (!res.ok) throw await twoFAError(res, 'Invalid code')
 }
-export async function twoFADisable(): Promise<void> {
-  await fetch(`${BASE}/api/auth/2fa/disable`, { method: 'POST', credentials: 'include' })
+// twoFADisable needs a current code from the authenticator app. The server
+// keeps 2FA on when the code is missing or wrong.
+export async function twoFADisable(code: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/auth/2fa/disable`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
+  if (!res.ok) throw await twoFAError(res, 'Could not disable 2FA')
 }
 export async function authLogout(): Promise<void> {
   await fetch(`${BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' })
