@@ -15,13 +15,13 @@ import (
 
 func TestSlackSender(t *testing.T) {
 	var got atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	s := alerter.NewSlackSender("")
+	s := alerter.NewSlackSender("", true, alerter.WithHTTPClient(srv.Client()))
 	ctx := context.Background()
 	a := alerter.Alert{Title: "down", Status: "detected", Severity: "major", Message: "m"}
 
@@ -37,7 +37,7 @@ func TestSlackSender(t *testing.T) {
 	}
 
 	// Non-2xx -> error.
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	bad := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer bad.Close()
@@ -61,7 +61,7 @@ func TestEmailSenderNoop(t *testing.T) {
 
 func TestDispatcherNotifyFansOut(t *testing.T) {
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -79,7 +79,7 @@ func TestDispatcherNotifyFansOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := alerter.NewDispatcher(q, "", "")
+	d := alerter.NewDispatcher(q, "", "", true, alerter.WithHTTPClient(srv.Client()))
 	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected", Severity: "major"}, nil)
 
 	if hits.Load() != 1 {

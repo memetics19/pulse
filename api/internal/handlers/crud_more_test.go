@@ -39,7 +39,7 @@ func do(h http.HandlerFunc, method, target string, body any) *httptest.ResponseR
 
 func TestNotificationsCRUD(t *testing.T) {
 	q := newQ(t)
-	h := handlers.NewNotifications(q)
+	h := handlers.NewNotifications(q, false)
 
 	assert.Equal(t, http.StatusOK, do(h.List, "GET", "/api/notifications", nil).Code)
 
@@ -54,7 +54,7 @@ func TestNotificationsCRUD(t *testing.T) {
 	// Update
 	upd := do(func(w http.ResponseWriter, r *http.Request) {
 		h.Update(w, withChiID(r, "id", itoa(created.ID)))
-	}, "PUT", "/x", map[string]any{"channel": "email", "config_json": "{}"})
+	}, "PUT", "/x", map[string]any{"channel": "email", "config_json": `{"to":"ops@example.com"}`})
 	assert.Equal(t, http.StatusOK, upd.Code)
 	assert.Equal(t, http.StatusBadRequest, do(func(w http.ResponseWriter, r *http.Request) {
 		h.Update(w, withChiID(r, "id", "abc"))

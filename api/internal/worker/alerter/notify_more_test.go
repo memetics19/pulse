@@ -15,7 +15,7 @@ import (
 
 func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -37,7 +37,7 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	d := alerter.NewDispatcher(q, "", "")
+	d := alerter.NewDispatcher(q, "", "", true, alerter.WithHTTPClient(srv.Client()))
 
 	// Alert for a different monitor -> the scoped notification is skipped.
 	other := mon.ID + 1
@@ -57,5 +57,5 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	alerter.NewDispatcher(store.New(db), "", "").Notify(ctx, alerter.Alert{}, nil)
+	alerter.NewDispatcher(store.New(db), "", "", false).Notify(ctx, alerter.Alert{}, nil)
 }

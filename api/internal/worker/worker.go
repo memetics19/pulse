@@ -24,7 +24,7 @@ import (
 func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error {
 	q := store.New(db)
 
-	disp := alerter.NewDispatcher(q, cfg.ResendAPIKey, cfg.SlackWebhookURL)
+	disp := alerter.NewDispatcher(q, cfg.ResendAPIKey, cfg.SlackWebhookURL, cfg.AllowPrivateMonitors)
 	det := incident.NewDetector(q)
 	recorder := checkresult.New(db, det, disp)
 

@@ -116,7 +116,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		r.Post("/api/incidents/{incidentID}/updates", handlers.NewIncidentUpdates(q).Create)
 
 		r.Route("/api/notifications", func(r chi.Router) {
-			h := handlers.NewNotifications(q)
+			h := handlers.NewNotifications(q, cfg.AllowPrivateMonitors)
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Put("/{id}", h.Update)
@@ -187,7 +187,7 @@ func (r *livePushRecorder) Record(ctx context.Context, monitor store.Monitor, in
 		return fmt.Errorf("database unavailable")
 	}
 	q := store.New(db)
-	dispatcher := alerter.NewDispatcher(q, r.cfg.ResendAPIKey, r.cfg.SlackWebhookURL)
+	dispatcher := alerter.NewDispatcher(q, r.cfg.ResendAPIKey, r.cfg.SlackWebhookURL, r.cfg.AllowPrivateMonitors)
 	detector := incident.NewDetector(q)
 	return checkresult.New(db, detector, dispatcher).Record(ctx, monitor, in)
 }
