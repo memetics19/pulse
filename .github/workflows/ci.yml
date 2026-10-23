@@ -102,3 +102,66 @@ jobs:
           file: ${{ matrix.file }}
           push: false
           tags: ${{ matrix.tag }}
+
+  packages:
+    name: Packages (install, upgrade, remove)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+      - name: Linux binaries (the committed placeholder admin UI is enough here)
+        run: |
+          set -euo pipefail
+          mkdir -p dist-bin
+          for spec in "api ./cmd/pulse pulse" "agent ./cmd/agent pulse-agent" "cli ./cmd/pulse-cli pulse-cli"; do
+            set -- $spec
+            for arch in amd64 arm64; do
+              ( cd "$1" && GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o "../dist-bin/${3}_linux_$arch" "$2" )
+            done
+          done
+      - name: Build the packages
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          packaging/build-packages.sh 0.0.1
+      - name: Install them
+        run: sudo apt-get install -y -qq ./dist-bin/pulse_0.0.1_amd64.deb ./dist-bin/pulse-agent_0.0.1_amd64.deb ./dist-bin/pulse-cli_0.0.1_amd64.deb
+      - name: The service runs, as its own user, with private settings
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8080/healthz && break; sleep 1; done
+          curl -fsS -o /dev/null http://127.0.0.1:8080/healthz
+          systemctl is-active pulse
+          echo "runs as: $(ps -o user= -C pulse | sort -u)"
+          [ "$(ps -o user= -C pulse | sort -u)" = pulse ]
+          echo "settings: $(stat -c '%a %U %G' /etc/pulse/pulse.env)"
+          [ "$(stat -c '%a %U %G' /etc/pulse/pulse.env)" = "640 root pulse" ]
+          # The database appears at first setup: before that the data directory is empty.
+          echo "data: $(stat -c '%a %U %G' /var/lib/pulse)"
+          [ "$(stat -c '%a %U %G' /var/lib/pulse)" = "750 pulse pulse" ]
+          test -x /usr/bin/pulse-cli
+      - name: The agent waits for its settings
+        run: |
+          set -euo pipefail
+          ! systemctl is-enabled --quiet pulse-agent
+          echo "token: $(stat -c '%a %U %G' /etc/pulse-agent/token)"
+          [ "$(stat -c '%a %U %G' /etc/pulse-agent/token)" = "640 root pulse-agent" ]
+      - name: An upgrade keeps edited settings and restarts the service
+        run: |
+          set -euo pipefail
+          sudo sed -i 's/^PULSE_ALLOW_PRIVATE_MONITORS=false/PULSE_ALLOW_PRIVATE_MONITORS=true/' /etc/pulse/pulse.env
+          before=$(systemctl show -p MainPID --value pulse)
+          rm -f dist-bin/*.deb dist-bin/*.rpm
+          packaging/build-packages.sh 0.0.2
+          sudo apt-get install -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold ./dist-bin/pulse_0.0.2_amd64.deb
+          sudo grep -qx 'PULSE_ALLOW_PRIVATE_MONITORS=true' /etc/pulse/pulse.env
+          for i in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8080/healthz && break; sleep 1; done
+          [ "$(systemctl show -p MainPID --value pulse)" != "$before" ]
+          [ "$(dpkg-query -W -f '${Version}' pulse)" = 0.0.2 ]
+      - name: Removing it stops the service and keeps the data
+        run: |
+          set -euo pipefail
+          sudo apt-get remove -y -qq pulse
+          ! systemctl is-active --quiet pulse
+          [ -d /var/lib/pulse ]

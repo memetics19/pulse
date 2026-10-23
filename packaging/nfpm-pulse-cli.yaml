@@ -1,0 +1,15 @@
+# nfpm: the pulse-cli package, from the binary that build-packages.sh stages.
+name: pulse-cli
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: memetics19 <https://github.com/memetics19/pulse/issues>
+description: Command line client for the Pulse API.
+homepage: https://github.com/memetics19/pulse
+license: MIT
+contents:
+  - src: dist-bin/stage/pulse-cli
+    dst: /usr/bin/pulse-cli
+    file_info: {mode: 0755}

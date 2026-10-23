@@ -124,8 +124,12 @@ jobs:
             done
           done
           ls -1 dist-bin
+      - name: Build the .deb and .rpm packages
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          packaging/build-packages.sh "$TAG"
       - name: Generate checksums
-        run: cd dist-bin && sha256sum pulse_* pulse-agent_* pulse-cli_* > SHA256SUMS && cat SHA256SUMS
+        run: cd dist-bin && sha256sum pulse_* pulse-agent_* pulse-cli_* pulse-*.rpm > SHA256SUMS && cat SHA256SUMS
       - name: Attach to GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -134,4 +138,5 @@ jobs:
             dist-bin/pulse_*
             dist-bin/pulse-agent_*
             dist-bin/pulse-cli_*
+            dist-bin/pulse-*.rpm
             dist-bin/SHA256SUMS

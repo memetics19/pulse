@@ -1,0 +1,15 @@
+#!/bin/sh
+# pulse package: the service user, then start (first install) or restart (upgrade).
+set -e
+if ! getent passwd pulse >/dev/null; then
+  useradd --system --user-group --home-dir /var/lib/pulse --no-create-home \
+    --shell /usr/sbin/nologin pulse
+fi
+chown root:pulse /etc/pulse/pulse.env
+chmod 0640 /etc/pulse/pulse.env
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload
+  systemctl enable pulse.service >/dev/null 2>&1
+  systemctl restart pulse.service
+  echo "pulse: running on port $(sed -n 's/^API_PORT=//p' /etc/pulse/pulse.env). Finish setup at http://localhost:$(sed -n 's/^API_PORT=//p' /etc/pulse/pulse.env)/setup"
+fi
