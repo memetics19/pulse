@@ -133,14 +133,18 @@ jobs:
           for i in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8080/healthz && break; sleep 1; done
           curl -fsS -o /dev/null http://127.0.0.1:8080/healthz
           systemctl is-active pulse
-          [ "$(ps -o user= -C pulse)" = pulse ]
+          echo "runs as: $(ps -o user= -C pulse | sort -u)"
+          [ "$(ps -o user= -C pulse | sort -u)" = pulse ]
+          echo "settings: $(stat -c '%a %U %G' /etc/pulse/pulse.env)"
           [ "$(stat -c '%a %U %G' /etc/pulse/pulse.env)" = "640 root pulse" ]
-          [ -f /var/lib/pulse/pulse.db ]
+          sudo ls -la /var/lib/pulse
+          sudo test -f /var/lib/pulse/pulse.db
           test -x /usr/bin/pulse-cli
       - name: The agent waits for its settings
         run: |
           set -euo pipefail
           ! systemctl is-enabled --quiet pulse-agent
+          echo "token: $(stat -c '%a %U %G' /etc/pulse-agent/token)"
           [ "$(stat -c '%a %U %G' /etc/pulse-agent/token)" = "640 root pulse-agent" ]
       - name: An upgrade keeps edited settings and restarts the service
         run: |
@@ -159,4 +163,4 @@ jobs:
           set -euo pipefail
           sudo apt-get remove -y -qq pulse
           ! systemctl is-active --quiet pulse
-          [ -f /var/lib/pulse/pulse.db ]
+          sudo test -f /var/lib/pulse/pulse.db
