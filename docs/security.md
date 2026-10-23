@@ -15,7 +15,13 @@ Login uses a username and password. On success, Pulse sets an HttpOnly session c
 Pulse supports optional time-based one-time password (TOTP) two-factor authentication with an authenticator app.
 
 - **Enable.** In the admin settings, start TOTP enrollment, scan the code with an authenticator app, and confirm with a generated code. After confirmation, login requires the password and a current code.
-- **Disable.** In the admin settings, turn TOTP off. After disabling, login requires only the password.
+- **Pending secret.** Starting enrollment stores a new secret, but 2FA stays off until you confirm it with a code. Login never asks for or accepts a code from an unconfirmed secret.
+- **Disable.** In the admin settings, enter a current code from your authenticator app and turn TOTP off. Pulse refuses the request when the code is missing or wrong, and 2FA stays on. After disabling, login requires only the password.
+- **Change authenticator.** Pulse refuses to start enrollment while 2FA is on. Running setup again can never replace or drop the active secret. To move to a new app, disable 2FA with a code from the old app, then enroll again.
+
+These rules stop someone who only holds a session cookie, for example from an unlocked browser, from removing the second factor.
+
+The 2FA endpoints accept only a logged-in session. API keys are refused, whatever their scopes. Each account gets 10 code attempts on these endpoints, refilled at one every 6 seconds. That is the same budget login gives each IP address. Pulse compares codes in constant time.
 
 ## Resetting the admin password
 

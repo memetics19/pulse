@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [totpError, setTotpError] = useState('')
   const [totpSuccess, setTotpSuccess] = useState(false)
   const [totpLoading, setTotpLoading] = useState(false)
+  const [disableCode, setDisableCode] = useState('')
 
   const refreshAuth = useCallback(() => {
     authStatus()
@@ -50,6 +51,9 @@ export default function SettingsPage() {
       setTotpCode('')
     } catch (err) {
       setTotpError(err instanceof Error ? err.message : 'Setup failed')
+      // A 409 means 2FA is already on (for example from another tab), so
+      // reload the state to show the disable form instead.
+      refreshAuth()
     } finally {
       setTotpLoading(false)
     }
@@ -76,7 +80,8 @@ export default function SettingsPage() {
     setTotpError('')
     setTotpSuccess(false)
     try {
-      await twoFADisable()
+      await twoFADisable(disableCode)
+      setDisableCode('')
       refreshAuth()
     } catch (err) {
       setTotpError(err instanceof Error ? err.message : 'Disable failed')
@@ -144,13 +149,30 @@ export default function SettingsPage() {
           {totpEnabled ? (
             <>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 14 }}>
-                Two-factor authentication is on.
+                Two-factor authentication is on. Enter a current code from your authenticator
+                app to turn it off. To move to a new app, turn it off and set it up again.
               </p>
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label htmlFor="disable-2fa-code" style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+                  Authenticator code
+                </label>
+                <input
+                  id="disable-2fa-code"
+                  className="form-input"
+                  placeholder="6-digit code"
+                  value={disableCode}
+                  onChange={e => setDisableCode(e.target.value.replace(/\D/g, ''))}
+                  maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  style={{ width: 160 }}
+                />
+              </div>
               {totpError && (
                 <p style={{ fontSize: 13, color: 'var(--color-down, #ef4444)', marginBottom: 10 }}>{totpError}</p>
               )}
-              <button className="btn danger" onClick={handleDisable2FA} disabled={totpLoading}>
-                {totpLoading ? 'Disabling…' : 'Disable'}
+              <button className="btn danger" onClick={handleDisable2FA} disabled={totpLoading || disableCode.length < 6}>
+                {totpLoading ? 'Disabling…' : 'Disable 2FA'}
               </button>
             </>
           ) : (

@@ -101,11 +101,11 @@ func TestAuthSessionMethods(t *testing.T) {
 		t.Fatalf("2FA disable unauthenticated = %d, want 401", rec.Code)
 	}
 
-	// TwoFADisable with a session -> 200
+	// TwoFADisable with a session but 2FA off -> 409
 	rec = httptest.NewRecorder()
 	h.TwoFADisable(rec, withCookie(http.MethodPost, "/x"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("2FA disable = %d, want 200", rec.Code)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("2FA disable while off = %d, want 409", rec.Code)
 	}
 
 	// Logout clears the session

@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,11 +18,12 @@ type Auth struct {
 	q              *generated.Queries
 	secure         bool
 	limiter        *loginLimiter
+	codeLimiter    *loginLimiter
 	trustedProxies []*net.IPNet
 }
 
 func NewAuth(q *generated.Queries, secure bool, trustedProxies ...*net.IPNet) *Auth {
-	return &Auth{q: q, secure: secure, limiter: newLoginLimiter(), trustedProxies: trustedProxies}
+	return &Auth{q: q, secure: secure, limiter: newLoginLimiter(), codeLimiter: newLoginLimiter(), trustedProxies: trustedProxies}
 }
 
 // dummyPasswordHash is verified against when the username does not exist, so
@@ -152,13 +155,49 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// 2FA error messages. They are part of the API contract: the admin UI shows
+// them to the user as they are.
+const (
+	msg2FAAlreadyOn  = "2FA is already on, disable it first with a code"
+	msg2FANotOn      = "2FA is not on"
+	msg2FACodeNeeded = "a current 2FA code is required"
+	msg2FABadCode    = "invalid 2FA code"
+	msg2FATooMany    = "too many attempts"
+)
+
+// readCode decodes a {"code": "..."} body. A malformed body yields "", which
+// every caller treats as a missing code.
+func readCode(r *http.Request) string {
+	var body struct {
+		Code string `json:"code"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	return strings.TrimSpace(body.Code)
+}
+
+// allowCode spends one 2FA code attempt for the user. Code checks on a live
+// session are limited per account rather than per IP, so a stolen session
+// cannot brute force the six digit code from many addresses.
+func (a *Auth) allowCode(userID int64) bool {
+	return a.codeLimiter.allow("user:" + strconv.FormatInt(userID, 10))
+}
+
 // TwoFASetup generates a fresh TOTP secret for the current user and returns
-// the provisioning URI and a scannable QR data URL. The secret is stored but
-// 2FA stays disabled until the user confirms a code via TwoFAEnable.
+// the provisioning URI and a scannable QR data URL. The secret is stored as
+// pending: 2FA stays off, and login ignores the secret, until the user
+// confirms a code via TwoFAEnable.
+//
+// Setup is refused with 409 while 2FA is on. Running it again must never
+// replace or drop the active secret, so changing authenticators means turning
+// 2FA off with a valid code first and then enrolling again.
 func (a *Auth) TwoFASetup(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.currentUser(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if u.TotpEnabled == 1 {
+		http.Error(w, msg2FAAlreadyOn, http.StatusConflict)
 		return
 	}
 	secret, uri, err := auth.GenerateTOTP(u.Username)
@@ -181,16 +220,25 @@ func (a *Auth) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	var body struct {
-		Code string `json:"code"`
+	if u.TotpEnabled == 1 {
+		http.Error(w, msg2FAAlreadyOn, http.StatusConflict)
+		return
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	code := readCode(r)
 	if u.TotpSecret == nil {
 		http.Error(w, "run setup first", http.StatusBadRequest)
 		return
 	}
-	if !auth.ValidateTOTP(*u.TotpSecret, body.Code) {
-		http.Error(w, "invalid code", http.StatusBadRequest)
+	if code == "" {
+		http.Error(w, msg2FACodeNeeded, http.StatusBadRequest)
+		return
+	}
+	if !a.allowCode(u.ID) {
+		http.Error(w, msg2FATooMany, http.StatusTooManyRequests)
+		return
+	}
+	if !auth.ValidateTOTP(*u.TotpSecret, code) {
+		http.Error(w, msg2FABadCode, http.StatusBadRequest)
 		return
 	}
 	if err := a.q.SetUserTOTP(r.Context(), generated.SetUserTOTPParams{TotpSecret: u.TotpSecret, TotpEnabled: 1, ID: u.ID}); err != nil {
@@ -200,11 +248,31 @@ func (a *Auth) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// TwoFADisable clears the TOTP secret and disables 2FA for the current user.
+// TwoFADisable turns 2FA off for the current user. It needs a valid code from
+// the active secret, so a session cookie alone (for example one taken from an
+// unlocked browser) cannot strip the second factor. A missing code is a 400,
+// a wrong code is a 403, and in both cases 2FA stays on.
 func (a *Auth) TwoFADisable(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.currentUser(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if u.TotpEnabled != 1 || u.TotpSecret == nil {
+		http.Error(w, msg2FANotOn, http.StatusConflict)
+		return
+	}
+	code := readCode(r)
+	if code == "" {
+		http.Error(w, msg2FACodeNeeded, http.StatusBadRequest)
+		return
+	}
+	if !a.allowCode(u.ID) {
+		http.Error(w, msg2FATooMany, http.StatusTooManyRequests)
+		return
+	}
+	if !auth.ValidateTOTP(*u.TotpSecret, code) {
+		http.Error(w, msg2FABadCode, http.StatusForbidden)
 		return
 	}
 	if err := a.q.SetUserTOTP(r.Context(), generated.SetUserTOTPParams{TotpSecret: nil, TotpEnabled: 0, ID: u.ID}); err != nil {
