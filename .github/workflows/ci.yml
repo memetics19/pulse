@@ -94,12 +94,18 @@ jobs:
             tag: pulse-agent:ci
     steps:
       - uses: actions/checkout@v4
+      # Both platforms the release publishes. Go cross-compiles on the runner, so QEMU only
+      # runs the small arm64 runtime stage.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v3
       - name: build image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: ${{ matrix.tag }}
 

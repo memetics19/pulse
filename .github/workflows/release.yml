@@ -1,9 +1,12 @@
 name: Release
 
-# Builds and publishes a release: the image to GHCR (ghcr.io/memetics19/pulse:X.Y.Z, X.Y and
-# latest) and the binaries with SHA256SUMS on the GitHub Release. release-please calls it
-# with the tag it created. A vX.Y.Z tag pushed by hand runs it too. The homelab picks the
-# new image up by itself, so nothing here reaches into it.
+# Builds and publishes a release: the pulse and pulse-agent images to GHCR
+# (ghcr.io/memetics19/pulse and ghcr.io/memetics19/pulse-agent, tags X.Y.Z, X.Y and latest,
+# for linux/amd64 and linux/arm64) and the binaries, packages, SBOMs and SHA256SUMS on the
+# GitHub Release. Everything is signed or attested: see "Verify a release" in
+# docs/security.md. release-please calls it with the tag it created. A vX.Y.Z tag pushed by
+# hand runs it too. The homelab picks the new image up by itself, so nothing here reaches
+# into it.
 on:
   push:
     tags: ["v*"]
@@ -14,9 +17,10 @@ on:
         type: string
         required: true
 
+# Each job asks for what it needs. When release-please calls this workflow, its calling job
+# must grant at least the union of these.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
@@ -25,6 +29,8 @@ jobs:
   test:
     name: Test before release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,15 +49,36 @@ jobs:
             echo "::endgroup::"
           done
 
-  release:
-    name: Build image and publish release
+  # Both images, for amd64 and arm64. The Dockerfiles cross-compile Go on the runner's own
+  # platform, so QEMU only runs the small runtime stage for arm64. buildx attaches an SBOM
+  # and SLSA provenance to each image, and cosign signs the pushed digest with the
+  # workflow's own identity (keyless, no key to store).
+  images:
+    name: Publish ${{ matrix.image }} image
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # cosign keyless signing gets its certificate from the workflow's OIDC token.
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pulse
+            file: api/Dockerfile
+          - image: pulse-agent
+            file: agent/Dockerfile
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -62,28 +89,46 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=semver,pattern={{version}},value=${{ env.TAG }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }}
             type=raw,value=latest
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: api/Dockerfile
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
           push: true
+          provenance: mode=max
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      # One signature on the multi-arch index digest covers every tag that points at it.
+      - name: Sign the image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
 
   # Cross-compile the single static binary (pure Go, no CGO) with the admin UI
   # embedded, for every supported OS/arch, and attach them to the GitHub release
   # so `deploy/install.sh` can download the right one. Runs in parallel with the
-  # image build; both only gate on tests passing.
+  # image build; both only gate on tests passing. Each binary gets an SPDX SBOM,
+  # SHA256SUMS gets a cosign signature, and every file gets a build provenance
+  # attestation.
   binaries:
     name: Publish release binaries
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      # Upload to the GitHub Release.
+      contents: write
+      # Keyless signing and attestations both use the workflow's OIDC token.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -128,8 +173,38 @@ jobs:
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
           packaging/build-packages.sh "$TAG"
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        id: syft
+      # syft reads the module list Go embeds in each binary. The SBOMs are named
+      # <binary>.spdx.json, so the globs below put them in SHA256SUMS and on the release.
+      - name: SBOM for each binary (SPDX JSON)
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          set -euo pipefail
+          for name in pulse pulse-agent pulse-cli; do
+            for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
+              bin="dist-bin/${name}_${target}"
+              "$SYFT" scan "file:${bin}" -o "spdx-json=${bin}.spdx.json"
+            done
+          done
+          ls -1 dist-bin/*.spdx.json
       - name: Generate checksums
         run: cd dist-bin && sha256sum pulse_* pulse-agent_* pulse-cli_* pulse-*.rpm > SHA256SUMS && cat SHA256SUMS
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+      # The bundle holds the signature, the short-lived certificate and the transparency
+      # log entry: `cosign verify-blob --bundle` needs nothing else.
+      - name: Sign SHA256SUMS
+        run: cosign sign-blob --yes --bundle dist-bin/SHA256SUMS.sigstore.json dist-bin/SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: |
+            dist-bin/pulse_*
+            dist-bin/pulse-agent_*
+            dist-bin/pulse-cli_*
+            dist-bin/pulse-*.rpm
+            dist-bin/SHA256SUMS
       - name: Attach to GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -140,3 +215,4 @@ jobs:
             dist-bin/pulse-cli_*
             dist-bin/pulse-*.rpm
             dist-bin/SHA256SUMS
+            dist-bin/SHA256SUMS.sigstore.json

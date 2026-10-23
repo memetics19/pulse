@@ -1,8 +1,11 @@
 # Deployment
 
 Pulse ships as a container image on the GitHub Container Registry,
-`ghcr.io/memetics19/pulse`, and as binaries on each GitHub Release. Releases are automated:
-merge work to `main`, merge the release PR, and the new version is built and published.
+`ghcr.io/memetics19/pulse`, and as binaries and packages on each GitHub Release. The agent
+has its own image, `ghcr.io/memetics19/pulse-agent`. Both images are built for linux/amd64
+and linux/arm64, so the same tag runs on an x86 server and on an arm64 board such as a
+Raspberry Pi. Releases are automated: merge work to `main`, merge the release PR, and the
+new version is built and published.
 
 ## Release flow
 
@@ -17,9 +20,14 @@ commit (Conventional Commits) -> main
                |
                +- release.yml (called for that tag)
                      +- test       the whole suite again
-                     +- release    image ghcr.io/memetics19/pulse:X.Y.Z, X.Y and latest
-                     +- binaries   pulse_<os>_<arch> and SHA256SUMS on the Release
+                     +- images     ghcr.io/memetics19/pulse and pulse-agent, X.Y.Z, X.Y and latest
+                     |             amd64 and arm64, with SBOM and provenance, signed with cosign
+                     +- binaries   pulse_<os>_<arch>, .deb and .rpm packages, SBOMs, SHA256SUMS
+                                   and its signature on the Release, each with build provenance
 ```
+
+Every published file and image can be checked against this repository. See
+[Verify a release](security.md#verify-a-release).
 
 Every workflow uses the repository's own `GITHUB_TOKEN`. There is no personal access token
 to renew. Release-please needs "Allow GitHub Actions to create and approve pull requests"
@@ -39,6 +47,18 @@ Pulse needs nothing but its image and a volume for the SQLite file:
 ```sh
 docker run -d --name pulse -p 8080:8080 -v pulse_data:/data ghcr.io/memetics19/pulse:latest
 ```
+
+Docker pulls the image for the host's architecture by itself.
+
+The agent image runs `pulse-agent` with the token in the environment:
+
+```sh
+docker run -d --name pulse-agent -e PULSE_AGENT_TOKEN=<token> \
+  ghcr.io/memetics19/pulse-agent:latest --server https://status.example.com
+```
+
+Inside a container the agent reports what the container can see. For the metrics of the
+host itself, install the binary or the package on the host instead.
 
 `deploy/docker-compose.homelab.yml` runs the published image behind Caddy together with
 the docs site, and `deploy/docker-compose.prod.yml` builds the image locally instead. Put

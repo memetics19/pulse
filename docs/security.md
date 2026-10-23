@@ -1,6 +1,6 @@
 # Security
 
-This page covers how Pulse handles authentication, sessions, two-factor authentication, password recovery, and API keys.
+This page covers how Pulse handles authentication, sessions, two-factor authentication, password recovery, and API keys. It ends with how to check that a release really came from this repository.
 
 ## Password hashing
 
@@ -35,3 +35,66 @@ API keys are named and scoped. See [API](api.md) for the scope list and Bearer u
 - Only a hash of the key is stored. Pulse cannot show the full key again.
 - Keys are revocable. Revoke a key to invalidate it immediately.
 - Each key carries only the scopes you assign, so you can grant least privilege for a given integration.
+
+## Verify a release
+
+Every release is built by `.github/workflows/release.yml` in GitHub Actions. Nothing is
+signed with a stored key. Signatures use Sigstore keyless signing: the certificate names
+the workflow that made it, and the signature is recorded in the public Rekor transparency
+log. You need [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) and
+the [GitHub CLI](https://cli.github.com/).
+
+### Images
+
+`ghcr.io/memetics19/pulse` and `ghcr.io/memetics19/pulse-agent` are signed by digest.
+Check a version like this:
+
+```sh
+cosign verify ghcr.io/memetics19/pulse:<version> \
+  --certificate-identity-regexp '^https://github\.com/memetics19/pulse/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Use the same command with `pulse-agent` for the agent image. A tag points at one digest
+for both architectures, so one check covers amd64 and arm64.
+
+Each image also carries an SPDX SBOM and SLSA provenance from the build. To read them:
+
+```sh
+docker buildx imagetools inspect ghcr.io/memetics19/pulse:<version> --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/memetics19/pulse:<version> --format '{{ json .Provenance }}'
+```
+
+### SHA256SUMS
+
+`SHA256SUMS` lists the hash of every binary, package and SBOM on the release.
+`SHA256SUMS.sigstore.json` is its signature bundle. Download both, check the signature,
+then check your files against the list:
+
+```sh
+BASE=https://github.com/memetics19/pulse/releases/download/v<version>
+curl -fsSLO "$BASE/SHA256SUMS"
+curl -fsSLO "$BASE/SHA256SUMS.sigstore.json"
+cosign verify-blob SHA256SUMS \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/memetics19/pulse/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+On macOS use `shasum -a 256 --ignore-missing -c SHA256SUMS` for the last line.
+
+### Build provenance
+
+Every binary, package, SBOM and `SHA256SUMS` has a build provenance attestation. It
+records the commit and the workflow run that built the file. Check any downloaded file
+with:
+
+```sh
+gh attestation verify pulse_linux_amd64 --repo memetics19/pulse
+```
+
+### SBOMs
+
+Each binary has an SPDX JSON SBOM next to it on the release, named after the binary, for
+example `pulse_linux_amd64.spdx.json`. It lists the Go modules built into that binary.
