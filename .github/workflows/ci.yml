@@ -155,7 +155,7 @@ jobs:
           rm -f dist-bin/*.deb dist-bin/*.rpm
           packaging/build-packages.sh 0.0.2
           sudo apt-get install -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold ./dist-bin/pulse_0.0.2_amd64.deb
-          grep -qx 'PULSE_ALLOW_PRIVATE_MONITORS=true' /etc/pulse/pulse.env
+          sudo grep -qx 'PULSE_ALLOW_PRIVATE_MONITORS=true' /etc/pulse/pulse.env
           for i in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8080/healthz && break; sleep 1; done
           [ "$(systemctl show -p MainPID --value pulse)" != "$before" ]
           [ "$(dpkg-query -W -f '${Version}' pulse)" = 0.0.2 ]
