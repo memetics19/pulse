@@ -13,6 +13,7 @@ Every server setting starts with `PULSE_`, apart from the two notification keys.
 | `PULSE_DATA_DIR` | `/data` | Directory for the setup state (`pulse.json`). When `PULSE_DB` is unset, Pulse creates `pulse.db` here. The container image sets it to `/data`. |
 | `PULSE_DATABASE_URL` | (unset) | Reserved for an external database. Pulse reads it but stores everything in SQLite. The unprefixed `DATABASE_URL` is not read. |
 | `RESEND_API_KEY` | (unset) | API key for sending email notifications through Resend. Leave unset to disable email. |
+| `PULSE_EMAIL_FROM` | (unset) | Sender of email alerts, such as `alerts@example.com` or `Pulse <alerts@example.com>`. It must be on a domain verified in the same Resend account. Resend refuses any other. With `RESEND_API_KEY` set and this unset, Pulse logs a warning at startup and every email alert fails with the reason in the log. |
 | `SLACK_WEBHOOK_URL` | (unset) | Slack incoming webhook URL for notifications. Leave unset to disable Slack. |
 | `PULSE_SECURE_COOKIES` | `false` | Set to `true` when Pulse is served over HTTPS to mark session cookies `Secure`. |
 | `PULSE_CORS_ORIGINS` | (unset) | Comma-separated list of origins allowed to call the API cross-origin. Leave it unset (the default) to send no CORS headers. The embedded UI is served from the same origin and needs none. |
@@ -28,6 +29,7 @@ environment:
   PULSE_DB: /data/pulse.db
   PULSE_PORT: "8080"
   RESEND_API_KEY: ${RESEND_API_KEY:-}
+  PULSE_EMAIL_FROM: ${PULSE_EMAIL_FROM:-}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
 ```
 

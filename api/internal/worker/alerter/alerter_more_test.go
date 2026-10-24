@@ -48,12 +48,12 @@ func TestSlackSender(t *testing.T) {
 
 func TestEmailSenderNoop(t *testing.T) {
 	// Empty API key -> noop sender that never errors.
-	s := alerter.NewEmailSender("")
+	s := alerter.NewEmailSender("", "")
 	if err := s.Send(context.Background(), map[string]string{"to": "x@y.com"}, alerter.Alert{}); err != nil {
 		t.Fatalf("noop email should not error: %v", err)
 	}
 	// Real sender but no recipient -> returns nil before calling the API.
-	s2 := alerter.NewEmailSender("re_fake_key")
+	s2 := alerter.NewEmailSender("re_fake_key", "Pulse <alerts@example.com>")
 	if err := s2.Send(context.Background(), map[string]string{}, alerter.Alert{}); err != nil {
 		t.Fatalf("email with no recipient should be a no-op: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestDispatcherNotifyFansOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := alerter.NewDispatcher(q, "", "", true, alerter.WithHTTPClient(srv.Client()))
+	d := alerter.NewDispatcher(q, "", "", "", true, alerter.WithHTTPClient(srv.Client()))
 	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected", Severity: "major"}, nil)
 
 	if hits.Load() != 1 {

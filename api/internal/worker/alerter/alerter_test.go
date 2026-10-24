@@ -33,7 +33,7 @@ func TestSlackSender_SendsPayload(t *testing.T) {
 }
 
 func TestEmailSender_NoopWhenNoKey(t *testing.T) {
-	s := alerter.NewEmailSender("")
+	s := alerter.NewEmailSender("", "")
 	err := s.Send(context.Background(), map[string]string{}, alerter.Alert{Title: "test", Status: "detected"})
 	assert.NoError(t, err)
 }

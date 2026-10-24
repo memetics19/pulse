@@ -84,8 +84,11 @@ type Config struct {
 	SQLitePath string
 	// SQLitePathSet reports that PULSE_DB (or the old SQLITE_PATH) names the
 	// file, so the setup wizard may not choose a different one.
-	SQLitePathSet   bool
-	ResendAPIKey    string
+	SQLitePathSet bool
+	ResendAPIKey  string
+	// EmailFrom (PULSE_EMAIL_FROM) is the sender of email alerts, on a domain verified
+	// in the Resend account of ResendAPIKey.
+	EmailFrom       string
 	SlackWebhookURL string
 	Port            string
 	SecureCookies   bool
@@ -133,6 +136,7 @@ func Load() Config {
 		SQLitePath:           DBPath(),
 		SQLitePathSet:        Env("PULSE_DB") != "",
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
+		EmailFrom:            Env("PULSE_EMAIL_FROM"),
 		SlackWebhookURL:      os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:                 port,
 		SecureCookies:        envBool("PULSE_SECURE_COOKIES"),

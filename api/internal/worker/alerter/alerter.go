@@ -29,12 +29,13 @@ type Dispatcher struct {
 	slack Sender
 }
 
-// NewDispatcher wires the senders. allowPrivate (PULSE_ALLOW_PRIVATE_MONITORS)
-// decides whether a webhook may reach a private or internal address.
-func NewDispatcher(q *store.Queries, resendKey, slackWebhook string, allowPrivate bool, opts ...Option) *Dispatcher {
+// NewDispatcher wires the senders. emailFrom (PULSE_EMAIL_FROM) is the sender of email
+// alerts. allowPrivate (PULSE_ALLOW_PRIVATE_MONITORS) decides whether a webhook may reach
+// a private or internal address.
+func NewDispatcher(q *store.Queries, resendKey, emailFrom, slackWebhook string, allowPrivate bool, opts ...Option) *Dispatcher {
 	return &Dispatcher{
 		q:     q,
-		email: NewEmailSender(resendKey),
+		email: NewEmailSender(resendKey, emailFrom),
 		slack: NewSlackSender(slackWebhook, allowPrivate, opts...),
 	}
 }

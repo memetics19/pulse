@@ -187,7 +187,7 @@ func (r *livePushRecorder) Record(ctx context.Context, monitor store.Monitor, in
 		return fmt.Errorf("database unavailable")
 	}
 	q := store.New(db)
-	dispatcher := alerter.NewDispatcher(q, r.cfg.ResendAPIKey, r.cfg.SlackWebhookURL, r.cfg.AllowPrivateMonitors)
+	dispatcher := alerter.NewDispatcher(q, r.cfg.ResendAPIKey, r.cfg.EmailFrom, r.cfg.SlackWebhookURL, r.cfg.AllowPrivateMonitors)
 	detector := incident.NewDetector(q)
 	return checkresult.New(db, detector, dispatcher).Record(ctx, monitor, in)
 }
