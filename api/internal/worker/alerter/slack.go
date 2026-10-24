@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type slackSender struct {
@@ -52,7 +53,7 @@ func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 	if icon == "" {
 		icon = ":white_circle:"
 	}
-	text := fmt.Sprintf("%s *[%s]* %s\n%s", icon, a.Status, a.Title, a.Message)
+	text := fmt.Sprintf("%s *[%s]* %s\n%s", icon, slackEscape(a.Status), slackEscape(a.Title), slackEscape(a.Message))
 	payload := map[string]string{"text": text}
 	body, _ := json.Marshal(payload)
 
@@ -72,3 +73,13 @@ func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 	}
 	return nil
 }
+
+// slackEscape escapes the three characters Slack's message format gives a meaning:
+// <...> makes a link or a mention such as <!channel>, and & starts an entity. The alert's
+// fields come from people other than the admin (a push monitor's msg, a remote server's
+// error text), so none of them may add a link or ping a channel.
+func slackEscape(s string) string {
+	return slackEscaper.Replace(s)
+}
+
+var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")

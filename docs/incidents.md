@@ -48,3 +48,8 @@ LAN, loopback, link-local or cloud metadata addresses) unless
 `PULSE_ALLOW_PRIVATE_MONITORS=true`, the same rule monitors follow. The address is checked
 when the notification is saved, again before every send, and once more when the connection
 is opened. Redirects are not followed.
+
+A notification quotes text that the admin did not write: a push monitor's `msg`, the error
+a remote server returned, and monitor names set through the API. Pulse escapes all of it.
+An email has an HTML part, with every field escaped, and a plain text part. A Slack message
+escapes `&`, `<` and `>`, so no field can add a link or a mention such as `@channel`.
