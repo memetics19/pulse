@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"net/mail"
 	"strings"
 
 	"github.com/resend/resend-go/v2"
@@ -12,6 +13,19 @@ import (
 
 type emailSender struct {
 	client *resend.Client
+	from   string
+}
+
+// misconfiguredSender stands in for email when RESEND_API_KEY is set but the sender is
+// missing or not an address: every alert fails with the reason, so it shows in the log
+// instead of disappearing.
+type misconfiguredSender struct{ err error }
+
+func (m *misconfiguredSender) Send(_ context.Context, cfg map[string]string, _ Alert) error {
+	if cfg["to"] == "" {
+		return nil
+	}
+	return m.err
 }
 
 type noopSender struct{}
@@ -19,11 +33,29 @@ type noopSender struct{}
 func (n *noopSender) Send(_ context.Context, _ map[string]string, _ Alert) error { return nil }
 
 // NewEmailSender returns a Resend-backed email sender, or a noop if apiKey is empty.
-func NewEmailSender(apiKey string) Sender {
+// from (PULSE_EMAIL_FROM) is the sender, on a domain verified in that Resend account:
+// Resend refuses any other. Without a valid one every send fails with CheckEmailFrom's
+// reason.
+func NewEmailSender(apiKey, from string) Sender {
 	if apiKey == "" {
 		return &noopSender{}
 	}
-	return &emailSender{client: resend.NewClient(apiKey)}
+	if err := CheckEmailFrom(from); err != nil {
+		return &misconfiguredSender{err: err}
+	}
+	return &emailSender{client: resend.NewClient(apiKey), from: from}
+}
+
+// CheckEmailFrom reports why from cannot be the sender of email alerts: unset, or not one
+// address such as alerts@example.com or "Pulse <alerts@example.com>".
+func CheckEmailFrom(from string) error {
+	if strings.TrimSpace(from) == "" {
+		return fmt.Errorf("email: PULSE_EMAIL_FROM is not set: set it to a sender on a domain verified in Resend")
+	}
+	if _, err := mail.ParseAddress(from); err != nil {
+		return fmt.Errorf("email: PULSE_EMAIL_FROM %q is not an email address: %v", from, err)
+	}
+	return nil
 }
 
 func (s *emailSender) Send(ctx context.Context, cfg map[string]string, a Alert) error {
@@ -36,7 +68,7 @@ func (s *emailSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 		return err
 	}
 	params := &resend.SendEmailRequest{
-		From:    "pulse@notifications.pulse.app",
+		From:    s.from,
 		To:      []string{to},
 		Subject: msg.subject,
 		Html:    msg.html,

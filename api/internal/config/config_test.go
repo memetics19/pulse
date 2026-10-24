@@ -103,8 +103,10 @@ func TestLoadNewNames(t *testing.T) {
 	t.Setenv("PULSE_PORT", "9090")
 	t.Setenv("PULSE_DB", "/srv/pulse.db")
 	t.Setenv("PULSE_DATABASE_URL", "postgres://db/pulse")
+	t.Setenv("PULSE_EMAIL_FROM", "Pulse <alerts@example.com>")
 	c := Load()
-	if c.Port != "9090" || c.SQLitePath != "/srv/pulse.db" || c.DatabaseURL != "postgres://db/pulse" {
+	if c.Port != "9090" || c.SQLitePath != "/srv/pulse.db" || c.DatabaseURL != "postgres://db/pulse" ||
+		c.EmailFrom != "Pulse <alerts@example.com>" {
 		t.Fatalf("Load ignored the PULSE_* names: %+v", c)
 	}
 	if logs.Len() != 0 {
