@@ -24,6 +24,10 @@ var renamed = map[string]string{
 // PULSE_DB is set.
 const DefaultDataDir = "/data"
 
+// SetupTokenOff is the PULSE_SETUP_TOKEN value that lets setup run without a
+// token, for automated installs that complete setup themselves.
+const SetupTokenOff = "off"
+
 // DBFileName is the name of the database file Pulse creates in the data
 // directory when PULSE_DB is unset.
 const DBFileName = "pulse.db"
@@ -83,8 +87,12 @@ type Config struct {
 	// SQLitePath is the database file, resolved by DBPath.
 	SQLitePath string
 	// SQLitePathSet reports that PULSE_DB (or the old SQLITE_PATH) names the
-	// file, so the setup wizard may not choose a different one.
-	SQLitePathSet   bool
+	// file, so a warning can say when it differs from the recorded one.
+	SQLitePathSet bool
+	// SetupToken is PULSE_SETUP_TOKEN: the token the first-run setup
+	// requires. Empty means the server generates one and logs it. The value
+	// SetupTokenOff turns the check off.
+	SetupToken      string
 	ResendAPIKey    string
 	SlackWebhookURL string
 	Port            string
@@ -132,6 +140,7 @@ func Load() Config {
 		DatabaseURL:          Env("PULSE_DATABASE_URL"),
 		SQLitePath:           DBPath(),
 		SQLitePathSet:        Env("PULSE_DB") != "",
+		SetupToken:           strings.TrimSpace(os.Getenv("PULSE_SETUP_TOKEN")),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		SlackWebhookURL:      os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:                 port,

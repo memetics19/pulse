@@ -21,16 +21,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupBody(username, sqlitePath string) []byte {
+func setupBody(username string) []byte {
 	b, _ := json.Marshal(map[string]string{
-		"username": username, "password": "s3cret-pass", "site_name": username, "sqlite_path": sqlitePath,
+		"username": username, "password": "s3cret-pass", "site_name": username,
 	})
 	return b
 }
 
+// raceConfig is the server config for these tests: the database file is
+// path, and no setup token is needed.
+func raceConfig(path string) config.Config {
+	return config.Config{SQLitePath: path, SetupToken: config.SetupTokenOff}
+}
+
 // fireSetups runs one POST /api/setup per handler, all released at once, and
 // returns the status codes in handler order.
-func fireSetups(handlerFor func(i int) http.HandlerFunc, n int, sqlitePath string) []int {
+func fireSetups(handlerFor func(i int) http.HandlerFunc, n int) []int {
 	codes := make([]int, n)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -39,7 +45,7 @@ func fireSetups(handlerFor func(i int) http.HandlerFunc, n int, sqlitePath strin
 		go func() {
 			defer wg.Done()
 			req := httptest.NewRequest(http.MethodPost, "/api/setup",
-				bytes.NewReader(setupBody(fmt.Sprintf("admin%d", i), sqlitePath)))
+				bytes.NewReader(setupBody(fmt.Sprintf("admin%d", i))))
 			rec := httptest.NewRecorder()
 			<-start
 			handlerFor(i)(rec, req)
@@ -83,9 +89,9 @@ func TestSetupConcurrentRequestsCreateOneAdmin(t *testing.T) {
 	const n = 32
 	dataDir := t.TempDir()
 	a := app.New()
-	h := handlers.NewSetup(a, dataDir, config.Config{})
+	h := handlers.NewSetup(a, dataDir, raceConfig(filepath.Join(dataDir, "pulse.db")))
 
-	codes := fireSetups(func(int) http.HandlerFunc { return h.Complete }, n, filepath.Join(dataDir, "pulse.db"))
+	codes := fireSetups(func(int) http.HandlerFunc { return h.Complete }, n)
 	onlyWinner(t, codes)
 
 	require.True(t, a.Configured())
@@ -108,10 +114,10 @@ func TestSetupConcurrentServersShareOneDatabase(t *testing.T) {
 	hs := make([]*handlers.Setup, n)
 	for i := range n {
 		apps[i], dirs[i] = app.New(), t.TempDir()
-		hs[i] = handlers.NewSetup(apps[i], dirs[i], config.Config{})
+		hs[i] = handlers.NewSetup(apps[i], dirs[i], raceConfig(path))
 	}
 
-	codes := fireSetups(func(i int) http.HandlerFunc { return hs[i].Complete }, n, path)
+	codes := fireSetups(func(i int) http.HandlerFunc { return hs[i].Complete }, n)
 	winner := onlyWinner(t, codes)
 
 	assert.Equal(t, int64(1), countUsers(t, conn))
@@ -134,9 +140,9 @@ func TestSetupFailureLeavesNothingBehind(t *testing.T) {
 	notADir := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o600))
 
-	broken := handlers.NewSetup(app.New(), filepath.Join(notADir, "data"), config.Config{})
+	broken := handlers.NewSetup(app.New(), filepath.Join(notADir, "data"), raceConfig(path))
 	rec := httptest.NewRecorder()
-	broken.Complete(rec, httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(setupBody("admin", path))))
+	broken.Complete(rec, httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(setupBody("admin"))))
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 
 	conn, err := db.Open(path)
@@ -146,8 +152,8 @@ func TestSetupFailureLeavesNothingBehind(t *testing.T) {
 
 	a := app.New()
 	rec = httptest.NewRecorder()
-	handlers.NewSetup(a, t.TempDir(), config.Config{}).Complete(rec,
-		httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(setupBody("admin", path))))
+	handlers.NewSetup(a, t.TempDir(), raceConfig(path)).Complete(rec,
+		httptest.NewRequest(http.MethodPost, "/api/setup", bytes.NewReader(setupBody("admin"))))
 	require.Equal(t, http.StatusCreated, rec.Code)
 	t.Cleanup(func() { _ = a.DB().Close() })
 	assert.Equal(t, int64(1), countUsers(t, conn))

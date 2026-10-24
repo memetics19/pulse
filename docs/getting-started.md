@@ -41,7 +41,9 @@ sudo apt update && sudo apt install pulse
 ```
 
 The `pulse` package runs Pulse as a `systemd` service under the `pulse` user. It starts
-right away on port 8080, so open `http://<host>:8080/setup` to finish. Its settings are in
+right away on port 8080, so open `http://<host>:8080/setup` to finish. The wizard asks for
+the setup token that Pulse printed in its log. Get it with
+`sudo journalctl -u pulse | grep "setup token" | tail -n 1`. Its settings are in
 `/etc/pulse/pulse.env` (the same variables as [Configuration](configuration.md)), and an
 upgrade keeps your changes:
 
@@ -93,17 +95,33 @@ volumes:
   pulse_data:
 ```
 
+The wizard asks for the setup token that Pulse printed in its log. Get it with:
+
+```bash
+docker compose logs pulse | grep "setup token" | tail -n 1
+```
+
 Data persists on the `pulse_data` volume. The SQLite file lives at the path set by `PULSE_DB`, which defaults to `/data/pulse.db`. See [Configuration](configuration.md) for the full list of environment variables.
 
 ## First-run setup wizard
 
-On first start, every route redirects to a setup wizard. The wizard collects:
+On first start, every route redirects to a setup wizard. Until setup is done, Pulse prints a one-time setup token in its log at startup:
 
-1. **Admin account.** Name, email, username, and password. The password is hashed with Argon2id.
-2. **Branding.** Logo and site name.
-3. **SQLite path.** The location of the database file.
+```text
+setup token: open /setup and enter this token: ...
+```
+
+The wizard collects:
+
+1. **Setup token.** The token from the log. It proves that you are the one setting up this instance. Each start prints a new token, so use the most recent one.
+2. **Admin account.** Name, email, username, and password. The password is hashed with Argon2id.
+3. **Branding.** Logo and site name.
+
+The last step shows the database file the server will create. The server decides it from `PULSE_DB` or `PULSE_DATA_DIR`, and the wizard cannot change it. To use another file, change those settings and restart Pulse first. See [Configuration](configuration.md#where-the-database-lives).
 
 After you complete the wizard, the app runs normally and the setup routes no longer redirect.
+
+For an automated install that runs setup itself, you can set your own token with `PULSE_SETUP_TOKEN`, or turn the check off with `PULSE_SETUP_TOKEN=off`. See [Setup token](configuration.md#setup-token).
 
 Open `http://localhost:8080` to begin. If you are running behind a reverse proxy, open the host you configured.
 

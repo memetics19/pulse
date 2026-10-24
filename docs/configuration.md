@@ -11,6 +11,7 @@ Every server setting starts with `PULSE_`, apart from the two notification keys.
 | `PULSE_PORT` | `8080` | TCP port the HTTP server listens on. |
 | `PULSE_DB` | `/data/pulse.db` | Full path of the SQLite database file. See [Where the database lives](#where-the-database-lives). |
 | `PULSE_DATA_DIR` | `/data` | Directory for the setup state (`pulse.json`). When `PULSE_DB` is unset, Pulse creates `pulse.db` here. The container image sets it to `/data`. |
+| `PULSE_SETUP_TOKEN` | (unset) | The token the first-run setup asks for. When unset, Pulse generates a random token at startup and prints it in the log. Set it to `off` only for an automated install that completes setup itself. See [Setup token](#setup-token). |
 | `PULSE_DATABASE_URL` | (unset) | Reserved for an external database. Pulse reads it but stores everything in SQLite. The unprefixed `DATABASE_URL` is not read. |
 | `RESEND_API_KEY` | (unset) | API key for sending email notifications through Resend. Leave unset to disable email. |
 | `SLACK_WEBHOOK_URL` | (unset) | Slack incoming webhook URL for notifications. Leave unset to disable Slack. |
@@ -61,7 +62,7 @@ Pulse picks the SQLite file in this order:
 
 The setup state, `pulse.json`, lives in `PULSE_DATA_DIR`. When that is unset, it lives in the directory of the `PULSE_DB` file, and otherwise in `/data`.
 
-The setup wizard creates the database file and records its path in `pulse.json`. When `PULSE_DB` is set, the wizard shows that path and does not let you change it. The server and `pulse reset-password` both open the recorded file, so they always use the same database.
+Only the server decides the database file. The setup wizard shows the path as information, creates the file and records its path in `pulse.json`. A setup request cannot name a different file. To use another file, change `PULSE_DB` or `PULSE_DATA_DIR` and restart Pulse before you finish setup. The server and `pulse reset-password` both open the recorded file, so they always use the same database.
 
 The shipped setups resolve to these files:
 
@@ -71,9 +72,29 @@ The shipped setups resolve to these files:
 | Container image | `PULSE_DATA_DIR=/data` | `/data/pulse.db` |
 | Compose files | `PULSE_DB=/data/pulse.db` and the image's `PULSE_DATA_DIR=/data` | `/data/pulse.db` |
 
-After setup, Pulse keeps using the recorded file, so an upgrade never moves a database. If `PULSE_DB` later names a different file, Pulse logs a warning at startup and still opens the recorded one. To move the database, stop Pulse, move the file, and set `sqlite_path` in `pulse.json` to the new path.
+After setup, Pulse keeps using the recorded file, so an upgrade never moves a database. This includes a file chosen in the wizard by an earlier release, when the wizard still had a path field. If `PULSE_DB` later names a different file, Pulse logs a warning at startup and still opens the recorded one. To move the database, stop Pulse, move the file, and set `sqlite_path` in `pulse.json` to the new path.
 
 Before 3.0, the wizard used only the directory of `SQLITE_PATH` and always created `pulse.db` there. An install set up with `SQLITE_PATH=/srv/pulse/custom.db` keeps its data in `/srv/pulse/pulse.db`. It goes on using that file and logs the warning above until you set `PULSE_DB=/srv/pulse/pulse.db`.
+
+## Setup token
+
+A fresh instance accepts its first setup from anyone who can reach it. The setup token makes sure that person is you, even when the instance is on a public address before you open it.
+
+- When `PULSE_SETUP_TOKEN` is unset, Pulse generates a random token at startup while setup is not done. It prints the token once in the log, in a line like `setup token: open /setup and enter this token: ...`. Each start prints a new token, so use the most recent one.
+- When `PULSE_SETUP_TOKEN` is set, setup requires that value. Pulse does not print it. Use a long random value.
+- When `PULSE_SETUP_TOKEN=off`, setup needs no token. Pulse logs a warning at startup. Use this only for an automated install that runs setup itself, on an address nobody else can reach.
+
+The wizard shows a token field when the server needs one. An automated install sends the token as `setup_token` in the `POST /api/setup` body. Pulse compares tokens in constant time. Once setup is done the token is no longer needed or accepted, and an install that is already set up prints no token.
+
+To find the generated token:
+
+```bash
+# .deb, .rpm or installer with systemd
+sudo journalctl -u pulse | grep "setup token" | tail -n 1
+
+# Docker Compose
+docker compose logs pulse | grep "setup token" | tail -n 1
+```
 
 ## Data persistence
 

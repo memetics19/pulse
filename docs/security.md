@@ -2,6 +2,17 @@
 
 This page covers how Pulse handles authentication, sessions, two-factor authentication, password recovery, and API keys. It ends with how to check that a release really came from this repository.
 
+## First-run setup
+
+Until setup is done, the setup endpoint is open by design, because no account exists yet. Pulse limits what a stranger can do there.
+
+- **Setup token.** Setup requires a one-time token. Pulse generates it at startup and prints it in the server log, so only someone who can read that log can complete setup. You can set your own with `PULSE_SETUP_TOKEN`. Pulse compares tokens in constant time, and the setup state endpoint says only whether a token is needed, never the token. See [Setup token](configuration.md#setup-token).
+- **No path from the request.** The server alone decides where the database and `pulse.json` live, from `PULSE_DB` or `PULSE_DATA_DIR`. A setup request that names a file gets a 400 and changes nothing.
+- **One winner.** Only one setup can ever create the admin account. Every later attempt gets a 409.
+- **No detail in errors.** When setup fails on the server, the reply says only that setup failed. The detail, such as a file path or a database error, goes to the server log.
+
+`PULSE_SETUP_TOKEN=off` removes the token check. Use it only for an automated install that completes setup before anyone else can reach the instance.
+
 ## Password hashing
 
 Admin passwords are hashed with Argon2id. The plaintext password is never stored.
