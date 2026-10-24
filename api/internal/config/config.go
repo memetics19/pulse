@@ -92,8 +92,11 @@ type Config struct {
 	// SetupToken is PULSE_SETUP_TOKEN: the token the first-run setup
 	// requires. Empty means the server generates one and logs it. The value
 	// SetupTokenOff turns the check off.
-	SetupToken      string
-	ResendAPIKey    string
+	SetupToken   string
+	ResendAPIKey string
+	// EmailFrom (PULSE_EMAIL_FROM) is the sender of email alerts, on a domain verified
+	// in the Resend account of ResendAPIKey.
+	EmailFrom       string
 	SlackWebhookURL string
 	Port            string
 	SecureCookies   bool
@@ -142,6 +145,7 @@ func Load() Config {
 		SQLitePathSet:        Env("PULSE_DB") != "",
 		SetupToken:           strings.TrimSpace(os.Getenv("PULSE_SETUP_TOKEN")),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
+		EmailFrom:            Env("PULSE_EMAIL_FROM"),
 		SlackWebhookURL:      os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:                 port,
 		SecureCookies:        envBool("PULSE_SECURE_COOKIES"),

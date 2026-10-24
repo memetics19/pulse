@@ -16,6 +16,7 @@ import (
 	"github.com/memetics19/pulse/api/internal/db"
 	"github.com/memetics19/pulse/api/internal/server"
 	"github.com/memetics19/pulse/api/internal/worker"
+	"github.com/memetics19/pulse/api/internal/worker/alerter"
 )
 
 func main() {
@@ -26,6 +27,11 @@ func main() {
 
 	cfg := config.Load()
 	dataDir := config.DataDir()
+	if cfg.ResendAPIKey != "" {
+		if err := alerter.CheckEmailFrom(cfg.EmailFrom); err != nil {
+			log.Printf("RESEND_API_KEY is set, but email alerts cannot be sent: %v", err)
+		}
+	}
 
 	boot, err := bootstrap.Load(dataDir)
 	if err != nil {
