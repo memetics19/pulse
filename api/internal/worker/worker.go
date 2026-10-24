@@ -60,7 +60,7 @@ func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error 
 				if err := p.Run(ctx); err != nil {
 					log.Printf("pruner: %v", err)
 				}
-				if err := m.Run(ctx, time.Now()); err != nil {
+				if err := m.Run(ctx, time.Now().UTC()); err != nil {
 					log.Printf("maintenance: %v", err)
 				}
 			}

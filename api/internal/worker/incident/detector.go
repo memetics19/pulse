@@ -72,7 +72,7 @@ func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.
 	_, err = q.CreateAutoIncident(ctx, store.CreateAutoIncidentParams{
 		Title:              fmt.Sprintf("%s is down", name),
 		AffectedMonitorIds: fmt.Sprintf("[%d]", monitorID),
-		StartedAt:          time.Now(),
+		StartedAt:          time.Now().UTC(),
 		ExternalID:         strconv.FormatInt(monitorID, 10),
 	})
 	if errors.Is(err, sql.ErrNoRows) {

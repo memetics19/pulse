@@ -96,7 +96,7 @@ func RequireSessionOrAPIKey(q *generated.Queries) func(http.Handler) http.Handle
 					http.Error(w, "insufficient scope", http.StatusForbidden)
 					return
 				}
-				now := time.Now()
+				now := time.Now().UTC()
 				_ = q.TouchAPIKey(r.Context(), generated.TouchAPIKeyParams{LastUsedAt: &now, ID: key.ID})
 				next.ServeHTTP(w, r)
 				return

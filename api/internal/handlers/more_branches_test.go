@@ -15,6 +15,7 @@ import (
 func TestMaintenanceCreateValidation(t *testing.T) {
 	h := handlers.NewMaintenance(newQ(t))
 	now := time.Now().Format(time.RFC3339)
+	later := time.Now().Add(time.Hour).Format(time.RFC3339)
 
 	// missing title
 	assert.Equal(t, http.StatusBadRequest,
@@ -27,7 +28,7 @@ func TestMaintenanceCreateValidation(t *testing.T) {
 		do(h.Create, "POST", "/x", map[string]any{"title": "t", "starts_at": now, "ends_at": "nope"}).Code)
 	// start_now -> created in_progress
 	assert.Equal(t, http.StatusCreated,
-		do(h.Create, "POST", "/x", map[string]any{"title": "t", "starts_at": now, "ends_at": now, "start_now": true}).Code)
+		do(h.Create, "POST", "/x", map[string]any{"title": "t", "starts_at": now, "ends_at": later, "start_now": true}).Code)
 	// bad JSON
 	assert.Equal(t, http.StatusBadRequest, do(h.Create, "POST", "/x", "nope").Code)
 }

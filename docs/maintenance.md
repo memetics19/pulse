@@ -11,6 +11,14 @@ A maintenance window is created in one of two ways:
 
 A window applies to the monitors you select.
 
+The end time must be after the start time. With **Start now**, the end time must be in the future. The API rejects any other window with a 400 error.
+
+## Time zones
+
+Pulse stores every maintenance time in UTC. The API accepts RFC 3339 times with any offset, such as `2026-10-23T10:00:00+05:30` or `2026-10-23T04:30:00Z`. Pulse converts them to UTC before saving them, and the API returns them in UTC. The admin UI sends UTC already. The host's time zone does not change when a window starts or ends.
+
+Upgrading to this version runs a database migration. It rewrites older timestamps that were saved with a host offset into UTC. The migration runs once and is safe to repeat.
+
 ## Automatic transitions
 
 The worker transitions a window through three states at its boundaries:

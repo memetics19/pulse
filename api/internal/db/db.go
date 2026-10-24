@@ -73,6 +73,11 @@ func sqliteDSN(sqlitePath string) (string, error) {
 	options.Add("_pragma", "journal_mode(WAL)")
 	options.Add("_pragma", "foreign_keys(1)")
 	options.Add("_pragma", "busy_timeout(5000)")
+	// SQLite compares the stored timestamp text, and the driver writes a
+	// time.Time with its own offset. _timezone=UTC makes the driver convert
+	// every time.Time to UTC before writing it, so rows sort in time order
+	// whatever the host zone is (issue #48). Callers still pass UTC.
+	options.Set("_timezone", "UTC")
 	parsed.RawQuery = options.Encode()
 	return parsed.String(), nil
 }

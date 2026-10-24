@@ -66,7 +66,7 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 
 	_, err = q.InsertCheckResult(ctx, store.InsertCheckResultParams{
 		MonitorID:      monitor.ID,
-		CheckedAt:      in.CheckedAt,
+		CheckedAt:      in.CheckedAt.UTC(),
 		Status:         status,
 		ResponseTimeMs: in.ResponseTimeMs,
 		StatusCode:     in.StatusCode,

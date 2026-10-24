@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/testutil"
@@ -15,10 +16,12 @@ func TestMaintenanceCreateListStartNow(t *testing.T) {
 	q := generated.New(testutil.NewTestDB(t))
 	h := NewMaintenance(q)
 
+	// start_now starts the window now, so the end must be in the future.
+	now := time.Now().UTC()
 	body, _ := json.Marshal(map[string]any{
 		"title": "DB upgrade", "description": "brief downtime",
 		"affected_monitor_ids": []int64{1, 2},
-		"starts_at":            "2026-06-10T01:00:00Z", "ends_at": "2026-06-10T03:00:00Z",
+		"starts_at":            now.Format(time.RFC3339), "ends_at": now.Add(2 * time.Hour).Format(time.RFC3339),
 		"start_now": true,
 	})
 	rec := httptest.NewRecorder()

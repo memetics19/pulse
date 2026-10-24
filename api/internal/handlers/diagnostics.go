@@ -62,7 +62,7 @@ func (h *Ingest) PostDiagnostics(w http.ResponseWriter, r *http.Request) {
 	// stored payload.
 	if err := h.q.InsertAgentDiagnostic(r.Context(), generated.InsertAgentDiagnosticParams{
 		AgentID:     agent.ID,
-		CollectedAt: time.Now(),
+		CollectedAt: time.Now().UTC(),
 		Payload:     string(req.Bundle),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

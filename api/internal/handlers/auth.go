@@ -353,7 +353,7 @@ func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, userID int64
 	if err := a.q.CreateSession(r.Context(), generated.CreateSessionParams{
 		Token:     token,
 		UserID:    userID,
-		ExpiresAt: time.Now().Add(auth.SessionDuration),
+		ExpiresAt: time.Now().UTC().Add(auth.SessionDuration),
 	}); err != nil {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return false
