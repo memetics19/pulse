@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.1](https://github.com/memetics19/pulse/compare/v3.0.0...v3.0.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **deps:** bump go-chi/chi to v5.4.0 (CVE-2026-114437) ([#82](https://github.com/memetics19/pulse/issues/82)) ([8efde8b](https://github.com/memetics19/pulse/commit/8efde8b1ddfcf15d153c13ae9e5c30491bf5bcbb))
+* **security:** check results and incident updates need a session or API key ([#65](https://github.com/memetics19/pulse/issues/65)) ([a5c5235](https://github.com/memetics19/pulse/commit/a5c5235a26ae7a8ad7fd57d5dd0315a3f006bf39)), closes [#44](https://github.com/memetics19/pulse/issues/44)
+* **security:** escape alert content in emails and Slack messages ([#68](https://github.com/memetics19/pulse/issues/68)) ([e3fe97a](https://github.com/memetics19/pulse/commit/e3fe97a282d17580d9cab26135af4096a3e74a44)), closes [#47](https://github.com/memetics19/pulse/issues/47)
+* **security:** first-run setup needs a token and cannot choose the database path ([#66](https://github.com/memetics19/pulse/issues/66)) ([fca7b18](https://github.com/memetics19/pulse/commit/fca7b1823e784a2d3ba8d0dc00388187ba207cdd)), closes [#61](https://github.com/memetics19/pulse/issues/61)
+* send email alerts from PULSE_EMAIL_FROM instead of a fixed address ([#93](https://github.com/memetics19/pulse/issues/93)) ([9dbe9a4](https://github.com/memetics19/pulse/commit/9dbe9a42197350b8d6cbd114aa56a338d4e7bc54)), closes [#46](https://github.com/memetics19/pulse/issues/46)
+* store every timestamp in UTC so maintenance windows start on time ([#70](https://github.com/memetics19/pulse/issues/70)) ([b68049d](https://github.com/memetics19/pulse/commit/b68049ddd8d962148f7042729941265d83d5c8f7)), closes [#48](https://github.com/memetics19/pulse/issues/48)
+
 ## [3.0.0](https://github.com/memetics19/pulse/compare/v2.1.0...v3.0.0) (2026-10-23)
 
 
