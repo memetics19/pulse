@@ -25,12 +25,7 @@ func (h *CheckResults) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	days := 1
-	if dStr := r.URL.Query().Get("days"); dStr != "" {
-		if d, err := strconv.Atoi(dStr); err == nil && d > 0 {
-			days = d
-		}
-	}
+	days := daysParam(r, 1)
 
 	since := time.Now().AddDate(0, 0, -days)
 	results, err := h.q.ListCheckResults(r.Context(), generated.ListCheckResultsParams{
@@ -57,12 +52,7 @@ func (h *CheckResults) Uptime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	days := 90
-	if dStr := r.URL.Query().Get("days"); dStr != "" {
-		if d, err := strconv.Atoi(dStr); err == nil && d > 0 {
-			days = d
-		}
-	}
+	days := daysParam(r, maxCheckDays)
 
 	since := time.Now().AddDate(0, 0, -days)
 	uptimePct, err := h.q.UptimePercent(r.Context(), generated.UptimePercentParams{
@@ -80,4 +70,19 @@ func (h *CheckResults) Uptime(w http.ResponseWriter, r *http.Request) {
 		"days":       days,
 		"uptime_pct": uptimePct,
 	})
+}
+
+// maxCheckDays caps the ?days window. It matches the longest range the status
+// page and admin UI offer, and keeps one request from scanning the whole
+// check_results table.
+const maxCheckDays = 90
+
+// daysParam reads ?days, falling back to def when it is missing or not a
+// positive integer, and clamps it to maxCheckDays.
+func daysParam(r *http.Request, def int) int {
+	d, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil || d <= 0 {
+		return def
+	}
+	return min(d, maxCheckDays)
 }

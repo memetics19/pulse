@@ -59,6 +59,36 @@ curl -X POST https://status.shreeda.xyz/api/incidents \
   }'
 ```
 
+Read the recent check results of a monitor. This requires the `monitors:read` scope. `days` defaults to 1 and is capped at 90.
+
+```bash
+curl "https://status.shreeda.xyz/api/monitors/12/checks?days=7" \
+  -H "Authorization: Bearer pulse_live_..."
+```
+
+The same scope covers `/api/monitors/{id}/checks/uptime`, which returns the uptime percentage over `days` (default 90, capped at 90). Read the updates of an incident with `/api/incidents/{id}/updates` and the `incidents:read` scope. A request without a session or key gets 401. A key without the matching scope gets 403.
+
+## Public endpoints
+
+Only the routes below answer without a session or an API key. Everything else under `/api` returns 401 to an anonymous caller.
+
+| Route | Access | Returns |
+| --- | --- | --- |
+| `GET /` | Public | The status page for the request Host. Monitor names and status, uptime bars, uptime percentage, average latency, incidents with their updates, and maintenance. |
+| `GET /api/status` | Public | JSON for the same page. The overall status, each group with its monitor names and status, unresolved incidents (title, status, severity), and the theme preset. |
+| `GET /feed.xml` | Public | Atom feed of the incidents on the same page. See [Atom feed](#atom-feed). |
+| `GET /static/*` | Public | Stylesheet, script and icon of the status page. |
+| `GET /healthz` | Public | `{"status":"ok"}`, or 503 with `worker_unhealthy` when the worker has stopped. |
+| `GET /metrics` | Bearer token when `PULSE_METRICS_TOKEN` is set | Prometheus metrics. Off unless `PULSE_METRICS=true`. See [Metrics](metrics.md). |
+| `GET /api/auth/status` | Public | Whether setup is needed, and the caller's own login state. |
+| `POST /api/auth/login`, `POST /api/auth/logout` | Public | Starts or ends a session. |
+| `GET /api/setup/state`, `POST /api/setup` | Public | The first-run wizard. `POST` works once, before setup completes. |
+| `GET` or `POST /api/push/{token}` | The push token in the URL | Records a heartbeat for a push monitor. Returns `{"ok":true}`. |
+| `POST /api/ingest/metrics`, `POST /api/ingest/diagnostics` | Agent token | Accepts data from an infra agent. |
+| `/admin/*`, `/setup/*`, `/_next/*`, `/favicon.ico` | Public | Static files of the admin app. The app loads its data through the authenticated API. |
+
+The public status data is scoped to the page that matches the request Host. A page shows only the active monitors in its groups, and the incidents that touch them. Unpublished pages return 404. Public responses never carry a monitor target (URL, host or port), a raw check error, an HTTP status code, or the author of an incident update. A monitor shows only as up, degraded, down, or no data yet. The JSON spells the last one `unknown`.
+
 ## Atom feed
 
 The public status page exposes an Atom feed of incident updates at `/feed.xml`. A Subscribe control on the page links to it.
