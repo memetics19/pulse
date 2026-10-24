@@ -77,7 +77,7 @@ func (h *Push) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.recorder == nil || h.recorder.Record(r.Context(), monitor, checkresult.Input{
-		Status: status, ResponseTimeMs: ping, ErrorMessage: message, CheckedAt: time.Now(),
+		Status: status, ResponseTimeMs: ping, ErrorMessage: message, CheckedAt: time.Now().UTC(),
 	}) != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record heartbeat"})
 		return

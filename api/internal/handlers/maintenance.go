@@ -85,16 +85,20 @@ func (h *Maintenance) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Any offset is accepted. Times are stored in UTC because the worker
+	// compares the stored text with its own UTC clock.
 	startsAt, err := time.Parse(time.RFC3339, input.StartsAt)
 	if err != nil {
 		http.Error(w, "invalid starts_at: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	startsAt = startsAt.UTC()
 	endsAt, err := time.Parse(time.RFC3339, input.EndsAt)
 	if err != nil {
 		http.Error(w, "invalid ends_at: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	endsAt = endsAt.UTC()
 
 	// Marshal []int64 back to a JSON string for the DB column.
 	ids := input.AffectedMonitorIds
@@ -111,6 +115,14 @@ func (h *Maintenance) Create(w http.ResponseWriter, r *http.Request) {
 	if input.StartNow {
 		status = "in_progress"
 		startsAt = time.Now().UTC()
+	}
+	if !endsAt.After(startsAt) {
+		msg := "ends_at must be after starts_at"
+		if input.StartNow {
+			msg += " (start_now starts the window now)"
+		}
+		http.Error(w, msg, http.StatusBadRequest)
+		return
 	}
 
 	mw, err := h.q.CreateMaintenance(r.Context(), generated.CreateMaintenanceParams{

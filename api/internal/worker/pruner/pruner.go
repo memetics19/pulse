@@ -43,7 +43,7 @@ func New(q *store.Queries) *Pruner { return &Pruner{q: q} }
 // older than the configured retention period (default 90 days), plus sessions
 // that have already expired. A failure on one table does not stop the others.
 func (p *Pruner) Run(ctx context.Context) error {
-	now := time.Now()
+	now := time.Now().UTC()
 	cutoff := now.AddDate(0, 0, -p.retentionDays(ctx))
 
 	steps := []struct {

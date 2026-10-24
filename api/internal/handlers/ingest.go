@@ -81,6 +81,7 @@ func (h *Ingest) PostMetrics(w http.ResponseWriter, r *http.Request) {
 	if params.CollectedAt.IsZero() {
 		params.CollectedAt = time.Now()
 	}
+	params.CollectedAt = params.CollectedAt.UTC()
 
 	if err := h.q.InsertRawMetric(r.Context(), params); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -54,7 +54,7 @@ type agg struct {
 // and prunes raw data older than 24h. If any bucket fails to rebuild, the
 // watermark stays put so the next run retries the same rows.
 func (r *Rollup) Run(ctx context.Context) error {
-	now := time.Now()
+	now := time.Now().UTC()
 	since := now.Add(-window)
 
 	through, err := r.q.MaxRawMetricID(ctx)
@@ -117,7 +117,7 @@ func (r *Rollup) changedBuckets(ctx context.Context, since time.Time, through in
 		return nil, err
 	}
 	for _, row := range rows {
-		bucket := row.CollectedAt.Truncate(time.Minute)
+		bucket := row.CollectedAt.UTC().Truncate(time.Minute)
 		p := plans[row.AgentID]
 		if p == nil {
 			p = &agentPlan{from: bucket, buckets: map[int64]bool{}}
@@ -150,7 +150,7 @@ func (r *Rollup) rebuild(ctx context.Context, agentID int64, plan *agentPlan) er
 	buckets := map[int64]*agg{}
 	var order []int64
 	for _, raw := range raws {
-		bucketAt := raw.CollectedAt.Truncate(time.Minute)
+		bucketAt := raw.CollectedAt.UTC().Truncate(time.Minute)
 		k := bucketAt.Unix()
 		if plan.buckets != nil && !plan.buckets[k] {
 			continue

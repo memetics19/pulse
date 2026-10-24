@@ -32,7 +32,7 @@ func (h *CheckResults) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	since := time.Now().AddDate(0, 0, -days)
+	since := time.Now().UTC().AddDate(0, 0, -days)
 	results, err := h.q.ListCheckResults(r.Context(), generated.ListCheckResultsParams{
 		MonitorID: monitorID,
 		CheckedAt: since,
@@ -64,7 +64,7 @@ func (h *CheckResults) Uptime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	since := time.Now().AddDate(0, 0, -days)
+	since := time.Now().UTC().AddDate(0, 0, -days)
 	uptimePct, err := h.q.UptimePercent(r.Context(), generated.UptimePercentParams{
 		MonitorID: monitorID,
 		CheckedAt: since,

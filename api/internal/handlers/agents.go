@@ -100,7 +100,7 @@ func (h *Agents) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	since := time.Now().AddDate(0, 0, -days)
+	since := time.Now().UTC().AddDate(0, 0, -days)
 	metrics, err := h.q.List1mMetrics(r.Context(), generated.List1mMetricsParams{
 		AgentID:  agentID,
 		BucketAt: since,

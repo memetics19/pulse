@@ -21,7 +21,10 @@ func New(q *store.Queries) *Sweeper { return &Sweeper{q: q} }
 
 // Run performs status transitions for all maintenance windows that are due.
 // now is accepted as a parameter so callers (and tests) can control the clock.
+// It is converted to UTC because windows are stored in UTC and SQLite compares
+// the stored text.
 func (s *Sweeper) Run(ctx context.Context, now time.Time) error {
+	now = now.UTC()
 	starting, err := s.q.DueToStart(ctx, now)
 	if err != nil {
 		return err

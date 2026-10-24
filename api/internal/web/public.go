@@ -398,7 +398,7 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 // monitorSeries builds uptime bars + uptime% + avg latency for one monitor over [since, now].
 func (p *Public) monitorSeries(ctx context.Context, monitorID int64, since, now time.Time, buckets int) ([]barVM, string, string) {
 	rows, _ := p.q.ListCheckResults(ctx, generated.ListCheckResultsParams{
-		MonitorID: monitorID, CheckedAt: since, Limit: 10000,
+		MonitorID: monitorID, CheckedAt: since.UTC(), Limit: 10000,
 	})
 
 	worst := make([]string, buckets) // "" = nodata
@@ -440,7 +440,7 @@ func (p *Public) monitorSeries(ctx context.Context, monitorID int64, since, now 
 	// the newest 10k checks. "—" is kept for a monitor with no checks yet.
 	uptime := "—"
 	if len(rows) > 0 {
-		if pct, err := p.q.UptimePercent(ctx, generated.UptimePercentParams{MonitorID: monitorID, CheckedAt: since}); err == nil {
+		if pct, err := p.q.UptimePercent(ctx, generated.UptimePercentParams{MonitorID: monitorID, CheckedAt: since.UTC()}); err == nil {
 			uptime = fmt.Sprintf("%.2f%%", pct)
 		}
 	}
