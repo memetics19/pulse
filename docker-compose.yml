@@ -13,6 +13,7 @@ services:
       PULSE_DB: /data/pulse.db
       # Optional notification channels. Leave unset to disable.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      PULSE_EMAIL_FROM: ${PULSE_EMAIL_FROM:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       # Mark session cookies Secure when serving over HTTPS.
       PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
