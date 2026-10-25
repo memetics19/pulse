@@ -19,13 +19,19 @@ Each monitor has the following options. Not every option applies to every type.
 
 | Option | Description |
 | --- | --- |
-| Interval | How often the check runs. |
+| Interval | How often the check runs. See [First check after a restart](#first-check-after-a-restart). |
 | Timeout | How long a single check waits before it is considered a failure. |
 | Expected status code | For HTTP checks, the status code that counts as a success when set. |
 | Keyword check | For HTTP checks, a string that must appear in the response body. |
 | Degraded threshold | A latency above which a result is marked degraded instead of up. |
 | Down threshold | A latency above which a result is marked down. |
 | Group | The group the monitor belongs to. |
+
+## First check after a restart
+
+When Pulse starts, it does not check every monitor at once. Each monitor waits a short offset before its first check. The offset is under 30 seconds and never longer than the monitor's interval. It comes from the monitor's ID, so a monitor keeps the same offset across restarts. Monitors with the same interval stay spread out instead of checking in the same second.
+
+A monitor you create or edit while Pulse runs checks right away. Push monitors are not affected, since they wait for heartbeats.
 
 ## Groups
 
