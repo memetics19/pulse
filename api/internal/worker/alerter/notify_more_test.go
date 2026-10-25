@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -59,4 +60,38 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 		t.Fatal(err)
 	}
 	alerter.NewDispatcher(store.New(db), config.Config{}).Notify(ctx, alerter.Alert{}, nil)
+}
+
+func TestSendTo(t *testing.T) {
+	d := alerter.NewDispatcher(nil, config.Config{})
+	ctx := context.Background()
+	if err := d.SendTo(ctx, "sms", `{}`, alerter.TestAlert); err == nil || !strings.Contains(err.Error(), "unknown channel") {
+		t.Errorf("unknown channel = %v", err)
+	}
+	if err := d.SendTo(ctx, "email", `[1]`, alerter.TestAlert); err == nil || !strings.Contains(err.Error(), "invalid config") {
+		t.Errorf("bad config = %v", err)
+	}
+	// Email is off, so the send does nothing and succeeds.
+	if err := d.SendTo(ctx, "email", `{"to":"ops@example.com"}`, alerter.TestAlert); err != nil {
+		t.Errorf("email off = %v", err)
+	}
+}
+
+// A failed webhook post does not put the webhook URL, a secret, in the error.
+func TestSlackErrorHidesTheWebhookURL(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL + "/services/T0/B0/secret-token"
+	srv.Close()
+	d := alerter.NewDispatcher(nil, config.Config{AllowPrivateMonitors: true})
+	err := d.SendTo(context.Background(), "slack", `{"webhook_url":"`+url+`"}`, alerter.TestAlert)
+	if err == nil || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("err = %v, want an error without the URL", err)
+	}
+}
+
+func TestInvalidWebhookURLErrorHidesTheURL(t *testing.T) {
+	err := alerter.ValidateWebhookURL("https://hooks.example.com/secret-token\x7f", false)
+	if err == nil || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("err = %v, want an error without the URL", err)
+	}
 }

@@ -3,6 +3,8 @@ package alerter
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 
 	"github.com/memetics19/pulse/api/internal/config"
@@ -53,22 +55,42 @@ func (d *Dispatcher) Notify(ctx context.Context, a Alert, monitorID *int64) {
 		if n.MonitorID != nil && monitorID != nil && *n.MonitorID != *monitorID {
 			continue
 		}
-		cfg := map[string]string{}
-		if err := json.Unmarshal([]byte(n.ConfigJson), &cfg); err != nil {
-			log.Printf("alerter: notification %d has invalid config: %v", n.ID, err)
-			continue
-		}
-		var sender Sender
-		switch n.Channel {
-		case "email":
-			sender = d.email
-		case "slack":
-			sender = d.slack
-		default:
-			continue
-		}
-		if err := sender.Send(ctx, cfg, a); err != nil {
-			log.Printf("alerter: send via %s: %v", n.Channel, err)
+		if err := d.SendTo(ctx, n.Channel, n.ConfigJson, a); err != nil {
+			if errors.Is(err, errUnknownChannel) {
+				continue
+			}
+			log.Printf("alerter: notification %d via %s: %v", n.ID, n.Channel, err)
 		}
 	}
+}
+
+var errUnknownChannel = errors.New("unknown channel")
+
+// TestAlert is the fixed alert a test notification sends. It says plainly that it
+// is a test, so nobody mistakes it for an outage.
+var TestAlert = Alert{
+	Title:    "Test notification",
+	Status:   "test",
+	Severity: "info",
+	Message:  "This is a test notification from Pulse. If you can read it, this channel works. No incident is open.",
+}
+
+// SendTo sends a through one notification's channel, with its stored config, and
+// returns the sender's error. An unknown channel or a config that is not a JSON
+// object of strings is an error too.
+func (d *Dispatcher) SendTo(ctx context.Context, channel, configJSON string, a Alert) error {
+	var sender Sender
+	switch channel {
+	case "email":
+		sender = d.email
+	case "slack":
+		sender = d.slack
+	default:
+		return fmt.Errorf("%w %q", errUnknownChannel, channel)
+	}
+	cfg := map[string]string{}
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return fmt.Errorf("invalid config: %v", err)
+	}
+	return sender.Send(ctx, cfg, a)
 }
