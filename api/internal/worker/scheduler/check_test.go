@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/checker"
 	"github.com/memetics19/pulse/api/internal/worker/checkresult"
@@ -38,7 +39,7 @@ func TestCheckPersistsAndAppliesThresholds(t *testing.T) {
 	mon := makeMonitor(t, q)
 
 	det := incident.NewDetector(q)
-	disp := alerter.NewDispatcher(q, "", "", "", false)
+	disp := alerter.NewDispatcher(q, config.Config{})
 	s := New(db, checkresult.New(db, det, disp), true)
 
 	var beats int

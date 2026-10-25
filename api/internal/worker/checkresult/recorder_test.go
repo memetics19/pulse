@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/checkresult"
 	"github.com/memetics19/pulse/api/internal/worker/incident"
@@ -131,7 +132,7 @@ func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r := checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, "", "", "", true, alerter.WithHTTPClient(srv.Client())))
+	r := checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client())))
 	now := time.Now()
 
 	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
@@ -254,8 +255,8 @@ func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r1 := checkresult.New(db1, incident.NewDetector(q1), alerter.NewDispatcher(q1, "", "", "", true, alerter.WithHTTPClient(srv.Client())))
-	r2 := checkresult.New(db2, incident.NewDetector(q2), alerter.NewDispatcher(q2, "", "", "", true, alerter.WithHTTPClient(srv.Client())))
+	r1 := checkresult.New(db1, incident.NewDetector(q1), alerter.NewDispatcher(q1, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client())))
+	r2 := checkresult.New(db2, incident.NewDetector(q2), alerter.NewDispatcher(q2, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client())))
 	now := time.Now()
 	require.NoError(t, r1.Record(context.Background(), mon, checkresult.Input{
 		Status: "down", CheckedAt: now,

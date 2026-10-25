@@ -2,6 +2,7 @@ package alerter
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -65,6 +66,11 @@ func ValidateNotification(channel, configJSON string, allowPrivate bool) error {
 func ValidateWebhookURL(raw string, allowPrivate bool) error {
 	u, err := url.Parse(raw)
 	if err != nil {
+		// Not the parser's whole error: it quotes the URL, which is a secret.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return fmt.Errorf("webhook_url is not a valid URL: %v", err)
 	}
 	if u.Scheme != "https" {

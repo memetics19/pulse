@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"strings"
 )
 
@@ -64,7 +66,13 @@ func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		// The client's error quotes the URL, and a Slack webhook URL is a secret:
+		// anyone who has it can post to the channel. Keep only what went wrong.
+		var ue *neturl.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
+		return fmt.Errorf("slack webhook: %v", err)
 	}
 	// Only the status code matters, so a failed close loses nothing.
 	defer func() { _ = resp.Body.Close() }()

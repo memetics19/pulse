@@ -34,7 +34,7 @@ The public status page shows each incident with its full update timeline. Incide
 
 ## Notifications
 
-When configured, Pulse sends incident notifications by email (through Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
+When configured, Pulse sends incident notifications by email (through an SMTP relay or Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
 
 Each notification has a channel and a small JSON config, checked when it is saved:
 
@@ -53,3 +53,11 @@ A notification quotes text that the admin did not write: a push monitor's `msg`,
 a remote server returned, and monitor names set through the API. Pulse escapes all of it.
 An email has an HTML part, with every field escaped, and a plain text part. A Slack message
 escapes `&`, `<` and `>`, so no field can add a link or a mention such as `@channel`.
+
+### Test a notification
+
+Each row on the admin Notifications page has a **Send test** button. It sends a test alert
+through that channel and shows the result in the row: **Test sent**, or the channel's error,
+such as a wrong webhook URL or a sender the mail provider refuses. No one has to read the
+server log. Each notification can be tested once every 10 seconds. The API has the same
+action at [`POST /api/notifications/{id}/test`](api.md#test-a-notification).

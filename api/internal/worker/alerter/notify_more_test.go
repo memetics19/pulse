@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/store"
@@ -37,7 +39,7 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	d := alerter.NewDispatcher(q, "", "", "", true, alerter.WithHTTPClient(srv.Client()))
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
 
 	// Alert for a different monitor -> the scoped notification is skipped.
 	other := mon.ID + 1
@@ -57,5 +59,39 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	alerter.NewDispatcher(store.New(db), "", "", "", false).Notify(ctx, alerter.Alert{}, nil)
+	alerter.NewDispatcher(store.New(db), config.Config{}).Notify(ctx, alerter.Alert{}, nil)
+}
+
+func TestSendTo(t *testing.T) {
+	d := alerter.NewDispatcher(nil, config.Config{})
+	ctx := context.Background()
+	if err := d.SendTo(ctx, "sms", `{}`, alerter.TestAlert); err == nil || !strings.Contains(err.Error(), "unknown channel") {
+		t.Errorf("unknown channel = %v", err)
+	}
+	if err := d.SendTo(ctx, "email", `[1]`, alerter.TestAlert); err == nil || !strings.Contains(err.Error(), "invalid config") {
+		t.Errorf("bad config = %v", err)
+	}
+	// Email is off, so the send does nothing and succeeds.
+	if err := d.SendTo(ctx, "email", `{"to":"ops@example.com"}`, alerter.TestAlert); err != nil {
+		t.Errorf("email off = %v", err)
+	}
+}
+
+// A failed webhook post does not put the webhook URL, a secret, in the error.
+func TestSlackErrorHidesTheWebhookURL(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL + "/services/T0/B0/secret-token"
+	srv.Close()
+	d := alerter.NewDispatcher(nil, config.Config{AllowPrivateMonitors: true})
+	err := d.SendTo(context.Background(), "slack", `{"webhook_url":"`+url+`"}`, alerter.TestAlert)
+	if err == nil || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("err = %v, want an error without the URL", err)
+	}
+}
+
+func TestInvalidWebhookURLErrorHidesTheURL(t *testing.T) {
+	err := alerter.ValidateWebhookURL("https://hooks.example.com/secret-token\x7f", false)
+	if err == nil || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("err = %v, want an error without the URL", err)
+	}
 }

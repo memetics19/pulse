@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import type { Notification } from '@/lib/types'
-import { adminListNotifications, adminCreateNotification, adminDeleteNotification } from '@/lib/api'
+import { adminListNotifications, adminCreateNotification, adminDeleteNotification, adminTestNotification } from '@/lib/api'
+import type { NotificationTestResult } from '@/lib/api'
 import { useConfirm } from '@/components/ConfirmDialog'
 
 export default function NotificationsPage() {
@@ -11,6 +12,8 @@ export default function NotificationsPage() {
   const [channel, setChannel] = useState<'email' | 'slack'>('email')
   const [config,  setConfig]  = useState('{"to":"user@example.com"}')
   const [error,   setError]   = useState('')
+  // Per notification: true while its test is in flight, then the result.
+  const [tests,   setTests]   = useState<Record<number, true | NotificationTestResult>>({})
 
   useEffect(() => {
     adminListNotifications().then(setNotifications).catch(() => {})
@@ -24,6 +27,17 @@ export default function NotificationsPage() {
       setNotifications(p => [...p, n])
       setModal(false)
     } catch (e) { setError(e instanceof Error ? e.message : 'Invalid JSON') }
+  }
+
+  async function sendTest(id: number) {
+    setTests(p => ({ ...p, [id]: true }))
+    let result: NotificationTestResult
+    try {
+      result = await adminTestNotification(id)
+    } catch (e) {
+      result = { ok: false, error: e instanceof Error ? e.message : 'Request failed' }
+    }
+    setTests(p => ({ ...p, [id]: result }))
   }
 
   async function del(id: number) {
@@ -46,14 +60,29 @@ export default function NotificationsPage() {
       <table className="admin-table">
         <thead><tr><th>Channel</th><th>Config</th><th>Monitor</th><th></th></tr></thead>
         <tbody>
-          {notifications.map(n => (
-            <tr key={n.id}>
-              <td><code>{n.channel}</code></td>
-              <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{n.config_json}</td>
-              <td>{n.monitor_id ?? 'global'}</td>
-              <td><button className="btn danger" onClick={() => del(n.id)}>Delete</button></td>
-            </tr>
-          ))}
+          {notifications.map(n => {
+            const test = tests[n.id]
+            return (
+              <tr key={n.id}>
+                <td><code>{n.channel}</code></td>
+                <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{n.config_json}</td>
+                <td>{n.monitor_id ?? 'global'}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button className="btn" disabled={test === true} onClick={() => sendTest(n.id)}>
+                      {test === true ? 'Sending…' : 'Send test'}
+                    </button>
+                    <button className="btn danger" onClick={() => del(n.id)}>Delete</button>
+                  </div>
+                  {test && test !== true && (
+                    <div className={test.ok ? 'ok-msg' : 'error-msg'} role="status">
+                      {test.ok ? 'Test sent' : test.error}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
 
@@ -68,7 +97,7 @@ export default function NotificationsPage() {
                 setChannel(c)
                 setConfig(c === 'email' ? '{"to":"user@example.com"}' : '{"webhook_url":"https://hooks.slack.com/..."}')
               }}>
-                <option value="email">Email (Resend)</option>
+                <option value="email">Email</option>
                 <option value="slack">Slack webhook</option>
               </select>
             </div>

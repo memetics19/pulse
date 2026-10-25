@@ -17,7 +17,7 @@ Create API keys in the admin under API Keys. Each key is named and revocable. Th
 | `incidents:read` | Read incidents. |
 | `incidents:write` | Create and modify incidents. |
 | `notifications:read` | Read notification settings. |
-| `notifications:write` | Modify notification settings. |
+| `notifications:write` | Modify notification settings and send test notifications. |
 | `agents:read` | Read infra agents. |
 | `agents:write` | Manage infra agents. |
 | `diagnostics:read` | Read agent [diagnostic bundles](diagnostics.md). Separate from `agents:read` because bundles carry logs, process names, and paths. |
@@ -67,6 +67,26 @@ curl "https://status.shreeda.xyz/api/monitors/12/checks?days=7" \
 ```
 
 The same scope covers `/api/monitors/{id}/checks/uptime`, which returns the uptime percentage over `days` (default 90, capped at 90). Read the updates of an incident with `/api/incidents/{id}/updates` and the `incidents:read` scope. A request without a session or key gets 401. A key without the matching scope gets 403.
+
+## Test a notification
+
+Send a test alert through one notification's channel. This requires the `notifications:write` scope, or a session.
+
+```bash
+curl -X POST https://status.example.com/api/notifications/3/test \
+  -H "Authorization: Bearer $PULSE_API_KEY"
+```
+
+The alert is clearly marked as a test. Its status is `test` and no incident is opened. The response says how the send went:
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| 200 | `{"ok":true}` | The channel accepted the alert. |
+| 502 | `{"ok":false,"error":"slack webhook returned 404"}` | The channel refused it. `error` is the channel's error text. |
+| 404 | | No notification has this ID. |
+| 429 | `{"ok":false,"error":"..."}` | This notification was tested less than 10 seconds ago. `Retry-After` says how many seconds to wait. |
+
+The error text never holds a password, an API key or a webhook URL. A webhook URL is left out because anyone who has it can post to the channel. With email off, an email test succeeds without sending anything.
 
 ## Public endpoints
 

@@ -8,6 +8,8 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/memetics19/pulse/api/internal/config"
+	"github.com/memetics19/pulse/api/internal/netguard"
 	"github.com/resend/resend-go/v2"
 )
 
@@ -16,9 +18,9 @@ type emailSender struct {
 	from   string
 }
 
-// misconfiguredSender stands in for email when RESEND_API_KEY is set but the sender is
-// missing or not an address: every alert fails with the reason, so it shows in the log
-// instead of disappearing.
+// misconfiguredSender stands in for email when RESEND_API_KEY or PULSE_SMTP_HOST is set
+// but a setting cannot work, such as a missing sender: every alert fails with the reason,
+// so it shows in the log instead of disappearing.
 type misconfiguredSender struct{ err error }
 
 func (m *misconfiguredSender) Send(_ context.Context, cfg map[string]string, _ Alert) error {
@@ -46,11 +48,40 @@ func NewEmailSender(apiKey, from string) Sender {
 	return &emailSender{client: resend.NewClient(apiKey), from: from}
 }
 
+// NewEmail picks the transport for email alerts. SMTP wins when PULSE_SMTP_HOST is set,
+// even with RESEND_API_KEY set too: the relay is the setting someone adds on purpose for
+// a self-hosted install, and a Resend key left over from an older setup must not decide
+// where mail goes. Without either, email alerts are off.
+func NewEmail(cfg config.Config) Sender {
+	if cfg.SMTP.Host != "" {
+		return NewSMTPSender(cfg.SMTP, cfg.EmailFrom, cfg.AllowPrivateMonitors)
+	}
+	return NewEmailSender(cfg.ResendAPIKey, cfg.EmailFrom)
+}
+
+// CheckEmail reports why email alerts cannot be sent with cfg, for a warning at startup.
+// It returns nil when email is off or every setting looks right. A relay on a private
+// address without PULSE_ALLOW_PRIVATE_MONITORS is reported too, when the name resolves.
+func CheckEmail(cfg config.Config) error {
+	switch {
+	case cfg.SMTP.Host != "":
+		if _, err := newSMTPSender(cfg.SMTP, cfg.EmailFrom, cfg.AllowPrivateMonitors); err != nil {
+			return err
+		}
+		if err := netguard.ValidateHost(cfg.SMTP.Host, cfg.AllowPrivateMonitors); err != nil {
+			return fmt.Errorf("smtp: PULSE_SMTP_HOST: %v", err)
+		}
+	case cfg.ResendAPIKey != "":
+		return CheckEmailFrom(cfg.EmailFrom)
+	}
+	return nil
+}
+
 // CheckEmailFrom reports why from cannot be the sender of email alerts: unset, or not one
 // address such as alerts@example.com or "Pulse <alerts@example.com>".
 func CheckEmailFrom(from string) error {
 	if strings.TrimSpace(from) == "" {
-		return fmt.Errorf("email: PULSE_EMAIL_FROM is not set: set it to a sender on a domain verified in Resend")
+		return fmt.Errorf("email: PULSE_EMAIL_FROM is not set: set it to the sender address of email alerts (with Resend, on a domain verified there)")
 	}
 	if _, err := mail.ParseAddress(from); err != nil {
 		return fmt.Errorf("email: PULSE_EMAIL_FROM %q is not an email address: %v", from, err)
