@@ -78,6 +78,16 @@ After setup, Pulse keeps using the recorded file, so an upgrade never moves a da
 
 Before 3.0, the wizard used only the directory of `SQLITE_PATH` and always created `pulse.db` there. An install set up with `SQLITE_PATH=/srv/pulse/custom.db` keeps its data in `/srv/pulse/pulse.db`. It goes on using that file and logs the warning above until you set `PULSE_DB=/srv/pulse/pulse.db`.
 
+### When pulse.json is missing
+
+`pulse.json` can go missing while the database stays. This happens when the file is deleted, when a backup is restored without it, or when `PULSE_DATA_DIR` changes while `PULSE_DB` still names the old file.
+
+At startup, if there is no `pulse.json` and the database file the server would set up already has an admin, Pulse adopts that file. It writes a new `pulse.json` that records the file, starts normally, and logs a line like `adopted the database /data/pulse.db, which already has an admin`. Log in with an existing account. If you lost its password, use `pulse reset-password`.
+
+Pulse only adopts the file named by `PULSE_DB` or `PULSE_DATA_DIR`. It never creates an account while adopting. A database file without users, or no file at all, still starts the setup wizard. If Pulse cannot write `pulse.json`, it logs that, serves the database anyway, and adopts it again on the next start.
+
+Setup writes `pulse.json` only after the admin account is saved in the database. A setup that fails leaves no `pulse.json` behind, so you can run it again.
+
 ## Setup token
 
 A fresh instance accepts its first setup from anyone who can reach it. The setup token makes sure that person is you, even when the instance is on a public address before you open it.

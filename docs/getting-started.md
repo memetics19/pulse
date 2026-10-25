@@ -122,6 +122,8 @@ The last step shows the database file the server will create. The server decides
 
 After you complete the wizard, the app runs normally and the setup routes no longer redirect.
 
+If you start Pulse on a database that already has an admin, the wizard does not run. Pulse adopts the database and you log in with an existing account. See [When pulse.json is missing](configuration.md#when-pulsejson-is-missing).
+
 For an automated install that runs setup itself, you can set your own token with `PULSE_SETUP_TOKEN`, or turn the check off with `PULSE_SETUP_TOKEN=off`. See [Setup token](configuration.md#setup-token).
 
 Open `http://localhost:8080` to begin. If you are running behind a reverse proxy, open the host you configured.
