@@ -1,7 +1,7 @@
 // src/lib/api.ts
 import type {
   StatusResponse, Monitor, MonitorGroup, Incident,
-  IncidentUpdate, CheckResult, ThemeConfig, Notification, InfraAgent
+  IncidentUpdate, ThemeConfig, Notification, InfraAgent
 } from './types'
 
 // In production the static export is served by the Go binary on the same origin,
@@ -15,14 +15,8 @@ export async function fetchStatus(): Promise<StatusResponse> {
   return res.json()
 }
 
-// Check results and incident updates need a session or an API key. They
-// carry raw errors and update authors, so they are not public.
-export async function fetchCheckResults(monitorId: number, days: number): Promise<CheckResult[]> {
-  const res = await fetch(`${BASE}/api/monitors/${monitorId}/checks?days=${days}`, { cache: 'no-store', credentials: 'include' })
-  if (!res.ok) return []
-  return res.json()
-}
-
+// Incident updates need a session or an API key. They carry update
+// authors, so they are not public.
 export async function fetchIncidentUpdates(incidentId: number): Promise<IncidentUpdate[]> {
   const res = await fetch(`${BASE}/api/incidents/${incidentId}/updates`, { cache: 'no-store', credentials: 'include' })
   if (!res.ok) return []
