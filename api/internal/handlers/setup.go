@@ -45,6 +45,11 @@ type Setup struct {
 // setupDone is the reply to every setup attempt after the one that won.
 const setupDone = "setup is already complete"
 
+// setupDoneRestart is the reply when this server is still in setup mode but
+// its database already has an admin, for example one another process created.
+// A restart adopts that database (see cmd/pulse).
+const setupDoneRestart = setupDone + ": the database already has an admin. Restart Pulse to use it"
+
 // setupFailed is the reply to every setup attempt that fails on the server.
 // The detail goes to the server log, never to the client.
 const setupFailed = "setup failed, see the server log"
@@ -131,6 +136,10 @@ func failSetup(w http.ResponseWriter, what string, err error) {
 // server chose, creates the admin user, seeds the theme config, persists the
 // bootstrap config, and issues a session cookie for the new admin. Only one
 // call can ever succeed. Every other call gets 409 and changes nothing.
+//
+// pulse.json is written only once the admin is committed. It is staged in a
+// temporary file first, so a data directory that cannot be written fails setup
+// before anything is stored, and renamed into place after the commit.
 func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -180,10 +189,9 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The admin, theme and session rows commit together, after the bootstrap
-	// config is saved, so a failed setup leaves nothing behind and can be
-	// retried. The transaction ignores client cancellation so it cannot roll
-	// back after the config is written.
+	// The admin, theme and session rows commit together, so a failed setup
+	// leaves nothing behind and can be retried. The transaction ignores client
+	// cancellation so a dropped request cannot undo a setup halfway.
 	ctx := context.WithoutCancel(r.Context())
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -203,7 +211,8 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		Email:        req.Email,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, setupDone, http.StatusConflict)
+		log.Printf("setup: the database %s already has an admin. Restart Pulse to use it", path)
+		http.Error(w, setupDoneRestart, http.StatusConflict)
 		return
 	}
 	if err != nil {
@@ -237,13 +246,21 @@ func (s *Setup) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := bootstrap.Save(s.dataDir, bootstrap.Config{Configured: true, SQLitePath: path}); err != nil {
+	staged, err := bootstrap.Stage(s.dataDir, bootstrap.Config{Configured: true, SQLitePath: path})
+	if err != nil {
 		failSetup(w, "save "+bootstrap.Path(s.dataDir), err)
 		return
 	}
+	defer staged.Discard()
 	if err := tx.Commit(); err != nil {
 		failSetup(w, "commit", err)
 		return
+	}
+	// The admin is stored, so setup has succeeded. If pulse.json cannot be
+	// put in place now, the next start adopts the database instead.
+	if err := staged.Commit(); err != nil {
+		log.Printf("setup: the admin is saved, but %s could not be written: %v. Pulse adopts the database on the next start",
+			bootstrap.Path(s.dataDir), err)
 	}
 	s.app.SetDB(conn)
 	installed = true
