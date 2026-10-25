@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -290,4 +292,41 @@ func mustIP(t *testing.T, s string) net.IP {
 		t.Fatalf("bad test IP %q", s)
 	}
 	return ip
+}
+
+func TestLoadSMTP(t *testing.T) {
+	t.Setenv("PULSE_SMTP_HOST", " smtp.example.com ")
+	t.Setenv("PULSE_SMTP_PORT", "2525")
+	t.Setenv("PULSE_SMTP_USER", "pulse")
+	t.Setenv("PULSE_SMTP_PASSWORD", "")
+	t.Setenv("PULSE_SMTP_TLS", " TLS ")
+	file := filepath.Join(t.TempDir(), "smtp_password")
+	if err := os.WriteFile(file, []byte("from-file\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PULSE_SMTP_PASSWORD_FILE", file)
+	got := Load().SMTP
+	want := SMTP{Host: "smtp.example.com", Port: "2525", User: "pulse", Password: "from-file", TLS: "tls"}
+	if got != want {
+		t.Fatalf("SMTP = %+v, want %+v", got, want)
+	}
+
+	// PULSE_SMTP_PASSWORD wins over the file.
+	t.Setenv("PULSE_SMTP_PASSWORD", "from-env")
+	if got := loadSMTP().Password; got != "from-env" {
+		t.Errorf("password = %q, want the env value", got)
+	}
+
+	// An unreadable file is logged by name and leaves the password empty.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	t.Setenv("PULSE_SMTP_PASSWORD", "")
+	t.Setenv("PULSE_SMTP_PASSWORD_FILE", filepath.Join(t.TempDir(), "missing"))
+	if got := loadSMTP().Password; got != "" {
+		t.Errorf("password = %q, want empty", got)
+	}
+	if !strings.Contains(buf.String(), "PULSE_SMTP_PASSWORD_FILE") {
+		t.Errorf("log = %q, want the setting named", buf.String())
+	}
 }

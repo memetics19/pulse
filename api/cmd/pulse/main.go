@@ -27,11 +27,7 @@ func main() {
 
 	cfg := config.Load()
 	dataDir := config.DataDir()
-	if cfg.ResendAPIKey != "" {
-		if err := alerter.CheckEmailFrom(cfg.EmailFrom); err != nil {
-			log.Printf("RESEND_API_KEY is set, but email alerts cannot be sent: %v", err)
-		}
-	}
+	checkEmail(cfg)
 
 	boot, err := bootstrap.Load(dataDir)
 	if err != nil {
@@ -57,6 +53,17 @@ func main() {
 
 	if err := serve(ctx, a, dataDir, cfg); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// checkEmail logs, at startup, why email alerts cannot be sent, and which transport
+// wins when both SMTP and Resend are set up.
+func checkEmail(cfg config.Config) {
+	if cfg.SMTP.Host != "" && cfg.ResendAPIKey != "" {
+		log.Printf("PULSE_SMTP_HOST and RESEND_API_KEY are both set: email alerts go through SMTP and RESEND_API_KEY is ignored")
+	}
+	if err := alerter.CheckEmail(cfg); err != nil {
+		log.Printf("email alerts are set up but cannot be sent: %v", err)
 	}
 }
 

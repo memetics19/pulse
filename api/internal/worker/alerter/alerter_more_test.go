@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/store"
@@ -79,7 +80,7 @@ func TestDispatcherNotifyFansOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := alerter.NewDispatcher(q, "", "", "", true, alerter.WithHTTPClient(srv.Client()))
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
 	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected", Severity: "major"}, nil)
 
 	if hits.Load() != 1 {

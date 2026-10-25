@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/store"
 )
 
@@ -29,14 +30,14 @@ type Dispatcher struct {
 	slack Sender
 }
 
-// NewDispatcher wires the senders. emailFrom (PULSE_EMAIL_FROM) is the sender of email
-// alerts. allowPrivate (PULSE_ALLOW_PRIVATE_MONITORS) decides whether a webhook may reach
-// a private or internal address.
-func NewDispatcher(q *store.Queries, resendKey, emailFrom, slackWebhook string, allowPrivate bool, opts ...Option) *Dispatcher {
+// NewDispatcher wires the senders from cfg: email through SMTP or Resend (see NewEmail),
+// and Slack. cfg.AllowPrivateMonitors (PULSE_ALLOW_PRIVATE_MONITORS) decides whether a
+// webhook or the SMTP relay may be on a private or internal address.
+func NewDispatcher(q *store.Queries, cfg config.Config, opts ...Option) *Dispatcher {
 	return &Dispatcher{
 		q:     q,
-		email: NewEmailSender(resendKey, emailFrom),
-		slack: NewSlackSender(slackWebhook, allowPrivate, opts...),
+		email: NewEmail(cfg),
+		slack: NewSlackSender(cfg.SlackWebhookURL, cfg.AllowPrivateMonitors, opts...),
 	}
 }
 

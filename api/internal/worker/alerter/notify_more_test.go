@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/store"
@@ -37,7 +38,7 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	d := alerter.NewDispatcher(q, "", "", "", true, alerter.WithHTTPClient(srv.Client()))
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
 
 	// Alert for a different monitor -> the scoped notification is skipped.
 	other := mon.ID + 1
@@ -57,5 +58,5 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	alerter.NewDispatcher(store.New(db), "", "", "", false).Notify(ctx, alerter.Alert{}, nil)
+	alerter.NewDispatcher(store.New(db), config.Config{}).Notify(ctx, alerter.Alert{}, nil)
 }

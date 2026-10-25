@@ -34,7 +34,7 @@ The public status page shows each incident with its full update timeline. Incide
 
 ## Notifications
 
-When configured, Pulse sends incident notifications by email (through Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
+When configured, Pulse sends incident notifications by email (through an SMTP relay or Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
 
 Each notification has a channel and a small JSON config, checked when it is saved:
 

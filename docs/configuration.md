@@ -13,8 +13,14 @@ Every server setting starts with `PULSE_`, apart from the two notification keys.
 | `PULSE_DATA_DIR` | `/data` | Directory for the setup state (`pulse.json`). When `PULSE_DB` is unset, Pulse creates `pulse.db` here. The container image sets it to `/data`. |
 | `PULSE_SETUP_TOKEN` | (unset) | The token the first-run setup asks for. When unset, Pulse generates a random token at startup and prints it in the log. Set it to `off` only for an automated install that completes setup itself. See [Setup token](#setup-token). |
 | `PULSE_DATABASE_URL` | (unset) | Reserved for an external database. Pulse reads it but stores everything in SQLite. The unprefixed `DATABASE_URL` is not read. |
-| `RESEND_API_KEY` | (unset) | API key for sending email notifications through Resend. Leave unset to disable email. |
-| `PULSE_EMAIL_FROM` | (unset) | Sender of email alerts, such as `alerts@example.com` or `Pulse <alerts@example.com>`. It must be on a domain verified in the same Resend account. Resend refuses any other. With `RESEND_API_KEY` set and this unset, Pulse logs a warning at startup and every email alert fails with the reason in the log. |
+| `RESEND_API_KEY` | (unset) | API key for sending email notifications through Resend. Leave it and `PULSE_SMTP_HOST` unset to disable email. Ignored when `PULSE_SMTP_HOST` is set. |
+| `PULSE_EMAIL_FROM` | (unset) | Sender of email alerts, such as `alerts@example.com` or `Pulse <alerts@example.com>`. With Resend it must be on a domain verified in the same Resend account. Resend refuses any other. With email set up and this unset, Pulse logs a warning at startup and every email alert fails with the reason in the log. |
+| `PULSE_SMTP_HOST` | (unset) | Host name of an SMTP relay for email alerts, such as `smtp.example.com`. Setting it sends email through SMTP instead of Resend. See [Email over SMTP](#email-over-smtp). |
+| `PULSE_SMTP_PORT` | by TLS mode | Port of the relay. The default is `587` for `starttls`, `465` for `tls` and `25` for `none`. |
+| `PULSE_SMTP_USER` | (unset) | User name for SMTP AUTH. Leave unset for a relay that takes mail without a login. |
+| `PULSE_SMTP_PASSWORD` | (unset) | Password for SMTP AUTH. Pulse never logs it. |
+| `PULSE_SMTP_PASSWORD_FILE` | (unset) | Path of a file that holds the SMTP password, such as a Docker or systemd secret. Read only when `PULSE_SMTP_PASSWORD` is unset. One trailing line break is dropped. |
+| `PULSE_SMTP_TLS` | `starttls` | How the connection to the relay is encrypted: `starttls`, `tls` (TLS from the first byte) or `none`. `none` is only allowed when `PULSE_SMTP_HOST` is `localhost` or a loopback address. |
 | `SLACK_WEBHOOK_URL` | (unset) | Slack incoming webhook URL for notifications. Leave unset to disable Slack. |
 | `PULSE_SECURE_COOKIES` | `false` | Set to `true` when Pulse is served over HTTPS to mark session cookies `Secure`. |
 | `PULSE_CORS_ORIGINS` | (unset) | Comma-separated list of origins allowed to call the API cross-origin. Leave it unset (the default) to send no CORS headers. The embedded UI is served from the same origin and needs none. |
@@ -33,6 +39,35 @@ environment:
   PULSE_EMAIL_FROM: ${PULSE_EMAIL_FROM:-}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
 ```
+
+## Email over SMTP
+
+Pulse can send email alerts through any SMTP relay. Examples are Postfix, Mailcow, Proton Bridge, or a Gmail or Microsoft 365 app password. No Resend account is needed.
+
+```sh
+PULSE_SMTP_HOST=smtp.example.com
+PULSE_SMTP_PORT=587
+PULSE_SMTP_USER=alerts@example.com
+PULSE_SMTP_PASSWORD_FILE=/run/secrets/smtp_password
+PULSE_SMTP_TLS=starttls
+PULSE_EMAIL_FROM="Pulse <alerts@example.com>"
+```
+
+The email is the same as with Resend. It has an HTML part, with every field escaped, and a plain text part.
+
+- `starttls` connects in plain text and then upgrades with STARTTLS. If the relay does not offer STARTTLS, the send fails. Pulse never falls back to plain text.
+- `tls` speaks TLS from the first byte. This is usually port 465.
+- `none` sends without encryption. It is only allowed for a relay on `localhost`, such as a local Postfix.
+
+Pulse checks the relay's certificate against the system's trusted roots. A certificate that does not verify fails the send. Each send has a 30 second limit for the whole session.
+
+The relay goes through the same network guard as webhooks. A relay on a private or loopback address, such as `localhost` or a LAN host, needs `PULSE_ALLOW_PRIVATE_MONITORS=true`.
+
+### SMTP and Resend together
+
+When `PULSE_SMTP_HOST` and `RESEND_API_KEY` are both set, email goes through SMTP and the Resend key is ignored. Pulse logs this once at startup. SMTP wins because it is the setting you add on purpose for a self-hosted relay. A Resend key left over from an older setup should not decide where mail goes. Unset `PULSE_SMTP_HOST` to go back to Resend.
+
+A setting that cannot work, such as an unknown `PULSE_SMTP_TLS` value or a user without a password, is logged at startup. Every email alert then fails with the same reason in the log.
 
 ## Renamed in 3.0
 
