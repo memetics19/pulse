@@ -13,13 +13,15 @@ import (
 type Notifications struct {
 	q            *generated.Queries
 	allowPrivate bool
+	sender       NotificationSender
+	limiter      *testLimiter
 }
 
 // NewNotifications serves the notification API. allowPrivate is
 // PULSE_ALLOW_PRIVATE_MONITORS: it decides whether a webhook may point at a
 // private or internal address (see alerter.ValidateNotification).
 func NewNotifications(q *generated.Queries, allowPrivate bool) *Notifications {
-	return &Notifications{q: q, allowPrivate: allowPrivate}
+	return &Notifications{q: q, allowPrivate: allowPrivate, limiter: newTestLimiter(testEvery)}
 }
 
 func (h *Notifications) List(w http.ResponseWriter, r *http.Request) {

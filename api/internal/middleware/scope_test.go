@@ -12,6 +12,7 @@ func TestRequiredScope(t *testing.T) {
 		{"GET", "/api/incidents", "incidents:read"},
 		{"PUT", "/api/incidents/1/status", "incidents:write"},
 		{"GET", "/api/notifications", "notifications:read"},
+		{"POST", "/api/notifications/1/test", "notifications:write"},
 		{"POST", "/api/agents", "agents:write"},
 		{"GET", "/api/theme", "theme:read"},
 		{"POST", "/api/pages", "pages:write"},

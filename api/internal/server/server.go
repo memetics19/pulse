@@ -120,11 +120,12 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		r.Post("/api/incidents/{incidentID}/updates", updatesH.Create)
 
 		r.Route("/api/notifications", func(r chi.Router) {
-			h := handlers.NewNotifications(q, cfg.AllowPrivateMonitors)
+			h := handlers.NewNotifications(q, cfg.AllowPrivateMonitors).WithSender(alerter.NewDispatcher(q, cfg))
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Put("/{id}", h.Update)
 			r.Delete("/{id}", h.Delete)
+			r.Post("/{id}/test", h.Test)
 		})
 
 		r.Route("/api/agents", func(r chi.Router) {

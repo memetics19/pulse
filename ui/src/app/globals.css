@@ -230,6 +230,7 @@ body {
 .modal-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 20px; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 .error-msg { color: var(--down); font-size: 12px; margin-top: 8px; }
+.ok-msg { color: var(--up); font-size: 12px; margin-top: 8px; }
 .token-form { max-width: 360px; margin: 120px auto; text-align: center; }
 .token-form h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
 .token-form p { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
