@@ -107,6 +107,8 @@ var publicRoutes = map[string]bool{
 	"GET /healthz":                 true,
 	"* /metrics":                   true,
 	"GET /api/status":              true,
+	"GET /badge/status.svg":        true,
+	"GET /badge/uptime.svg":        true,
 	"POST /api/ingest/metrics":     true,
 	"POST /api/ingest/diagnostics": true,
 	"GET /api/push/{token}":        true,
@@ -254,6 +256,56 @@ func TestPublicPageStillRenders(t *testing.T) {
 	feed := f.serve(http.MethodGet, "/feed.xml", nil)
 	require.Equal(t, http.StatusOK, feed.Code)
 	assert.Contains(t, feed.Body.String(), "We are looking into it.")
+}
+
+// Badges answer through the router for the default page, and stay scoped to
+// the page that matches the Host: a monitor the page does not show and an
+// unpublished page both give 404.
+func TestBadgeRoutesAreScopedToThePage(t *testing.T) {
+	f := newLeakFixture(t)
+	ctx := t.Context()
+	onHost := func(host string) func(*http.Request) {
+		return func(r *http.Request) { r.Host = host }
+	}
+
+	rec := f.serve(http.MethodGet, "/badge/status.svg", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "image/svg+xml; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "public, max-age=60", rec.Header().Get("Cache-Control"))
+	assert.Contains(t, rec.Body.String(), "status: outage")
+
+	rec = f.serve(http.MethodGet, "/badge/status.svg?monitor=Primary+DB", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "Primary DB: down")
+
+	rec = f.serve(http.MethodGet, "/badge/uptime.svg?monitor=Primary+DB&range=24h", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "Primary DB uptime 24h: 50%")
+
+	// A published page whose group does not hold the monitor.
+	other, err := f.q.CreateGroup(ctx, generated.CreateGroupParams{Name: "Edge"})
+	require.NoError(t, err)
+	page, err := f.q.CreateStatusPage(ctx, generated.CreateStatusPageParams{Domain: "edge.example.com", Title: "Edge", Published: 1})
+	require.NoError(t, err)
+	require.NoError(t, f.q.AddPageGroup(ctx, generated.AddPageGroupParams{StatusPageID: page.ID, GroupID: other.ID}))
+
+	rec = f.serve(http.MethodGet, "/badge/status.svg", onHost("edge.example.com"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "status: operational", "the page badge ignores monitors off the page")
+	for _, p := range []string{
+		"/badge/status.svg?monitor=Primary+DB",
+		fmt.Sprintf("/badge/status.svg?monitor=%d", f.monitorID),
+		"/badge/uptime.svg?monitor=Primary+DB",
+	} {
+		assert.Equal(t, http.StatusNotFound, f.serve(http.MethodGet, p, onHost("edge.example.com")).Code, p)
+	}
+
+	// An unpublished page.
+	_, err = f.q.CreateStatusPage(ctx, generated.CreateStatusPageParams{Domain: "draft.example.com", Title: "Draft", Published: 0})
+	require.NoError(t, err)
+	for _, p := range []string{"/badge/status.svg", "/badge/uptime.svg"} {
+		assert.Equal(t, http.StatusNotFound, f.serve(http.MethodGet, p, onHost("draft.example.com")).Code, p)
+	}
 }
 
 func createServerSession(t *testing.T, q *generated.Queries) *http.Cookie {
