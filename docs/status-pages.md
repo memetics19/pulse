@@ -34,6 +34,22 @@ A page renders:
 
 All times render in the visitor's local timezone.
 
+## Badges
+
+Each page serves SVG badges you can embed in a README, a wiki or a dashboard. The badge reflects the page that matches the Host in its URL.
+
+```markdown
+![Status](https://status.example.com/badge/status.svg)
+![API](https://status.example.com/badge/status.svg?monitor=API)
+![Uptime](https://status.example.com/badge/uptime.svg?range=30d)
+```
+
+- `/badge/status.svg` shows the overall status of the page.
+- `/badge/uptime.svg` shows uptime over `24h`, `7d`, `30d` or `90d`. The default is `30d`.
+- Add `?monitor=<name or id>` for one monitor. It must be on the page, or the badge returns 404.
+
+A badge never shows a monitor that is not on its page, a target or a raw error. An unpublished page has no badges. Browsers and proxies may cache a badge for 60 seconds. See [Status badges](api.md#status-badges) for the full reference.
+
 ## Custom domains and TLS
 
 Pulse routes requests to pages by the Host header, but it does not terminate TLS itself. To serve a page such as `status.shreeda.xyz` over HTTPS, run a reverse proxy in front of Pulse that holds the certificates and forwards to Pulse on port 8080. The proxy passes the original Host header so Pulse can resolve the correct page.

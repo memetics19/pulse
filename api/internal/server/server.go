@@ -48,6 +48,8 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		r.Handle("/metrics", metrics.Handler(a, ms.Token))
 	}
 	r.Get("/api/status", pub.StatusJSON)
+	r.Get("/badge/status.svg", pub.StatusBadge)
+	r.Get("/badge/uptime.svg", pub.UptimeBadge)
 	ingestH := handlers.NewIngest(q)
 	r.Post("/api/ingest/metrics", ingestH.PostMetrics)
 	r.Post("/api/ingest/diagnostics", ingestH.PostDiagnostics)

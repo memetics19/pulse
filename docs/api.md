@@ -77,6 +77,7 @@ Only the routes below answer without a session or an API key. Everything else un
 | `GET /` | Public | The status page for the request Host. Monitor names and status, uptime bars, uptime percentage, average latency, incidents with their updates, and maintenance. |
 | `GET /api/status` | Public | JSON for the same page. The overall status, each group with its monitor names and status, unresolved incidents (title, status, severity), and the theme preset. |
 | `GET /feed.xml` | Public | Atom feed of the incidents on the same page. See [Atom feed](#atom-feed). |
+| `GET /badge/status.svg`, `GET /badge/uptime.svg` | Public | SVG badges for the same page. See [Status badges](#status-badges). |
 | `GET /static/*` | Public | Stylesheet, script and icon of the status page. |
 | `GET /healthz` | Public | `{"status":"ok"}`, or 503 with `worker_unhealthy` when the worker has stopped. |
 | `GET /metrics` | Bearer token when `PULSE_METRICS_TOKEN` is set | Prometheus metrics. Off unless `PULSE_METRICS=true`. See [Metrics](metrics.md). |
@@ -88,6 +89,27 @@ Only the routes below answer without a session or an API key. Everything else un
 | `/admin/*`, `/setup/*`, `/_next/*`, `/favicon.ico` | Public | Static files of the admin app. The app loads its data through the authenticated API. |
 
 The public status data is scoped to the page that matches the request Host. A page shows only the active monitors in its groups, and the incidents that touch them. Unpublished pages return 404. Public responses never carry a monitor target (URL, host or port), a raw check error, an HTTP status code, or the author of an incident update. A monitor shows only as up, degraded, down, or no data yet. The JSON spells the last one `unknown`.
+
+## Status badges
+
+Two public routes return a flat SVG badge for the page that matches the request Host. They follow the same scoping as `/api/status`.
+
+| Route | Badge |
+| --- | --- |
+| `GET /badge/status.svg` | Overall status of the page: operational, degraded or outage. |
+| `GET /badge/status.svg?monitor=<name or id>` | Status of one monitor: up, degraded, down or no data. |
+| `GET /badge/uptime.svg` | Mean uptime of the page's monitors that have checks in the range. |
+| `GET /badge/uptime.svg?monitor=<name or id>` | Uptime of one monitor. |
+
+- `monitor` matches a monitor name, ignoring case, or a monitor ID. It only finds monitors the page shows. Any other value returns 404.
+- `range` sets the uptime window: `24h`, `7d`, `30d` or `90d`. The default is `30d`. Any other value returns 400.
+- An unpublished page returns 404.
+- A badge shows only a monitor name, a status and an uptime percentage. It never shows a target or a raw error.
+- Responses send `Cache-Control: public, max-age=60`.
+
+```bash
+curl 'https://status.example.com/badge/uptime.svg?monitor=API&range=7d'
+```
 
 ## Atom feed
 
