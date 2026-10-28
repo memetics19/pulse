@@ -170,6 +170,9 @@ type CreateIncidentParams = generated.CreateIncidentParams
 // CreateAutoIncidentParams is the parameter type for atomic monitor incidents.
 type CreateAutoIncidentParams = generated.CreateAutoIncidentParams
 
+// ListAutoResolvableIncidentsParams is the public alias for the generated parameter type.
+type ListAutoResolvableIncidentsParams = generated.ListAutoResolvableIncidentsParams
+
 // UpdateIncidentRCAParams is the public alias for the generated parameter type.
 type UpdateIncidentRCAParams = generated.UpdateIncidentRCAParams
 
