@@ -28,3 +28,17 @@ DELETE FROM incidents WHERE id = ?;
 
 -- name: CountOpenIncidents :one
 SELECT COUNT(*) FROM incidents WHERE status != 'resolved';
+
+-- name: ListAutoResolvableIncidents :many
+-- Open auto-incidents for one monitor that no person has touched yet: still
+-- detected, no timeline updates, and covering only that monitor. The
+-- status != 'resolved' term repeats the partial index condition so SQLite can
+-- use idx_incidents_active_auto_monitor.
+SELECT * FROM incidents
+WHERE source = 'monitor'
+  AND external_id = sqlc.arg(external_id)
+  AND affected_monitor_ids = sqlc.arg(affected_monitor_ids)
+  AND status != 'resolved'
+  AND status = 'detected'
+  AND NOT EXISTS (SELECT 1 FROM incident_updates u WHERE u.incident_id = incidents.id)
+ORDER BY id;

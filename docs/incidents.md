@@ -28,6 +28,19 @@ Each incident has a timeline of updates. Updates support Markdown. There are two
 
 The monitoring worker auto-creates an incident after two consecutive down checks for a monitor. The incident is named after the monitor. While a [maintenance window](maintenance.md) is active for a monitor, auto-incidents are suppressed for it.
 
+## Auto-resolve
+
+Pulse also closes its own incidents. When the two latest checks for a monitor are up or degraded, the worker resolves the open auto-incident for that monitor. It sets an RCA that says when the monitor recovered and how long it was down. It also adds a `resolved` update, "Recovered by itself.", to the timeline. You can edit the RCA later if you find the cause. This also happens during a maintenance window.
+
+Pulse only resolves an incident that no person has touched. It leaves the incident open if any of these are true:
+
+- Someone moved it past `detected`.
+- Someone posted an update on it.
+- It was created by hand.
+- It covers more than one monitor.
+
+Those incidents wait for a person to resolve them with an RCA.
+
 ## The public timeline
 
 The public status page shows each incident with its full update timeline. Incident history is available on the page, and updates are also published through the [Atom feed](api.md#atom-feed). Times render in the visitor's local timezone.

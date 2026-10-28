@@ -84,6 +84,66 @@ func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.
 	return true, nil
 }
 
+// MaybeResolveIncidentsWithQueries resolves the detector's own open incidents
+// for a monitor once its two latest persisted results are up or degraded. Like
+// MaybeCreateIncidentWithQueries it must run after the current result is
+// persisted and in the same query scope, so the decision survives restarts and
+// commits together with the result. It skips any incident a person touched:
+// one moved past detected, one with timeline updates, or one that covers other
+// monitors. It returns how many incidents it resolved.
+func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *store.Queries, monitorID int64) (int, error) {
+	results, err := q.LatestTwoCheckResults(ctx, monitorID)
+	if err != nil {
+		return 0, fmt.Errorf("list latest check results: %w", err)
+	}
+	if len(results) < 2 || !answers(results[0].Status) || !answers(results[1].Status) {
+		return 0, nil
+	}
+
+	incidents, err := q.ListAutoResolvableIncidents(ctx, store.ListAutoResolvableIncidentsParams{
+		ExternalID:         strconv.FormatInt(monitorID, 10),
+		AffectedMonitorIds: fmt.Sprintf("[%d]", monitorID),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list auto-resolvable incidents: %w", err)
+	}
+
+	now := time.Now().UTC()
+	for _, inc := range incidents {
+		rca := fmt.Sprintf("Recovered by itself at %s after %s. No root cause was recorded. Edit this if you know it.",
+			now.Format(time.RFC3339), humanDuration(now.Sub(inc.StartedAt)))
+		if _, err := q.UpdateIncidentStatus(ctx, store.UpdateIncidentStatusParams{
+			Status: "resolved", ResolvedAt: &now, Rca: &rca, ID: inc.ID,
+		}); err != nil {
+			return 0, fmt.Errorf("resolve incident %d: %w", inc.ID, err)
+		}
+		if _, err := q.CreateIncidentUpdate(ctx, store.CreateIncidentUpdateParams{
+			IncidentID: inc.ID, Status: "resolved", Message: "Recovered by itself.", Author: "Pulse",
+		}); err != nil {
+			return 0, fmt.Errorf("add resolve update to incident %d: %w", inc.ID, err)
+		}
+	}
+	return len(incidents), nil
+}
+
+// answers reports whether a check status means the monitor responded.
+func answers(status string) bool {
+	return status == "up" || status == "degraded"
+}
+
+// humanDuration formats d for people, such as 45s, 7m or 1h 19m.
+func humanDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(max(d, 0).Seconds()))
+	}
+	d = d.Round(time.Minute)
+	h, m := int(d.Hours()), int(d.Minutes())%60
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh %dm", h, m)
+}
+
 // containsMonitorID checks if monitorID string appears in the JSON array "[1,2,3]".
 func containsMonitorID(affectedJSON, monIDStr string) bool {
 	if len(affectedJSON) < 3 {

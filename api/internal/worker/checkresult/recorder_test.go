@@ -288,3 +288,63 @@ func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
 	assert.Equal(t, "monitor", incidents[0].Source)
 	assert.Equal(t, int64(1), alertHits.Load())
 }
+
+func TestRecorder_TwoUpResultsResolveAutoIncident(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q, "Recovering API")
+	r := checkresult.New(db, incident.NewDetector(q), nil)
+	now := time.Now()
+	for i, status := range []string{"down", "down", "up"} {
+		require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
+			Status: status, CheckedAt: now.Add(time.Duration(i) * time.Second),
+		}))
+	}
+	incidents, err := q.ListActiveIncidents(context.Background())
+	require.NoError(t, err)
+	require.Len(t, incidents, 1, "one up result keeps the incident open")
+
+	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
+		Status: "up", CheckedAt: now.Add(3 * time.Second),
+	}))
+
+	got, err := q.GetIncident(context.Background(), incidents[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, "resolved", got.Status)
+	assert.NotNil(t, got.ResolvedAt)
+	assert.NotNil(t, got.Rca)
+}
+
+func TestRecorder_RollsBackResultWhenAutoResolveFails(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q, "Resolve failure")
+	r := checkresult.New(db, incident.NewDetector(q), nil)
+	now := time.Now()
+	for i, status := range []string{"down", "down", "up"} {
+		require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
+			Status: status, CheckedAt: now.Add(time.Duration(i) * time.Second),
+		}))
+	}
+	_, err := db.ExecContext(context.Background(), `
+		CREATE TRIGGER fail_incident_update_insert
+		BEFORE INSERT ON incident_updates
+		BEGIN
+			SELECT RAISE(FAIL, 'forced incident update insert failure');
+		END`)
+	require.NoError(t, err)
+
+	err = r.Record(context.Background(), mon, checkresult.Input{
+		Status: "up", CheckedAt: now.Add(3 * time.Second),
+	})
+
+	require.ErrorContains(t, err, "resolve recovered incidents")
+	results, queryErr := q.LatestTwoCheckResults(context.Background(), mon.ID)
+	require.NoError(t, queryErr)
+	require.Len(t, results, 2)
+	assert.Equal(t, "down", results[1].Status, "failed auto-resolve must roll back the current result")
+	incidents, queryErr := q.ListActiveIncidents(context.Background())
+	require.NoError(t, queryErr)
+	require.Len(t, incidents, 1, "failed auto-resolve must leave the incident open")
+	assert.Equal(t, "detected", incidents[0].Status)
+}

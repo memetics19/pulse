@@ -170,6 +170,61 @@ func (q *Queries) ListActiveIncidents(ctx context.Context) ([]Incident, error) {
 	return items, nil
 }
 
+const listAutoResolvableIncidents = `-- name: ListAutoResolvableIncidents :many
+SELECT id, title, severity, status, affected_monitor_ids, started_at, resolved_at, rca, source, external_id, created_at FROM incidents
+WHERE source = 'monitor'
+  AND external_id = ?1
+  AND affected_monitor_ids = ?2
+  AND status != 'resolved'
+  AND status = 'detected'
+  AND NOT EXISTS (SELECT 1 FROM incident_updates u WHERE u.incident_id = incidents.id)
+ORDER BY id
+`
+
+type ListAutoResolvableIncidentsParams struct {
+	ExternalID         string `json:"external_id"`
+	AffectedMonitorIds string `json:"affected_monitor_ids"`
+}
+
+// Open auto-incidents for one monitor that no person has touched yet: still
+// detected, no timeline updates, and covering only that monitor. The
+// status != 'resolved' term repeats the partial index condition so SQLite can
+// use idx_incidents_active_auto_monitor.
+func (q *Queries) ListAutoResolvableIncidents(ctx context.Context, arg ListAutoResolvableIncidentsParams) ([]Incident, error) {
+	rows, err := q.db.QueryContext(ctx, listAutoResolvableIncidents, arg.ExternalID, arg.AffectedMonitorIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Incident
+	for rows.Next() {
+		var i Incident
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Severity,
+			&i.Status,
+			&i.AffectedMonitorIds,
+			&i.StartedAt,
+			&i.ResolvedAt,
+			&i.Rca,
+			&i.Source,
+			&i.ExternalID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIncidents = `-- name: ListIncidents :many
 SELECT id, title, severity, status, affected_monitor_ids, started_at, resolved_at, rca, source, external_id, created_at FROM incidents ORDER BY started_at DESC
 `
