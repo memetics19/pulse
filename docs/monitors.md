@@ -25,9 +25,40 @@ Each monitor has the following options. Not every option applies to every type.
 | Keyword check | For HTTP checks, a string that must appear in the response body. |
 | Degraded threshold | A latency above which a result is marked degraded instead of up. |
 | Down threshold | A latency above which a result is marked down. |
+| Failures before incident | How many down checks in a row open an incident. See [Sensitivity](#sensitivity). |
+| Recoveries before resolve | How many up or degraded checks in a row resolve that incident. |
+| Retries | For HTTP, TCP and TLS checks, how many more attempts one check makes after a transient failure. |
+| Retry interval | How long a check waits before each retry. |
 | Certificate warning days | For SSL checks, the days left at which the certificate is marked degraded. The default is 14. |
 | Certificate critical days | For SSL checks, the days left at which the certificate is marked down. The default is 7. |
 | Group | The group the monitor belongs to. |
+
+## Sensitivity
+
+Four settings decide how quickly Pulse reacts to a failing monitor. Each monitor has its own values.
+
+| Setting | API field | Default | Range |
+| --- | --- | --- | --- |
+| Failures before incident | `failures_before_incident` | 2 | 1 to 10 |
+| Recoveries before resolve | `recoveries_before_resolve` | 2 | 1 to 10 |
+| Retries | `retries` | 1 | 0 to 5 |
+| Retry interval | `retry_interval_ms` | 500 | 0 to 60000 |
+
+Retries happen inside one check. A check that fails and then passes on a retry is recorded as one up result. A check that fails on every attempt is recorded as one down result. So retries smooth out single blips, and failures before incident decides how many failed checks it takes to open an incident.
+
+An example. A monitor checks every 30 seconds with the defaults. A failing check is retried once after 500 ms. The second failed check in a row opens an incident, within about a minute of the outage. Set failures before incident to 1 for a critical service, so the first failed check opens an incident. Set it to 5 for a flaky upstream, so an incident needs about two and a half minutes of failures.
+
+Only transient failures are retried:
+
+- HTTP retries a network error or a `5xx` response. A `4xx` response or a keyword mismatch is not retried.
+- TCP retries any failed connection.
+- TLS retries a failed connection or handshake. An expired or expiring certificate is not retried.
+
+Ping and DNS checks do not retry. Push monitors ignore the retry settings but use the failure and recovery counts.
+
+Each retry can take up to the monitor's timeout. Keep the timeout times the number of attempts below the interval, or checks run back to back.
+
+Changing any of these settings restarts the monitor, like any other edit. The next check uses the new values.
 
 ## First check after a restart
 
@@ -44,7 +75,7 @@ Monitors are organized into groups. A [status page](status-pages.md) selects whi
 The HTTP check sends a User-Agent header with the request. Then:
 
 - Any `2xx` response is treated as up.
-- A transient failure (a network error or a `5xx` response) triggers one retry. If the retry also fails, the result is recorded as down.
+- A transient failure (a network error or a `5xx` response) triggers a retry. By default there is one retry after 500 ms. If every retry also fails, the result is recorded as down. See [Sensitivity](#sensitivity).
 - When a degraded or down latency threshold is set, a response slower than the threshold is marked degraded or down even if the status is otherwise a success.
 
 When an expected status code or keyword check is configured, the response must also match that condition to count as up.
@@ -69,7 +100,7 @@ A change to either threshold applies from the next check, without a restart.
 
 ## Down detection and incidents
 
-After two consecutive down checks for a monitor, the worker auto-creates an incident named after the monitor. See [Incidents](incidents.md) for the lifecycle and the public timeline. While a [maintenance window](maintenance.md) is active for a monitor, alerts and auto-incidents are suppressed.
+After the monitor's failures before incident count of down checks in a row (2 by default), the worker auto-creates an incident named after the monitor. After its recoveries before resolve count of up or degraded checks in a row (2 by default), the worker resolves that incident. See [Incidents](incidents.md) for the lifecycle and the public timeline. While a [maintenance window](maintenance.md) is active for a monitor, alerts and auto-incidents are suppressed.
 
 ## Data retention
 

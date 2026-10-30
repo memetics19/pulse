@@ -11,6 +11,10 @@ export interface Monitor {
   keyword_check: string
   degraded_threshold_ms: number
   down_threshold_ms: number
+  failures_before_incident: number
+  recoveries_before_resolve: number
+  retries: number
+  retry_interval_ms: number
   /** ssl only: degraded with this many days left or fewer. */
   tls_warn_days: number
   /** ssl only: down with this many days left or fewer. */

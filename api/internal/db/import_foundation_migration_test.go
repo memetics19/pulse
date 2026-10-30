@@ -235,7 +235,8 @@ func openTestDBAtVersion(t *testing.T, version int) (*sql.DB, *migrate.Migrate) 
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	migrator := newTestMigrator(t, db)
-	require.NoError(t, migrator.Steps(version))
+	// By version, not step count: migration numbers have a gap at 15.
+	require.NoError(t, migrator.Migrate(uint(version)))
 	return db, migrator
 }
 

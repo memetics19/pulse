@@ -12,7 +12,17 @@ import (
 	"github.com/memetics19/pulse/api/store"
 )
 
-// Detector auto-creates an incident after 2 consecutive persisted down results.
+// Defaults for a monitor's failures_before_incident and
+// recoveries_before_resolve. They also apply when a stored value is not
+// positive.
+const (
+	DefaultFailuresBeforeIncident  = 2
+	DefaultRecoveriesBeforeResolve = 2
+)
+
+// Detector auto-creates an incident after a monitor's configured number of
+// consecutive persisted down results, and resolves it after the configured
+// number of answering results.
 type Detector struct {
 	q *store.Queries
 }
@@ -22,23 +32,22 @@ func NewDetector(q *store.Queries) *Detector {
 }
 
 // MaybeCreateIncident must be called after the current check result is
-// persisted. It reads the two latest rows, including that current result, so
-// detection survives worker restarts and is shared across processes. It
-// returns true only when it creates a new incident.
+// persisted. It applies DefaultFailuresBeforeIncident to the latest rows,
+// including that current result, so detection survives worker restarts and is
+// shared across processes. It returns true only when it creates a new
+// incident.
 func (d *Detector) MaybeCreateIncident(ctx context.Context, monitorID int64, _ string) (bool, error) {
-	return d.MaybeCreateIncidentWithQueries(ctx, d.q, monitorID)
+	return d.MaybeCreateIncidentWithQueries(ctx, d.q, monitorID, DefaultFailuresBeforeIncident)
 }
 
 // MaybeCreateIncidentWithQueries evaluates and creates an incident using the
-// supplied query scope. Recorder passes transaction-scoped queries so result
-// persistence and the database incident decision commit or roll back together.
-func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.Queries, monitorID int64) (bool, error) {
-	results, err := q.LatestTwoCheckResults(ctx, monitorID)
-	if err != nil {
-		return false, fmt.Errorf("list latest check results: %w", err)
-	}
-	if len(results) < 2 || results[0].Status != "down" || results[1].Status != "down" {
-		return false, nil
+// supplied query scope. It opens one only when the latest failures results
+// are all down. Recorder passes transaction-scoped queries so result persistence and the
+// database incident decision commit or roll back together.
+func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.Queries, monitorID, failures int64) (bool, error) {
+	down, err := latestAll(ctx, q, monitorID, orDefault(failures, DefaultFailuresBeforeIncident), isDown)
+	if err != nil || !down {
+		return false, err
 	}
 
 	// Check if there's already an active incident for this monitor
@@ -85,19 +94,17 @@ func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.
 }
 
 // MaybeResolveIncidentsWithQueries resolves the detector's own open incidents
-// for a monitor once its two latest persisted results are up or degraded. Like
-// MaybeCreateIncidentWithQueries it must run after the current result is
-// persisted and in the same query scope, so the decision survives restarts and
-// commits together with the result. It skips any incident a person touched:
-// one moved past detected, one with timeline updates, or one that covers other
-// monitors. It returns the incidents it resolved, as stored after resolving.
-func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *store.Queries, monitorID int64) ([]store.Incident, error) {
-	results, err := q.LatestTwoCheckResults(ctx, monitorID)
-	if err != nil {
-		return nil, fmt.Errorf("list latest check results: %w", err)
-	}
-	if len(results) < 2 || !answers(results[0].Status) || !answers(results[1].Status) {
-		return nil, nil
+// for a monitor once its latest recoveries persisted results are all up or
+// degraded. Like MaybeCreateIncidentWithQueries it must run after the current
+// result is persisted and in the same query scope, so the decision survives
+// restarts and commits together with the result. It skips any incident a
+// person touched: one moved past detected, one with timeline updates, or one
+// that covers other monitors. It returns the incidents it resolved, as stored
+// after resolving.
+func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *store.Queries, monitorID, recoveries int64) ([]store.Incident, error) {
+	recovered, err := latestAll(ctx, q, monitorID, orDefault(recoveries, DefaultRecoveriesBeforeResolve), answers)
+	if err != nil || !recovered {
+		return nil, err
 	}
 
 	incidents, err := q.ListAutoResolvableIncidents(ctx, store.ListAutoResolvableIncidentsParams{
@@ -127,6 +134,37 @@ func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *stor
 		resolved = append(resolved, updated)
 	}
 	return resolved, nil
+}
+
+// latestAll reports whether the monitor has at least n persisted results and
+// the n latest all match.
+func latestAll(ctx context.Context, q *store.Queries, monitorID, n int64, match func(string) bool) (bool, error) {
+	statuses, err := q.LatestCheckStatuses(ctx, store.LatestCheckStatusesParams{MonitorID: monitorID, N: n})
+	if err != nil {
+		return false, fmt.Errorf("list latest check results: %w", err)
+	}
+	if int64(len(statuses)) < n {
+		return false, nil
+	}
+	for _, s := range statuses {
+		if !match(s) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// orDefault returns n, or def when n is not positive.
+func orDefault(n, def int64) int64 {
+	if n < 1 {
+		return def
+	}
+	return n
+}
+
+// isDown reports whether a check status is a failure.
+func isDown(status string) bool {
+	return status == "down"
 }
 
 // answers reports whether a check status means the monitor responded.
