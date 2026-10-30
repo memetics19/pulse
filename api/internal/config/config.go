@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -27,6 +28,10 @@ const DefaultDataDir = "/data"
 // SetupTokenOff is the PULSE_SETUP_TOKEN value that lets setup run without a
 // token, for automated installs that complete setup themselves.
 const SetupTokenOff = "off"
+
+// DefaultBackupKeep is how many automatic snapshots Pulse keeps when
+// PULSE_BACKUP_KEEP is unset.
+const DefaultBackupKeep = 7
 
 // DBFileName is the name of the database file Pulse creates in the data
 // directory when PULSE_DB is unset.
@@ -126,6 +131,11 @@ type Config struct {
 	// headers are ignored so they cannot be spoofed. Set when Pulse runs behind
 	// a known proxy (e.g. the bundled Caddy) so per-client limiting still works.
 	TrustedProxies []*net.IPNet
+	// BackupDir is PULSE_BACKUP_DIR: where the server writes a daily snapshot
+	// of the database. Empty (the default) turns automatic backups off.
+	BackupDir string
+	// BackupKeep is PULSE_BACKUP_KEEP: how many automatic snapshots to keep.
+	BackupKeep int
 }
 
 // envList splits the named environment variable on commas, trimming spaces
@@ -169,7 +179,24 @@ func Load() Config {
 		CORSOrigins:          envList("PULSE_CORS_ORIGINS"),
 		AllowPrivateMonitors: envBool("PULSE_ALLOW_PRIVATE_MONITORS"),
 		TrustedProxies:       parseCIDRs(envList("PULSE_TRUSTED_PROXIES")),
+		BackupDir:            strings.TrimSpace(os.Getenv("PULSE_BACKUP_DIR")),
+		BackupKeep:           backupKeep(),
 	}
+}
+
+// backupKeep reads PULSE_BACKUP_KEEP. An unset value, or one that is not a
+// positive integer, keeps DefaultBackupKeep snapshots. A bad value is logged.
+func backupKeep() int {
+	v := strings.TrimSpace(os.Getenv("PULSE_BACKUP_KEEP"))
+	if v == "" {
+		return DefaultBackupKeep
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		log.Printf("config: ignoring invalid PULSE_BACKUP_KEEP %q, keeping %d snapshots", v, DefaultBackupKeep)
+		return DefaultBackupKeep
+	}
+	return n
 }
 
 // loadSMTP reads the PULSE_SMTP_* settings. PULSE_SMTP_PASSWORD_FILE names a

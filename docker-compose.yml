@@ -26,6 +26,10 @@ services:
       PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
       # Set to "true" to let monitors target private/LAN addresses (homelab).
       PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
+      # Daily snapshots of the database, such as /data/backups. Unset turns them
+      # off. PULSE_BACKUP_KEEP is how many to keep (default 7).
+      PULSE_BACKUP_DIR: ${PULSE_BACKUP_DIR:-}
+      PULSE_BACKUP_KEEP: ${PULSE_BACKUP_KEEP:-}
     volumes:
       - pulse_data:/data
     restart: unless-stopped

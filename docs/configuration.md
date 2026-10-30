@@ -28,6 +28,8 @@ Every server setting starts with `PULSE_`, apart from the two notification keys.
 | `PULSE_TRUSTED_PROXIES` | (unset) | Comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` header the login rate limiter may trust. Set it when Pulse runs behind a proxy such as Caddy. Leave it unset to ignore proxy headers. |
 | `PULSE_METRICS` | `false` | Set to `true` to serve Prometheus metrics at `/metrics`. Off by default. See [Metrics](metrics.md). |
 | `PULSE_METRICS_TOKEN` | (unset) | When set, `/metrics` requires the header `Authorization: Bearer <token>`. Leave unset to serve metrics without a token. |
+| `PULSE_BACKUP_DIR` | (unset) | Directory for automatic daily snapshots of the database. Leave unset to turn them off. See [Automatic backups](deployment.md#automatic-backups). |
+| `PULSE_BACKUP_KEEP` | `7` | How many automatic snapshots to keep in `PULSE_BACKUP_DIR`. Older ones are removed. A value that is not a positive whole number is logged and `7` is used. |
 
 Set these in the `environment` block of `docker-compose.yml` or in your container runtime.
 
@@ -152,7 +154,7 @@ volumes:
   - pulse_data:/data
 ```
 
-To back up Pulse, stop the container and copy the SQLite file and `pulse.json` from the volume.
+To back up Pulse, run `pulse backup`. It works while Pulse runs, so you do not need to stop the container. Do not copy the files of a running instance by hand. See [Backup and restore](deployment.md#backup-and-restore).
 
 ## The SQLite file
 
