@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.1.0](https://github.com/memetics19/pulse/compare/v3.0.1...v3.1.0) (2026-10-30)
+
+
+### Features
+
+* **alerts:** send email alerts through an SMTP relay ([#98](https://github.com/memetics19/pulse/issues/98)) ([1158ec8](https://github.com/memetics19/pulse/commit/1158ec8242436d35351d2d253e8c0bce5216de6f))
+* **cli:** pulse backup and restore, an online consistent SQLite snapshot ([#111](https://github.com/memetics19/pulse/issues/111)) ([7585123](https://github.com/memetics19/pulse/commit/758512306224fc804e518f59830b321ae0e701f8))
+* **cli:** pulse-cli mcp, an MCP server for the Pulse API ([#105](https://github.com/memetics19/pulse/issues/105)) ([77120db](https://github.com/memetics19/pulse/commit/77120db5e4d96ed2ce6401e761b15c5464e3b14e))
+* **monitors:** configurable TLS expiry thresholds, and days left in its own field ([#107](https://github.com/memetics19/pulse/issues/107)) ([f925d69](https://github.com/memetics19/pulse/commit/f925d692ac28a8c93f225c046260c3cbc3020136)), closes [#77](https://github.com/memetics19/pulse/issues/77)
+* **monitors:** HTTP method, headers, auth, private CA, redirects, status ranges and negative keyword ([#110](https://github.com/memetics19/pulse/issues/110)) ([f14a48b](https://github.com/memetics19/pulse/commit/f14a48b00c2fd1fc65660b73be9aa57db4520808))
+* **status-page:** embeddable SVG status and uptime badges, scoped to the page ([#99](https://github.com/memetics19/pulse/issues/99)) ([713ecca](https://github.com/memetics19/pulse/commit/713eccab48cc18aafe2598171c00aa312ab651a1))
+
+
+### Bug Fixes
+
+* **alerts:** alert on recovery, status changes, updates and maintenance, in the background ([#104](https://github.com/memetics19/pulse/issues/104)) ([10e04c5](https://github.com/memetics19/pulse/commit/10e04c5619abaaf67615b309d58faf805c2415ab)), closes [#51](https://github.com/memetics19/pulse/issues/51)
+* **deps:** bump golang.org/x/net to v0.62.0 (CVE-2026-78661, CVE-2026-97045) ([#106](https://github.com/memetics19/pulse/issues/106)) ([7a90ef7](https://github.com/memetics19/pulse/commit/7a90ef74a95be80812fd41738f86e59fe708debb))
+* **incidents:** resolve auto-incidents when their monitor recovers ([#103](https://github.com/memetics19/pulse/issues/103)) ([45ac09e](https://github.com/memetics19/pulse/commit/45ac09e75bb990ce86e029001a9b53e8ebb9d628))
+* reject empty and duplicate agent names ([#96](https://github.com/memetics19/pulse/issues/96)) ([3e3b0c2](https://github.com/memetics19/pulse/commit/3e3b0c28a6ef3fecc41adb65b66ebaedcd589566))
+* **scheduler:** spread first checks with jitter instead of firing every monitor at once ([#97](https://github.com/memetics19/pulse/issues/97)) ([ec5ccbe](https://github.com/memetics19/pulse/commit/ec5ccbe62bcdd3e27dc34c787c8485326a9249d9))
+* write pulse.json only after setup commits and adopt a database that lost it ([#100](https://github.com/memetics19/pulse/issues/100)) ([1fa71e5](https://github.com/memetics19/pulse/commit/1fa71e5ef1af2896d739ed45cdd553dbfa441345))
+
 ## [3.0.1](https://github.com/memetics19/pulse/compare/v3.0.0...v3.0.1) (2026-10-24)
 
 
