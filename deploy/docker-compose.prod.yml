@@ -25,6 +25,10 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       PULSE_SECURE_COOKIES: ${PULSE_SECURE_COOKIES:-false}
       PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
+      # Daily snapshots of the database, such as /data/backups. Unset turns them
+      # off. PULSE_BACKUP_KEEP is how many to keep (default 7).
+      PULSE_BACKUP_DIR: ${PULSE_BACKUP_DIR:-}
+      PULSE_BACKUP_KEEP: ${PULSE_BACKUP_KEEP:-}
     # Allow unprivileged ICMP (ping monitors) from inside the container.
     # This is a namespaced sysctl, so no privileged mode is required.
     sysctls:
