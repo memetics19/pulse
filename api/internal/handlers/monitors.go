@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -32,6 +33,20 @@ const (
 	defaultTimeoutSeconds = 30
 	defaultDegradedMs     = 500
 	defaultDownMs         = 2000
+
+	defaultFailuresBeforeIncident  = 2
+	defaultRecoveriesBeforeResolve = 2
+	defaultRetries                 = 1
+	defaultRetryIntervalMs         = 500
+)
+
+// Allowed ranges for the sensitivity settings. The retry limits keep a single
+// check from running for minutes when a target times out.
+const (
+	minSensitivityCount = 1
+	maxSensitivityCount = 10
+	maxRetries          = 5
+	maxRetryIntervalMs  = 60000
 )
 
 // monitorRequest is the decode target for Create/Update. Pointer fields let the
@@ -52,15 +67,22 @@ type monitorRequest struct {
 	GroupID             *int64 `json:"group_id"`
 	Source              string `json:"source"`
 	ExternalID          string `json:"external_id"`
+
+	FailuresBeforeIncident  *int64 `json:"failures_before_incident"`
+	RecoveriesBeforeResolve *int64 `json:"recoveries_before_resolve"`
+	Retries                 *int64 `json:"retries"`
+	RetryIntervalMs         *int64 `json:"retry_interval_ms"`
 }
 
 // resolved holds the request's fields with defaults filled in. It is the single
 // place defaults and cross-field rules (degraded < down) are applied, shared by
 // Create and Update.
 type resolvedMonitor struct {
-	req                     monitorRequest
-	timeout, degraded, down int64
-	isActive                bool
+	req                      monitorRequest
+	timeout, degraded, down  int64
+	failures, recoveries     int64
+	retries, retryIntervalMs int64
+	isActive                 bool
 }
 
 // resolve validates the request and fills defaults. reason is non-empty on a
@@ -91,7 +113,37 @@ func (m *Monitors) resolve(req monitorRequest) (resolvedMonitor, string) {
 	if r.degraded >= r.down {
 		return resolvedMonitor{}, "degraded_threshold_ms must be less than down_threshold_ms"
 	}
+	var reason string
+	if r.failures, reason = inRange("failures_before_incident", req.FailuresBeforeIncident,
+		defaultFailuresBeforeIncident, minSensitivityCount, maxSensitivityCount); reason != "" {
+		return resolvedMonitor{}, reason
+	}
+	if r.recoveries, reason = inRange("recoveries_before_resolve", req.RecoveriesBeforeResolve,
+		defaultRecoveriesBeforeResolve, minSensitivityCount, maxSensitivityCount); reason != "" {
+		return resolvedMonitor{}, reason
+	}
+	if r.retries, reason = inRange("retries", req.Retries, defaultRetries, 0, maxRetries); reason != "" {
+		return resolvedMonitor{}, reason
+	}
+	if r.retryIntervalMs, reason = inRange("retry_interval_ms", req.RetryIntervalMs,
+		defaultRetryIntervalMs, 0, maxRetryIntervalMs); reason != "" {
+		return resolvedMonitor{}, reason
+	}
 	return r, ""
+}
+
+// inRange returns def when v is omitted, or v when it lies in [lo, hi]. reason
+// is non-empty when v is out of range. Unlike the latency thresholds, an
+// explicit 0 is not read as "use the default", since 0 retries is a real
+// setting.
+func inRange(name string, v *int64, def, lo, hi int64) (int64, string) {
+	if v == nil {
+		return def, ""
+	}
+	if *v < lo || *v > hi {
+		return 0, fmt.Sprintf("%s must be between %d and %d", name, lo, hi)
+	}
+	return *v, ""
 }
 
 func (m *Monitors) List(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +200,11 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		GroupID:             req.GroupID,
 		Source:              req.Source,
 		ExternalID:          req.ExternalID,
+
+		FailuresBeforeIncident:  res.failures,
+		RecoveriesBeforeResolve: res.recoveries,
+		Retries:                 res.retries,
+		RetryIntervalMs:         res.retryIntervalMs,
 	}
 	if params.Type == "push" {
 		m.createPush(w, r, params)
@@ -306,7 +363,12 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		DownThresholdMs:     res.down,
 		IsActive:            res.isActive,
 		GroupID:             req.GroupID,
-		ID:                  id,
+
+		FailuresBeforeIncident:  res.failures,
+		RecoveriesBeforeResolve: res.recoveries,
+		Retries:                 res.retries,
+		RetryIntervalMs:         res.retryIntervalMs,
+		ID:                      id,
 	}
 	monitor, err := m.q.UpdateMonitor(r.Context(), params)
 	if err != nil {
