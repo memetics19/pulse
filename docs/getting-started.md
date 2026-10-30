@@ -183,4 +183,5 @@ The command reads the backup file and creates the monitors in Pulse under a sing
 - Add [monitors](monitors.md) for the services you want to track.
 - Configure [notifications](configuration.md) for email and Slack.
 - Create additional [status pages](status-pages.md) for different audiences.
+- Connect an AI assistant with the [MCP server](mcp.md) in `pulse-cli`.
 - Generate [API keys](api.md) for automation.
