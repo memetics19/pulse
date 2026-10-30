@@ -68,6 +68,17 @@ curl "https://status.shreeda.xyz/api/monitors/12/checks?days=7" \
 
 The same scope covers `/api/monitors/{id}/checks/uptime`, which returns the uptime percentage over `days` (default 90, capped at 90). Read the updates of an incident with `/api/incidents/{id}/updates` and the `incidents:read` scope. A request without a session or key gets 401. A key without the matching scope gets 403.
 
+Register an infra agent. This requires the `agents:write` scope. The response carries the agent token once.
+
+```bash
+curl -X POST https://status.example.com/api/agents \
+  -H "Authorization: Bearer $PULSE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "prod-node-01", "host_label": "Production Node 1"}'
+```
+
+`name` is required. Spaces around `name` and `host_label` are trimmed. An empty or blank name gets 400 `name is required`. Agents are told apart by name, so a name that another agent already uses gets 409. The check ignores case and surrounding spaces.
+
 ## Test a notification
 
 Send a test alert through one notification's channel. This requires the `notifications:write` scope, or a session.
