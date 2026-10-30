@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -338,7 +339,11 @@ func TestRecorder_AlertsWhenAutoIncidentRecovers(t *testing.T) {
 	assert.Equal(t, int64(2), hits.Load(), "one down alert and one recovery alert")
 	got := texts()
 	require.Len(t, got, 2)
-	assert.True(t, strings.HasPrefix(got[1], ":large_green_circle: *[resolved]* Recovering API recovered\nRecovered by itself at "), got[1])
+	// Each alert is sent from its own goroutine, so they can reach Slack in
+	// either order. Check that both arrived, not which came first.
+	slices.Sort(got)
+	assert.True(t, strings.HasPrefix(got[0], ":large_green_circle: *[resolved]* Recovering API recovered\nRecovered by itself at "), got[0])
+	assert.Equal(t, ":red_circle: *[detected]* Recovering API is down\n", got[1])
 }
 
 // slackSink is a fake Slack webhook. It counts posts in hits and returns a
