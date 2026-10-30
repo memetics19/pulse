@@ -31,9 +31,12 @@ func openAutoIncident(t *testing.T, q *store.Queries, mon store.Monitor, at time
 // worker would, so only persisted rows drive the decision.
 func resolve(t *testing.T, q *store.Queries, monitorID int64) int {
 	t.Helper()
-	n, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, monitorID)
+	resolved, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, monitorID)
 	require.NoError(t, err)
-	return n
+	for _, inc := range resolved {
+		require.Equal(t, "resolved", inc.Status)
+	}
+	return len(resolved)
 }
 
 func getIncident(t *testing.T, q *store.Queries, id int64) store.Incident {

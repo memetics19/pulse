@@ -23,6 +23,9 @@ import (
 
 func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	q := generated.New(app.LiveDBTX(a))
+	// One dispatcher for every alert the HTTP side sends, so heartbeats and
+	// admin edits share its background sends.
+	disp := alerter.NewDispatcher(q, cfg)
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestLogger(os.Stdout))
@@ -53,7 +56,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 	ingestH := handlers.NewIngest(q)
 	r.Post("/api/ingest/metrics", ingestH.PostMetrics)
 	r.Post("/api/ingest/diagnostics", ingestH.PostDiagnostics)
-	pushH := handlers.NewPush(q, &livePushRecorder{app: a, cfg: cfg})
+	pushH := handlers.NewPush(q, &livePushRecorder{app: a, disp: disp})
 	r.Get("/api/push/{token}", pushH.Heartbeat)
 	r.Post("/api/push/{token}", pushH.Heartbeat)
 
@@ -103,7 +106,7 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		})
 
 		r.Route("/api/incidents", func(r chi.Router) {
-			h := handlers.NewIncidents(q)
+			h := handlers.NewIncidents(q).WithNotifier(disp)
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Put("/{id}/status", h.UpdateStatus)
@@ -117,12 +120,12 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 		r.Get("/api/monitors/{monitorID}/checks", checksH.List)
 		r.Get("/api/monitors/{monitorID}/checks/uptime", checksH.Uptime)
 
-		updatesH := handlers.NewIncidentUpdates(q)
+		updatesH := handlers.NewIncidentUpdates(q).WithNotifier(disp)
 		r.Get("/api/incidents/{incidentID}/updates", updatesH.List)
 		r.Post("/api/incidents/{incidentID}/updates", updatesH.Create)
 
 		r.Route("/api/notifications", func(r chi.Router) {
-			h := handlers.NewNotifications(q, cfg.AllowPrivateMonitors).WithSender(alerter.NewDispatcher(q, cfg))
+			h := handlers.NewNotifications(q, cfg.AllowPrivateMonitors).WithSender(disp)
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Put("/{id}", h.Update)
@@ -184,8 +187,8 @@ func New(a *app.App, dataDir string, cfg config.Config) http.Handler {
 }
 
 type livePushRecorder struct {
-	app *app.App
-	cfg config.Config
+	app  *app.App
+	disp *alerter.Dispatcher
 }
 
 func (r *livePushRecorder) Record(ctx context.Context, monitor store.Monitor, in checkresult.Input) error {
@@ -193,8 +196,6 @@ func (r *livePushRecorder) Record(ctx context.Context, monitor store.Monitor, in
 	if db == nil {
 		return fmt.Errorf("database unavailable")
 	}
-	q := store.New(db)
-	dispatcher := alerter.NewDispatcher(q, r.cfg)
-	detector := incident.NewDetector(q)
-	return checkresult.New(db, detector, dispatcher).Record(ctx, monitor, in)
+	detector := incident.NewDetector(store.New(db))
+	return checkresult.New(db, detector, r.disp).Record(ctx, monitor, in)
 }

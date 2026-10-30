@@ -50,6 +50,8 @@ func (s *slackSender) Send(ctx context.Context, cfg map[string]string, a Alert) 
 		"implementing":  ":large_purple_circle:",
 		"monitoring":    ":large_yellow_circle:",
 		"resolved":      ":large_green_circle:",
+		"in_progress":   ":wrench:",
+		"completed":     ":white_check_mark:",
 	}
 	icon := emoji[a.Status]
 	if icon == "" {

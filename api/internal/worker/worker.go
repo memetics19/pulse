@@ -46,7 +46,7 @@ func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error 
 	go func() {
 		r := rollup.New(q)
 		p := pruner.New(q)
-		m := maintenance.New(q)
+		m := maintenance.New(q).WithNotifier(disp)
 		tick := time.NewTicker(time.Minute)
 		defer tick.Stop()
 		for {

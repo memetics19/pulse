@@ -43,13 +43,15 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 
 	// Alert for a different monitor -> the scoped notification is skipped.
 	other := mon.ID + 1
-	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected"}, &other)
+	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected"}, other)
+	d.Wait()
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("notification scoped to monitor %d fired for monitor %d (%d hits)", mon.ID, other, got)
 	}
 
 	// Alert for the scoped monitor -> it fires.
-	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected"}, &mon.ID)
+	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected"}, mon.ID)
+	d.Wait()
 	if got := hits.Load(); got != 1 {
 		t.Fatalf("scoped notification hits = %d, want 1", got)
 	}
@@ -59,7 +61,9 @@ func TestNotifyFiltersByMonitorAndHandlesDBError(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	alerter.NewDispatcher(store.New(db), config.Config{}).Notify(ctx, alerter.Alert{}, nil)
+	closed := alerter.NewDispatcher(store.New(db), config.Config{})
+	closed.Notify(ctx, alerter.Alert{})
+	closed.Wait()
 }
 
 func TestSendTo(t *testing.T) {
@@ -93,5 +97,80 @@ func TestInvalidWebhookURLErrorHidesTheURL(t *testing.T) {
 	err := alerter.ValidateWebhookURL("https://hooks.example.com/secret-token\x7f", false)
 	if err == nil || strings.Contains(err.Error(), "secret-token") {
 		t.Fatalf("err = %v, want an error without the URL", err)
+	}
+}
+
+// A heartbeat client that hangs up cancels its request context. The alert that
+// request started must still go out.
+func TestNotifyOutlivesCallerContext(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	q := store.New(testutil.NewTestDB(t))
+	if _, err := q.CreateNotification(context.Background(), generated.CreateNotificationParams{
+		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected"})
+	d.Wait()
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("hits = %d, want 1 after the caller's context was cancelled", got)
+	}
+}
+
+// An alert about several monitors reaches a notification scoped to any of them,
+// and skips one scoped to none of them.
+func TestNotifyMatchesAnyOfSeveralMonitors(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	q := store.New(testutil.NewTestDB(t))
+	ctx := context.Background()
+	mon, err := q.CreateMonitor(ctx, generated.CreateMonitorParams{
+		Name: "scoped", Url: "http://example.com", Type: "http", IntervalSeconds: 60,
+		TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000,
+		IsActive: true, Source: "internal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateNotification(ctx, generated.CreateNotificationParams{
+		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
+
+	d.Notify(ctx, alerter.Alert{Title: "t", Status: "investigating"}, mon.ID+1, mon.ID+2)
+	d.Wait()
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("hits = %d, want 0 for monitors the notification is not scoped to", got)
+	}
+	d.Notify(ctx, alerter.Alert{Title: "t", Status: "investigating"}, mon.ID+1, mon.ID)
+	d.Wait()
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("hits = %d, want 1 when one of the monitors matches", got)
+	}
+}
+
+func TestMonitorIDs(t *testing.T) {
+	if got := alerter.MonitorIDs("[1,5]"); len(got) != 2 || got[0] != 1 || got[1] != 5 {
+		t.Errorf("MonitorIDs([1,5]) = %v", got)
+	}
+	if got := alerter.MonitorIDs("not json"); got != nil {
+		t.Errorf("MonitorIDs(bad) = %v, want nil", got)
 	}
 }
