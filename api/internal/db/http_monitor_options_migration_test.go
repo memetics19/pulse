@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestHTTPMonitorOptionsMigrationUpAndDown covers migration 17, which adds the
+// TestHTTPMonitorOptionsMigrationUpAndDown covers migration 18, which adds the
 // optional HTTP monitor options with defaults that keep the old behaviour.
 func TestHTTPMonitorOptionsMigrationUpAndDown(t *testing.T) {
 	dsn, err := sqliteDSN(t.TempDir() + "/migration.db")
@@ -21,11 +21,11 @@ func TestHTTPMonitorOptionsMigrationUpAndDown(t *testing.T) {
 	ctx := context.Background()
 
 	// A monitor that exists before the migration gets the defaults.
-	require.NoError(t, migrator.Migrate(14))
+	require.NoError(t, migrator.Migrate(16))
 	_, err = db.ExecContext(ctx, `INSERT INTO monitors (name, url, type) VALUES ('old', 'https://example.com', 'http')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrator.Migrate(17))
+	require.NoError(t, migrator.Migrate(18))
 	var method, headers, keywordMode, accepted string
 	var tlsVerify, followRedirects sql.NullInt64
 	require.NoError(t, db.QueryRowContext(ctx, `
@@ -39,7 +39,7 @@ func TestHTTPMonitorOptionsMigrationUpAndDown(t *testing.T) {
 	require.False(t, tlsVerify.Valid, "NULL tls_verify means verify")
 	require.False(t, followRedirects.Valid, "NULL follow_redirects means follow")
 
-	require.NoError(t, migrator.Migrate(14))
+	require.NoError(t, migrator.Migrate(16))
 	var count int
 	require.NoError(t, db.QueryRowContext(ctx, `
 		SELECT count(*) FROM pragma_table_info('monitors')

@@ -81,7 +81,8 @@ func TestDispatcherNotifyFansOut(t *testing.T) {
 	}
 
 	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
-	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected", Severity: "major"}, nil)
+	d.Notify(ctx, alerter.Alert{Title: "t", Status: "detected", Severity: "major"})
+	d.Wait()
 
 	if hits.Load() != 1 {
 		t.Fatalf("expected slack webhook hit once, got %d", hits.Load())

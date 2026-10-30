@@ -16,6 +16,7 @@ type Input struct {
 	Status         string
 	ResponseTimeMs *int64
 	StatusCode     *int64
+	CertDaysLeft   *int64
 	ErrorMessage   string
 	CheckedAt      time.Time
 }
@@ -72,6 +73,7 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		ResponseTimeMs: in.ResponseTimeMs,
 		StatusCode:     in.StatusCode,
 		ErrorMessage:   errMsg,
+		CertDaysLeft:   in.CertDaysLeft,
 	})
 	if err != nil {
 		return fmt.Errorf("insert check result for monitor %d: %w", monitor.ID, err)
@@ -88,21 +90,37 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 	if err != nil {
 		return fmt.Errorf("detect incident for monitor %d: %w", monitor.ID, err)
 	}
-	if _, err := r.detector.MaybeResolveIncidentsWithQueries(ctx, q, monitor.ID); err != nil {
+	resolved, err := r.detector.MaybeResolveIncidentsWithQueries(ctx, q, monitor.ID)
+	if err != nil {
 		return fmt.Errorf("resolve recovered incidents for monitor %d: %w", monitor.ID, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit check result transaction: %w", err)
 	}
 	metrics.ObserveCheck(monitor.Name, status)
-	if created && r.alerter != nil {
-		monitorID := monitor.ID
+	if r.alerter == nil {
+		return nil
+	}
+	if created {
 		r.alerter.Notify(ctx, alerter.Alert{
 			Title:    fmt.Sprintf("%s is down", monitor.Name),
 			Status:   "detected",
 			Severity: "major",
 			Message:  in.ErrorMessage,
-		}, &monitorID)
+		}, monitor.ID)
+	}
+	for _, inc := range resolved {
+		msg := fmt.Sprintf("%s is answering again.", monitor.Name)
+		if inc.Rca != nil {
+			msg = *inc.Rca
+		}
+		r.alerter.Notify(ctx, alerter.Alert{
+			IncidentID: inc.ID,
+			Title:      fmt.Sprintf("%s recovered", monitor.Name),
+			Status:     "resolved",
+			Severity:   inc.Severity,
+			Message:    msg,
+		}, monitor.ID)
 	}
 	return nil
 }

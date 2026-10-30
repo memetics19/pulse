@@ -25,6 +25,8 @@ Each monitor has the following options. Not every option applies to every type.
 | Keyword check | For HTTP checks, a string that must appear in the response body. See [HTTP options](#http-options) to require that it does not appear. |
 | Degraded threshold | A latency above which a result is marked degraded instead of up. |
 | Down threshold | A latency above which a result is marked down. |
+| Certificate warning days | For SSL checks, the days left at which the certificate is marked degraded. The default is 14. |
+| Certificate critical days | For SSL checks, the days left at which the certificate is marked down. The default is 7. |
 | Group | The group the monitor belongs to. |
 
 HTTP monitors have more options. See [HTTP options](#http-options).
@@ -92,6 +94,24 @@ The HTTP check sends a User-Agent header with the request, plus any [HTTP option
 - When a degraded or down latency threshold is set, a response slower than the threshold is marked degraded or down even if the status is otherwise a success.
 
 When a keyword check is configured, the body must also contain the keyword to count as up. With `keyword_mode` set to `not_contains`, the body must not contain it. A keyword check needs a body, so it cannot be used with `HEAD`.
+
+## How an SSL check decides up, degraded, or down
+
+The SSL check opens a TLS connection to the host and port and reads the certificate the server sends. Then:
+
+- A failed connection, a failed handshake, or a certificate that does not verify is down. An expired certificate is down.
+- The days left are counted in whole days, rounded down. A certificate with 30 hours left has 1 day left.
+- With the warning days or fewer left, the result is degraded.
+- With the critical days or fewer left, the result is down.
+- Otherwise the result is up.
+
+The warning days must be greater than the critical days, and the critical days must be 0 or more. The API rejects other values. The defaults are 14 and 7. A team that renews 90-day certificates at 30 days left might set 29 and 14. Set the critical days to 0 to stay degraded until the last day. On that day less than a full day is left, so the check is down.
+
+Each SSL result stores the days left in `cert_days_left`. The admin monitor list shows them as "expires in N days" next to the monitor type.
+
+For one release, the days left are also written to `status_code`, as earlier releases did. Read `cert_days_left` instead. A later release stops writing the days left to `status_code`. The upgrade copies the days left of older SSL results into `cert_days_left`.
+
+A change to either threshold applies from the next check, without a restart.
 
 ## Down detection and incidents
 

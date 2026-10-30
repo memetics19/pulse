@@ -30,9 +30,11 @@ func NewMonitors(q *generated.Queries, db func() *sql.DB, allowPrivate bool) *Mo
 // mirror the schema column defaults, which are otherwise bypassed because the
 // generated params struct always sends an explicit value in the INSERT.
 const (
-	defaultTimeoutSeconds = 30
-	defaultDegradedMs     = 500
-	defaultDownMs         = 2000
+	defaultTimeoutSeconds  = 30
+	defaultDegradedMs      = 500
+	defaultDownMs          = 2000
+	defaultTLSWarnDays     = 14
+	defaultTLSCriticalDays = 7
 )
 
 // monitorRequest is the decode target for Create/Update. Pointer fields let the
@@ -49,6 +51,8 @@ type monitorRequest struct {
 	KeywordCheck        string `json:"keyword_check"`
 	DegradedThresholdMs *int64 `json:"degraded_threshold_ms"`
 	DownThresholdMs     *int64 `json:"down_threshold_ms"`
+	TLSWarnDays         *int64 `json:"tls_warn_days"`
+	TLSCriticalDays     *int64 `json:"tls_critical_days"`
 	IsActive            *bool  `json:"is_active"`
 	GroupID             *int64 `json:"group_id"`
 	Source              string `json:"source"`
@@ -207,11 +211,12 @@ func resolveAuth(req *monitorAuthRequest, existing *generated.Monitor) (authType
 }
 
 // resolved holds the request's fields with defaults filled in. It is the single
-// place defaults and cross-field rules (degraded < down) are applied, shared by
-// Create and Update.
+// place defaults and cross-field rules (degraded < down, TLS warn > critical)
+// are applied, shared by Create and Update.
 type resolvedMonitor struct {
 	req                     monitorRequest
 	timeout, degraded, down int64
+	tlsWarn, tlsCritical    int64
 	isActive                bool
 	http                    httpColumns
 }
@@ -244,6 +249,22 @@ func (m *Monitors) resolve(req monitorRequest, existing *generated.Monitor) (res
 	}
 	if r.degraded >= r.down {
 		return resolvedMonitor{}, "degraded_threshold_ms must be less than down_threshold_ms"
+	}
+	// Unlike the latency thresholds, 0 is a valid TLS critical threshold
+	// (down only on the last day), so only nil takes the default.
+	r.tlsWarn = defaultTLSWarnDays
+	if req.TLSWarnDays != nil {
+		r.tlsWarn = *req.TLSWarnDays
+	}
+	r.tlsCritical = defaultTLSCriticalDays
+	if req.TLSCriticalDays != nil {
+		r.tlsCritical = *req.TLSCriticalDays
+	}
+	if r.tlsCritical < 0 {
+		return resolvedMonitor{}, "tls_critical_days must be 0 or more"
+	}
+	if r.tlsWarn <= r.tlsCritical {
+		return resolvedMonitor{}, "tls_warn_days must be greater than tls_critical_days"
 	}
 	cols, reason := resolveHTTP(req, existing)
 	if reason != "" {
@@ -308,6 +329,8 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		GroupID:             req.GroupID,
 		Source:              req.Source,
 		ExternalID:          req.ExternalID,
+		TlsWarnDays:         res.tlsWarn,
+		TlsCriticalDays:     res.tlsCritical,
 		Method:              res.http.method,
 		Headers:             res.http.headers,
 		Body:                res.http.body,
@@ -477,6 +500,8 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		DownThresholdMs:     res.down,
 		IsActive:            res.isActive,
 		GroupID:             req.GroupID,
+		TlsWarnDays:         res.tlsWarn,
+		TlsCriticalDays:     res.tlsCritical,
 		Method:              res.http.method,
 		Headers:             res.http.headers,
 		Body:                res.http.body,

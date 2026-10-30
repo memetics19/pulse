@@ -1,7 +1,7 @@
 // src/lib/api.ts
 import type {
   StatusResponse, Monitor, MonitorAuthInput, MonitorGroup, Incident,
-  IncidentUpdate, ThemeConfig, Notification, InfraAgent
+  IncidentUpdate, ThemeConfig, Notification, InfraAgent, CheckResult
 } from './types'
 
 // In production the static export is served by the Go binary on the same origin,
@@ -48,6 +48,14 @@ export async function adminUpdateMonitor(id: number, data: MonitorInput): Promis
     method: 'PUT', credentials: 'include', headers: ADMIN_HEADERS, body: JSON.stringify(data)
   })
   if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// Check results come newest first. days widens the window for monitors with
+// a long interval, such as daily ssl checks.
+export async function adminListCheckResults(monitorId: number, days = 1): Promise<CheckResult[]> {
+  const res = await fetch(`${BASE}/api/monitors/${monitorId}/checks?days=${days}`, { credentials: 'include', cache: 'no-store' })
+  if (!res.ok) throw new Error(`${res.status}`)
   return res.json()
 }
 

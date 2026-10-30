@@ -83,9 +83,10 @@ func fingerprint(m store.Monitor) string {
 	}
 	// The HTTP options are free text, so they are quoted to keep one field
 	// from running into the next.
-	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d|%q|%q|%q|%q|%q|%q|%t|%q|%t|%q|%q",
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d|%d|%d|%q|%q|%q|%q|%q|%q|%t|%q|%t|%q|%q",
 		m.Url, m.Type, m.IntervalSeconds, m.TimeoutSeconds,
 		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs,
+		m.TlsWarnDays, m.TlsCriticalDays,
 		m.Method, m.Headers, m.Body, m.AuthType, m.AuthUsername, m.AuthSecret,
 		boolOrTrue(m.TlsVerify), m.CaPem, boolOrTrue(m.FollowRedirects),
 		m.AcceptedStatuses, m.KeywordMode)
@@ -324,6 +325,10 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 			c = checker.NewHTTPWithOptions(opts, s.allowPrivate)
 		}
 	}
+	// SSL checks use the monitor's own certificate expiry thresholds.
+	if mon.Type == "ssl" {
+		c = checker.NewSSLThresholds(int(mon.TlsWarnDays), int(mon.TlsCriticalDays), s.allowPrivate)
+	}
 	if result.Status == "" {
 		result = c.Check(ctx, mon.Url, mon.TimeoutSeconds)
 	}
@@ -342,6 +347,10 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 	if result.StatusCode > 0 {
 		code := int64(result.StatusCode)
 		input.StatusCode = &code
+	}
+	if result.CertDaysLeft != nil {
+		days := int64(*result.CertDaysLeft)
+		input.CertDaysLeft = &days
 	}
 	if err := s.recorder.Record(ctx, mon, input); err != nil {
 		log.Printf("scheduler: record check result (monitor %d): %v", mon.ID, err)

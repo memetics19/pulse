@@ -90,14 +90,14 @@ func (d *Detector) MaybeCreateIncidentWithQueries(ctx context.Context, q *store.
 // persisted and in the same query scope, so the decision survives restarts and
 // commits together with the result. It skips any incident a person touched:
 // one moved past detected, one with timeline updates, or one that covers other
-// monitors. It returns how many incidents it resolved.
-func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *store.Queries, monitorID int64) (int, error) {
+// monitors. It returns the incidents it resolved, as stored after resolving.
+func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *store.Queries, monitorID int64) ([]store.Incident, error) {
 	results, err := q.LatestTwoCheckResults(ctx, monitorID)
 	if err != nil {
-		return 0, fmt.Errorf("list latest check results: %w", err)
+		return nil, fmt.Errorf("list latest check results: %w", err)
 	}
 	if len(results) < 2 || !answers(results[0].Status) || !answers(results[1].Status) {
-		return 0, nil
+		return nil, nil
 	}
 
 	incidents, err := q.ListAutoResolvableIncidents(ctx, store.ListAutoResolvableIncidentsParams{
@@ -105,25 +105,28 @@ func (d *Detector) MaybeResolveIncidentsWithQueries(ctx context.Context, q *stor
 		AffectedMonitorIds: fmt.Sprintf("[%d]", monitorID),
 	})
 	if err != nil {
-		return 0, fmt.Errorf("list auto-resolvable incidents: %w", err)
+		return nil, fmt.Errorf("list auto-resolvable incidents: %w", err)
 	}
 
 	now := time.Now().UTC()
+	resolved := make([]store.Incident, 0, len(incidents))
 	for _, inc := range incidents {
 		rca := fmt.Sprintf("Recovered by itself at %s after %s. No root cause was recorded. Edit this if you know it.",
 			now.Format(time.RFC3339), humanDuration(now.Sub(inc.StartedAt)))
-		if _, err := q.UpdateIncidentStatus(ctx, store.UpdateIncidentStatusParams{
+		updated, err := q.UpdateIncidentStatus(ctx, store.UpdateIncidentStatusParams{
 			Status: "resolved", ResolvedAt: &now, Rca: &rca, ID: inc.ID,
-		}); err != nil {
-			return 0, fmt.Errorf("resolve incident %d: %w", inc.ID, err)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve incident %d: %w", inc.ID, err)
 		}
 		if _, err := q.CreateIncidentUpdate(ctx, store.CreateIncidentUpdateParams{
 			IncidentID: inc.ID, Status: "resolved", Message: "Recovered by itself.", Author: "Pulse",
 		}); err != nil {
-			return 0, fmt.Errorf("add resolve update to incident %d: %w", inc.ID, err)
+			return nil, fmt.Errorf("add resolve update to incident %d: %w", inc.ID, err)
 		}
+		resolved = append(resolved, updated)
 	}
-	return len(incidents), nil
+	return resolved, nil
 }
 
 // answers reports whether a check status means the monitor responded.

@@ -25,6 +25,7 @@ nav:
   - Status pages: status-pages.md
   - Theming: theming.md
   - API: api.md
+  - MCP server: mcp.md
   - Security: security.md
   - Architecture: architecture.md
   - Deployment: deployment.md

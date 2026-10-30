@@ -34,6 +34,40 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (Infra
 	return i, err
 }
 
+const createAgentUniqueName = `-- name: CreateAgentUniqueName :one
+INSERT INTO infra_agents (name, host_label, token_hash)
+SELECT ?1, ?2, ?3
+WHERE NOT EXISTS (
+    SELECT 1 FROM infra_agents
+    WHERE lower(trim(infra_agents.name)) = lower(trim(?1))
+)
+RETURNING id, name, host_label, token_hash, last_seen_at, is_active, created_at
+`
+
+type CreateAgentUniqueNameParams struct {
+	Name      string `json:"name"`
+	HostLabel string `json:"host_label"`
+	TokenHash string `json:"token_hash"`
+}
+
+// CreateAgentUniqueName inserts the agent only when no other agent has the
+// same name, ignoring case and surrounding spaces. One statement keeps the
+// check and the insert atomic. It returns no row when the name is taken.
+func (q *Queries) CreateAgentUniqueName(ctx context.Context, arg CreateAgentUniqueNameParams) (InfraAgent, error) {
+	row := q.db.QueryRowContext(ctx, createAgentUniqueName, arg.Name, arg.HostLabel, arg.TokenHash)
+	var i InfraAgent
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.HostLabel,
+		&i.TokenHash,
+		&i.LastSeenAt,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteAgent = `-- name: DeleteAgent :exec
 DELETE FROM infra_agents WHERE id = ?
 `
