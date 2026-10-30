@@ -12,9 +12,12 @@ import (
 const createMonitor = `-- name: CreateMonitor :one
 INSERT INTO monitors (name, url, type, interval_seconds, timeout_seconds,
   expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms,
-  is_active, group_id, source, external_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at
+  is_active, group_id, source, external_id,
+  method, headers, body, auth_type, auth_username, auth_secret,
+  tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode
 `
 
 type CreateMonitorParams struct {
@@ -31,6 +34,17 @@ type CreateMonitorParams struct {
 	GroupID             *int64 `json:"group_id"`
 	Source              string `json:"source"`
 	ExternalID          string `json:"external_id"`
+	Method              string `json:"method"`
+	Headers             string `json:"-"`
+	Body                string `json:"body"`
+	AuthType            string `json:"-"`
+	AuthUsername        string `json:"-"`
+	AuthSecret          string `json:"-"`
+	TlsVerify           *bool  `json:"tls_verify"`
+	CaPem               string `json:"ca_pem"`
+	FollowRedirects     *bool  `json:"follow_redirects"`
+	AcceptedStatuses    string `json:"-"`
+	KeywordMode         string `json:"keyword_mode"`
 }
 
 func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error) {
@@ -48,6 +62,17 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		arg.GroupID,
 		arg.Source,
 		arg.ExternalID,
+		arg.Method,
+		arg.Headers,
+		arg.Body,
+		arg.AuthType,
+		arg.AuthUsername,
+		arg.AuthSecret,
+		arg.TlsVerify,
+		arg.CaPem,
+		arg.FollowRedirects,
+		arg.AcceptedStatuses,
+		arg.KeywordMode,
 	)
 	var i Monitor
 	err := row.Scan(
@@ -66,6 +91,17 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.Method,
+		&i.Headers,
+		&i.Body,
+		&i.AuthType,
+		&i.AuthUsername,
+		&i.AuthSecret,
+		&i.TlsVerify,
+		&i.CaPem,
+		&i.FollowRedirects,
+		&i.AcceptedStatuses,
+		&i.KeywordMode,
 	)
 	return i, err
 }
@@ -80,7 +116,7 @@ func (q *Queries) DeleteMonitor(ctx context.Context, id int64) error {
 }
 
 const getMonitor = `-- name: GetMonitor :one
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors WHERE id = ?
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode FROM monitors WHERE id = ?
 `
 
 func (q *Queries) GetMonitor(ctx context.Context, id int64) (Monitor, error) {
@@ -102,12 +138,23 @@ func (q *Queries) GetMonitor(ctx context.Context, id int64) (Monitor, error) {
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.Method,
+		&i.Headers,
+		&i.Body,
+		&i.AuthType,
+		&i.AuthUsername,
+		&i.AuthSecret,
+		&i.TlsVerify,
+		&i.CaPem,
+		&i.FollowRedirects,
+		&i.AcceptedStatuses,
+		&i.KeywordMode,
 	)
 	return i, err
 }
 
 const getMonitorBySourceExternalID = `-- name: GetMonitorBySourceExternalID :one
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors WHERE source = ? AND external_id = ?
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode FROM monitors WHERE source = ? AND external_id = ?
 `
 
 type GetMonitorBySourceExternalIDParams struct {
@@ -134,12 +181,23 @@ func (q *Queries) GetMonitorBySourceExternalID(ctx context.Context, arg GetMonit
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.Method,
+		&i.Headers,
+		&i.Body,
+		&i.AuthType,
+		&i.AuthUsername,
+		&i.AuthSecret,
+		&i.TlsVerify,
+		&i.CaPem,
+		&i.FollowRedirects,
+		&i.AcceptedStatuses,
+		&i.KeywordMode,
 	)
 	return i, err
 }
 
 const listActiveMonitors = `-- name: ListActiveMonitors :many
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors WHERE is_active = 1
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode FROM monitors WHERE is_active = 1
 `
 
 func (q *Queries) ListActiveMonitors(ctx context.Context) ([]Monitor, error) {
@@ -167,6 +225,17 @@ func (q *Queries) ListActiveMonitors(ctx context.Context) ([]Monitor, error) {
 			&i.Source,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.Method,
+			&i.Headers,
+			&i.Body,
+			&i.AuthType,
+			&i.AuthUsername,
+			&i.AuthSecret,
+			&i.TlsVerify,
+			&i.CaPem,
+			&i.FollowRedirects,
+			&i.AcceptedStatuses,
+			&i.KeywordMode,
 		); err != nil {
 			return nil, err
 		}
@@ -242,7 +311,7 @@ func (q *Queries) ListMonitorMetrics(ctx context.Context) ([]ListMonitorMetricsR
 }
 
 const listMonitors = `-- name: ListMonitors :many
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors ORDER BY created_at ASC
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode FROM monitors ORDER BY created_at ASC
 `
 
 func (q *Queries) ListMonitors(ctx context.Context) ([]Monitor, error) {
@@ -270,6 +339,17 @@ func (q *Queries) ListMonitors(ctx context.Context) ([]Monitor, error) {
 			&i.Source,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.Method,
+			&i.Headers,
+			&i.Body,
+			&i.AuthType,
+			&i.AuthUsername,
+			&i.AuthSecret,
+			&i.TlsVerify,
+			&i.CaPem,
+			&i.FollowRedirects,
+			&i.AcceptedStatuses,
+			&i.KeywordMode,
 		); err != nil {
 			return nil, err
 		}
@@ -285,7 +365,7 @@ func (q *Queries) ListMonitors(ctx context.Context) ([]Monitor, error) {
 }
 
 const listMonitorsByGroup = `-- name: ListMonitorsByGroup :many
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at FROM monitors WHERE group_id = ? ORDER BY created_at ASC
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode FROM monitors WHERE group_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListMonitorsByGroup(ctx context.Context, groupID *int64) ([]Monitor, error) {
@@ -313,6 +393,17 @@ func (q *Queries) ListMonitorsByGroup(ctx context.Context, groupID *int64) ([]Mo
 			&i.Source,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.Method,
+			&i.Headers,
+			&i.Body,
+			&i.AuthType,
+			&i.AuthUsername,
+			&i.AuthSecret,
+			&i.TlsVerify,
+			&i.CaPem,
+			&i.FollowRedirects,
+			&i.AcceptedStatuses,
+			&i.KeywordMode,
 		); err != nil {
 			return nil, err
 		}
@@ -331,9 +422,12 @@ const updateMonitor = `-- name: UpdateMonitor :one
 UPDATE monitors SET
   name = ?, url = ?, type = ?, interval_seconds = ?, timeout_seconds = ?,
   expected_status = ?, keyword_check = ?, degraded_threshold_ms = ?,
-  down_threshold_ms = ?, is_active = ?, group_id = ?
+  down_threshold_ms = ?, is_active = ?, group_id = ?,
+  method = ?, headers = ?, body = ?, auth_type = ?, auth_username = ?,
+  auth_secret = ?, tls_verify = ?, ca_pem = ?, follow_redirects = ?,
+  accepted_statuses = ?, keyword_mode = ?
 WHERE id = ?
-RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at
+RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, method, headers, body, auth_type, auth_username, auth_secret, tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode
 `
 
 type UpdateMonitorParams struct {
@@ -348,6 +442,17 @@ type UpdateMonitorParams struct {
 	DownThresholdMs     int64  `json:"down_threshold_ms"`
 	IsActive            bool   `json:"is_active"`
 	GroupID             *int64 `json:"group_id"`
+	Method              string `json:"method"`
+	Headers             string `json:"-"`
+	Body                string `json:"body"`
+	AuthType            string `json:"-"`
+	AuthUsername        string `json:"-"`
+	AuthSecret          string `json:"-"`
+	TlsVerify           *bool  `json:"tls_verify"`
+	CaPem               string `json:"ca_pem"`
+	FollowRedirects     *bool  `json:"follow_redirects"`
+	AcceptedStatuses    string `json:"-"`
+	KeywordMode         string `json:"keyword_mode"`
 	ID                  int64  `json:"id"`
 }
 
@@ -364,6 +469,17 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		arg.DownThresholdMs,
 		arg.IsActive,
 		arg.GroupID,
+		arg.Method,
+		arg.Headers,
+		arg.Body,
+		arg.AuthType,
+		arg.AuthUsername,
+		arg.AuthSecret,
+		arg.TlsVerify,
+		arg.CaPem,
+		arg.FollowRedirects,
+		arg.AcceptedStatuses,
+		arg.KeywordMode,
 		arg.ID,
 	)
 	var i Monitor
@@ -383,6 +499,17 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.Method,
+		&i.Headers,
+		&i.Body,
+		&i.AuthType,
+		&i.AuthUsername,
+		&i.AuthSecret,
+		&i.TlsVerify,
+		&i.CaPem,
+		&i.FollowRedirects,
+		&i.AcceptedStatuses,
+		&i.KeywordMode,
 	)
 	return i, err
 }

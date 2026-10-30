@@ -140,6 +140,17 @@ type Monitor struct {
 	Source              string    `json:"source"`
 	ExternalID          string    `json:"external_id"`
 	CreatedAt           time.Time `json:"created_at"`
+	Method              string    `json:"method"`
+	Headers             string    `json:"-"`
+	Body                string    `json:"body"`
+	AuthType            string    `json:"-"`
+	AuthUsername        string    `json:"-"`
+	AuthSecret          string    `json:"-"`
+	TlsVerify           *bool     `json:"tls_verify"`
+	CaPem               string    `json:"ca_pem"`
+	FollowRedirects     *bool     `json:"follow_redirects"`
+	AcceptedStatuses    string    `json:"-"`
+	KeywordMode         string    `json:"keyword_mode"`
 }
 
 type MonitorGroup struct {
