@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/memetics19/pulse/cli/importcmd"
+	"github.com/memetics19/pulse/cli/mcpcmd"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,7 @@ func run(args []string) int {
 	root.SilenceErrors = true
 	root.SetArgs(args)
 	root.AddCommand(importcmd.NewImportCmd())
+	root.AddCommand(mcpcmd.NewMCPCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
