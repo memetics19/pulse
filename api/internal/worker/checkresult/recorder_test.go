@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -113,17 +114,7 @@ func TestRecorder_TwoDownResultsCreateOneIncident(t *testing.T) {
 
 func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 	var hits atomic.Int64
-	var texts []string
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		hits.Add(1)
-		var payload struct {
-			Text string `json:"text"`
-		}
-		require.NoError(t, json.NewDecoder(req.Body).Decode(&payload))
-		texts = append(texts, payload.Text)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
+	srv, texts := slackSink(t, &hits)
 
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
@@ -132,7 +123,8 @@ func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r := checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client())))
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
+	r := checkresult.New(db, incident.NewDetector(q), d)
 	now := time.Now()
 
 	require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
@@ -145,9 +137,11 @@ func TestRecorder_DispatchesAlertOnlyForNewIncident(t *testing.T) {
 		Status: "down", ErrorMessage: "third failure", CheckedAt: now.Add(2 * time.Second),
 	}))
 
+	d.Wait()
 	assert.Equal(t, int64(1), hits.Load())
-	require.Len(t, texts, 1)
-	assert.Equal(t, ":red_circle: *[detected]* Recorder API is down\nsecond failure", texts[0])
+	got := texts()
+	require.Len(t, got, 1)
+	assert.Equal(t, ":red_circle: *[detected]* Recorder API is down\nsecond failure", got[0])
 }
 
 func TestRecorder_RejectsInvalidInputBeforePersistence(t *testing.T) {
@@ -255,8 +249,10 @@ func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
 		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
 	})
 	require.NoError(t, err)
-	r1 := checkresult.New(db1, incident.NewDetector(q1), alerter.NewDispatcher(q1, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client())))
-	r2 := checkresult.New(db2, incident.NewDetector(q2), alerter.NewDispatcher(q2, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client())))
+	d1 := alerter.NewDispatcher(q1, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
+	d2 := alerter.NewDispatcher(q2, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
+	r1 := checkresult.New(db1, incident.NewDetector(q1), d1)
+	r2 := checkresult.New(db2, incident.NewDetector(q2), d2)
 	now := time.Now()
 	require.NoError(t, r1.Record(context.Background(), mon, checkresult.Input{
 		Status: "down", CheckedAt: now,
@@ -286,6 +282,8 @@ func TestRecorder_ConcurrentInstancesCreateOneIncidentAndAlert(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, incidents, 1)
 	assert.Equal(t, "monitor", incidents[0].Source)
+	d1.Wait()
+	d2.Wait()
 	assert.Equal(t, int64(1), alertHits.Load())
 }
 
@@ -313,6 +311,59 @@ func TestRecorder_TwoUpResultsResolveAutoIncident(t *testing.T) {
 	assert.Equal(t, "resolved", got.Status)
 	assert.NotNil(t, got.ResolvedAt)
 	assert.NotNil(t, got.Rca)
+}
+
+// On-call hears that a service recovered, not only that it went down.
+func TestRecorder_AlertsWhenAutoIncidentRecovers(t *testing.T) {
+	var hits atomic.Int64
+	srv, texts := slackSink(t, &hits)
+
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := createMonitor(t, q, "Recovering API")
+	_, err := q.CreateNotification(context.Background(), store.CreateNotificationParams{
+		Channel: "slack", ConfigJson: `{"webhook_url":"` + srv.URL + `"}`, MonitorID: &mon.ID,
+	})
+	require.NoError(t, err)
+	d := alerter.NewDispatcher(q, config.Config{AllowPrivateMonitors: true}, alerter.WithHTTPClient(srv.Client()))
+	r := checkresult.New(db, incident.NewDetector(q), d)
+	now := time.Now()
+	for i, status := range []string{"down", "down", "up", "up", "up"} {
+		require.NoError(t, r.Record(context.Background(), mon, checkresult.Input{
+			Status: status, CheckedAt: now.Add(time.Duration(i) * time.Second),
+		}))
+	}
+	d.Wait()
+
+	assert.Equal(t, int64(2), hits.Load(), "one down alert and one recovery alert")
+	got := texts()
+	require.Len(t, got, 2)
+	assert.True(t, strings.HasPrefix(got[1], ":large_green_circle: *[resolved]* Recovering API recovered\nRecovered by itself at "), got[1])
+}
+
+// slackSink is a fake Slack webhook. It counts posts in hits and returns a
+// function that gives the texts received so far.
+func slackSink(t *testing.T, hits *atomic.Int64) (*httptest.Server, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var texts []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var payload struct {
+			Text string `json:"text"`
+		}
+		assert.NoError(t, json.NewDecoder(req.Body).Decode(&payload))
+		mu.Lock()
+		texts = append(texts, payload.Text)
+		mu.Unlock()
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), texts...)
+	}
 }
 
 func TestRecorder_RollsBackResultWhenAutoResolveFails(t *testing.T) {

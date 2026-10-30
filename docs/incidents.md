@@ -49,6 +49,18 @@ The public status page shows each incident with its full update timeline. Incide
 
 When configured, Pulse sends incident notifications by email (through an SMTP relay or Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
 
+Pulse sends an alert when:
+
+- a monitor fails twice in a row and Pulse opens an auto-incident
+- a monitor recovers and Pulse resolves its auto-incident
+- someone opens an incident, changes its status or resolves it
+- someone posts an update to an incident's timeline
+- a maintenance window starts or ends on schedule
+
+A notification tied to one monitor gets an alert only when the incident or window affects that monitor. An incident or window with no affected monitors alerts every notification.
+
+Alerts are sent in the background. A push monitor's heartbeat gets its response without waiting for Slack or email, and a client that hangs up early does not cancel the alert. Each alert has two minutes to reach all its channels.
+
 Each notification has a channel and a small JSON config, checked when it is saved:
 
 | Channel | Config | Rules |

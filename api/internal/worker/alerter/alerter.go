@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
+	"sync"
+	"time"
 
 	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/store"
@@ -15,7 +18,7 @@ import (
 type Alert struct {
 	IncidentID int64
 	Title      string
-	Status     string // "detected", "investigating", "identified", "implementing", "monitoring", "resolved"
+	Status     string // "detected", "investigating", "identified", "implementing", "monitoring", "resolved", or a maintenance "in_progress", "completed"
 	Severity   string
 	Message    string
 }
@@ -30,7 +33,12 @@ type Dispatcher struct {
 	q     *store.Queries
 	email Sender
 	slack Sender
+	wg    sync.WaitGroup
 }
+
+// notifyTimeout bounds one background fan-out, so a channel that never answers
+// cannot hold its goroutine forever.
+const notifyTimeout = 2 * time.Minute
 
 // NewDispatcher wires the senders from cfg: email through SMTP or Resend (see NewEmail),
 // and Slack. cfg.AllowPrivateMonitors (PULSE_ALLOW_PRIVATE_MONITORS) decides whether a
@@ -43,16 +51,35 @@ func NewDispatcher(q *store.Queries, cfg config.Config, opts ...Option) *Dispatc
 	}
 }
 
-// Notify fans out an alert to all matching notification channels.
-func (d *Dispatcher) Notify(ctx context.Context, a Alert, monitorID *int64) {
+// Notify sends a to every matching notification channel in the background and
+// returns at once. The send keeps ctx's values but not its deadline or
+// cancellation: a heartbeat client that hangs up, or a scheduler tick that ends,
+// must not cancel an alert. A notification scoped to one monitor gets the alert
+// only when monitorIDs holds that monitor. With no monitorIDs every notification
+// gets it.
+func (d *Dispatcher) Notify(ctx context.Context, a Alert, monitorIDs ...int64) {
+	ctx = context.WithoutCancel(ctx)
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		ctx, cancel := context.WithTimeout(ctx, notifyTimeout)
+		defer cancel()
+		d.notify(ctx, a, monitorIDs)
+	}()
+}
+
+// Wait blocks until every alert Notify started has been sent or has failed.
+func (d *Dispatcher) Wait() { d.wg.Wait() }
+
+func (d *Dispatcher) notify(ctx context.Context, a Alert, monitorIDs []int64) {
 	notifications, err := d.q.ListNotifications(ctx)
 	if err != nil {
 		log.Printf("alerter: list notifications: %v", err)
 		return
 	}
 	for _, n := range notifications {
-		// Skip if notification is for a specific monitor that doesn't match
-		if n.MonitorID != nil && monitorID != nil && *n.MonitorID != *monitorID {
+		// Skip a notification scoped to a monitor the alert is not about.
+		if n.MonitorID != nil && len(monitorIDs) > 0 && !slices.Contains(monitorIDs, *n.MonitorID) {
 			continue
 		}
 		if err := d.SendTo(ctx, n.Channel, n.ConfigJson, a); err != nil {
@@ -93,4 +120,15 @@ func (d *Dispatcher) SendTo(ctx context.Context, channel, configJSON string, a A
 		return fmt.Errorf("invalid config: %v", err)
 	}
 	return sender.Send(ctx, cfg, a)
+}
+
+// MonitorIDs parses an affected_monitor_ids column, a JSON array of IDs, for
+// Notify. A value that does not parse gives no IDs, so the alert goes to every
+// notification rather than to none.
+func MonitorIDs(affectedJSON string) []int64 {
+	var ids []int64
+	if err := json.Unmarshal([]byte(affectedJSON), &ids); err != nil {
+		return nil
+	}
+	return ids
 }

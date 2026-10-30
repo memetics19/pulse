@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +46,14 @@ func (h *Agents) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Agents are told apart by name in the admin, so a name is required and
+	// must be unique. Surrounding spaces are not part of the name.
+	body.Name = strings.TrimSpace(body.Name)
+	body.HostLabel = strings.TrimSpace(body.HostLabel)
+	if body.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
 
 	// Generate 48-char hex token (24 random bytes → hex)
 	tokenBytes := make([]byte, 24)
@@ -54,11 +65,15 @@ func (h *Agents) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Only the sha256 hash is stored; the plaintext token is returned once
 	// in this response and cannot be recovered afterwards.
-	agent, err := h.q.CreateAgent(r.Context(), generated.CreateAgentParams{
+	agent, err := h.q.CreateAgentUniqueName(r.Context(), generated.CreateAgentUniqueNameParams{
 		Name:      body.Name,
 		HostLabel: body.HostLabel,
 		TokenHash: keyauth.Hash(token),
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "an agent named "+strconv.Quote(body.Name)+" already exists", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

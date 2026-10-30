@@ -76,11 +76,11 @@ func TestDetector_NonPositiveCountsUseDefaults(t *testing.T) {
 	insertResult(t, q, mon.ID, "up", now.Add(2*time.Second))
 	n, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, mon.ID, -1)
 	require.NoError(t, err)
-	assert.Zero(t, n, "-1 means the default of 2")
+	assert.Empty(t, n, "-1 means the default of 2")
 	insertResult(t, q, mon.ID, "up", now.Add(3*time.Second))
 	n, err = incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, mon.ID, -1)
 	require.NoError(t, err)
-	assert.Equal(t, 1, n)
+	assert.Len(t, n, 1)
 }
 
 func TestResolve_ResolvesAfterConfiguredRecoveries(t *testing.T) {
@@ -96,14 +96,14 @@ func TestResolve_ResolvesAfterConfiguredRecoveries(t *testing.T) {
 				insertResult(t, q, mon.ID, "up", now.Add(time.Duration(i+2)*time.Second))
 				got, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, mon.ID, n)
 				require.NoError(t, err)
-				assert.Zero(t, got, "%d of %d recoveries must not resolve", i+1, n)
+				assert.Empty(t, got, "%d of %d recoveries must not resolve", i+1, n)
 			}
 			assert.Equal(t, "detected", getIncident(t, q, inc.ID).Status, "N-1 recoveries leave it open")
 
 			insertResult(t, q, mon.ID, "up", now.Add(time.Duration(n+2)*time.Second))
 			got, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, mon.ID, n)
 			require.NoError(t, err)
-			assert.Equal(t, 1, got)
+			assert.Len(t, got, 1)
 			assert.Equal(t, "resolved", getIncident(t, q, inc.ID).Status)
 		})
 	}
@@ -121,12 +121,12 @@ func TestResolve_FailureResetsRecoveryCount(t *testing.T) {
 		insertResult(t, q, mon.ID, s, now.Add(time.Duration(i+2)*time.Second))
 		got, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, mon.ID, 3)
 		require.NoError(t, err)
-		assert.Zero(t, got, "after %v", statuses[:i+1])
+		assert.Empty(t, got, "after %v", statuses[:i+1])
 	}
 	assert.Equal(t, "detected", getIncident(t, q, inc.ID).Status)
 
 	insertResult(t, q, mon.ID, "degraded", now.Add(10*time.Second))
 	got, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, mon.ID, 3)
 	require.NoError(t, err)
-	assert.Equal(t, 1, got)
+	assert.Len(t, got, 1)
 }
