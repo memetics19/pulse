@@ -65,6 +65,44 @@ func (q *Queries) LatestCheckResult(ctx context.Context, monitorID int64) (Check
 	return i, err
 }
 
+const latestCheckStatuses = `-- name: LatestCheckStatuses :many
+SELECT status FROM check_results
+WHERE monitor_id = ?1
+ORDER BY checked_at DESC, id DESC
+LIMIT ?2
+`
+
+type LatestCheckStatusesParams struct {
+	MonitorID int64 `json:"monitor_id"`
+	N         int64 `json:"n"`
+}
+
+// LatestCheckStatuses returns the statuses of a monitor's newest results,
+// newest first. The incident detector asks for as many as the monitor's
+// failures_before_incident or recoveries_before_resolve setting.
+func (q *Queries) LatestCheckStatuses(ctx context.Context, arg LatestCheckStatusesParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, latestCheckStatuses, arg.MonitorID, arg.N)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var status string
+		if err := rows.Scan(&status); err != nil {
+			return nil, err
+		}
+		items = append(items, status)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const latestStatuses = `-- name: LatestStatuses :many
 SELECT cr.monitor_id, cr.status
 FROM check_results cr

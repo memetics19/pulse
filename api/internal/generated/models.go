@@ -125,21 +125,25 @@ type MaintenanceWindow struct {
 }
 
 type Monitor struct {
-	ID                  int64     `json:"id"`
-	Name                string    `json:"name"`
-	Url                 string    `json:"url"`
-	Type                string    `json:"type"`
-	IntervalSeconds     int64     `json:"interval_seconds"`
-	TimeoutSeconds      int64     `json:"timeout_seconds"`
-	ExpectedStatus      *int64    `json:"expected_status"`
-	KeywordCheck        string    `json:"keyword_check"`
-	DegradedThresholdMs int64     `json:"degraded_threshold_ms"`
-	DownThresholdMs     int64     `json:"down_threshold_ms"`
-	IsActive            bool      `json:"is_active"`
-	GroupID             *int64    `json:"group_id"`
-	Source              string    `json:"source"`
-	ExternalID          string    `json:"external_id"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                      int64     `json:"id"`
+	Name                    string    `json:"name"`
+	Url                     string    `json:"url"`
+	Type                    string    `json:"type"`
+	IntervalSeconds         int64     `json:"interval_seconds"`
+	TimeoutSeconds          int64     `json:"timeout_seconds"`
+	ExpectedStatus          *int64    `json:"expected_status"`
+	KeywordCheck            string    `json:"keyword_check"`
+	DegradedThresholdMs     int64     `json:"degraded_threshold_ms"`
+	DownThresholdMs         int64     `json:"down_threshold_ms"`
+	IsActive                bool      `json:"is_active"`
+	GroupID                 *int64    `json:"group_id"`
+	Source                  string    `json:"source"`
+	ExternalID              string    `json:"external_id"`
+	CreatedAt               time.Time `json:"created_at"`
+	FailuresBeforeIncident  int64     `json:"failures_before_incident"`
+	RecoveriesBeforeResolve int64     `json:"recoveries_before_resolve"`
+	Retries                 int64     `json:"retries"`
+	RetryIntervalMs         int64     `json:"retry_interval_ms"`
 }
 
 type MonitorGroup struct {

@@ -112,6 +112,9 @@ type PruneAgentDiagnosticsParams = generated.PruneAgentDiagnosticsParams
 // InsertCheckResultParams is the public alias for the generated parameter type.
 type InsertCheckResultParams = generated.InsertCheckResultParams
 
+// LatestCheckStatusesParams is the public alias for the generated parameter type.
+type LatestCheckStatusesParams = generated.LatestCheckStatusesParams
+
 // ListCheckResultsParams is the public alias for the generated parameter type.
 type ListCheckResultsParams = generated.ListCheckResultsParams
 
