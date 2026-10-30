@@ -66,6 +66,45 @@ curl "https://status.shreeda.xyz/api/monitors/12/checks?days=7" \
   -H "Authorization: Bearer pulse_live_..."
 ```
 
+Create an HTTP monitor with [HTTP options](monitors.md#http-options). This requires the `monitors:write` scope. Every option is optional.
+
+```bash
+curl -X POST https://status.shreeda.xyz/api/monitors \
+  -H "Authorization: Bearer pulse_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Router admin",
+    "url": "https://router.home.arpa/health",
+    "type": "http",
+    "interval_seconds": 60,
+    "method": "POST",
+    "headers": {"Content-Type": "application/json"},
+    "body": "{\"ping\":true}",
+    "auth": {"type": "bearer", "token": "..."},
+    "ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "follow_redirects": false,
+    "accepted_statuses": ["200-299", "301"],
+    "keyword_check": "error",
+    "keyword_mode": "not_contains"
+  }'
+```
+
+`auth` takes `{"type": "basic", "username": "...", "password": "..."}` or `{"type": "bearer", "token": "..."}`. The password and the token are write-only. `GET /api/monitors` and `GET /api/monitors/{id}` return `auth` without them:
+
+```json
+"auth": {"type": "bearer", "secret_set": true}
+```
+
+`auth` is `null` when the monitor has none. `PUT /api/monitors/{id}` follows these rules for auth:
+
+- Leave `auth` out to keep the stored auth as it is.
+- Send the same type without a password or token to keep the stored secret. The admin form does this when you leave the secret field empty.
+- Send a new password or token to replace it.
+- Send `{"type": "none"}` to remove auth.
+- A change of type does not carry the old secret over. Send the new secret with it.
+
+A request with an invalid option gets 400 and a message that names the option.
+
 The same scope covers `/api/monitors/{id}/checks/uptime`, which returns the uptime percentage over `days` (default 90, capped at 90). Read the updates of an incident with `/api/incidents/{id}/updates` and the `incidents:read` scope. A request without a session or key gets 401. A key without the matching scope gets 403.
 
 ## Test a notification
