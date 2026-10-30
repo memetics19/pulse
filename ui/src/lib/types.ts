@@ -26,16 +26,6 @@ export interface MonitorGroup {
   created_at: string
 }
 
-export interface CheckResult {
-  id: number
-  monitor_id: number
-  checked_at: string
-  status: 'up' | 'down' | 'degraded'
-  response_time_ms: number | null
-  status_code: number | null
-  error_message: string
-}
-
 export interface Incident {
   id: number
   title: string

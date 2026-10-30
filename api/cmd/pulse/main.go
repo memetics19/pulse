@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +17,7 @@ import (
 	"github.com/memetics19/pulse/api/internal/bootstrap"
 	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/db"
+	"github.com/memetics19/pulse/api/internal/generated"
 	"github.com/memetics19/pulse/api/internal/server"
 	"github.com/memetics19/pulse/api/internal/worker"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
@@ -27,11 +31,7 @@ func main() {
 
 	cfg := config.Load()
 	dataDir := config.DataDir()
-	if cfg.ResendAPIKey != "" {
-		if err := alerter.CheckEmailFrom(cfg.EmailFrom); err != nil {
-			log.Printf("RESEND_API_KEY is set, but email alerts cannot be sent: %v", err)
-		}
-	}
+	checkEmail(cfg)
 
 	boot, err := bootstrap.Load(dataDir)
 	if err != nil {
@@ -39,11 +39,11 @@ func main() {
 	}
 
 	a := app.New()
-	if boot.Configured {
-		conn, err := db.Open(databaseFile(dataDir, boot, cfg))
-		if err != nil {
-			log.Fatalf("db: %v", err)
-		}
+	conn, err := openDatabase(dataDir, boot, cfg)
+	if err != nil {
+		log.Fatalf("db: %v", err)
+	}
+	if conn != nil {
 		defer func() {
 			if err := conn.Close(); err != nil {
 				log.Printf("db close: %v", err)
@@ -57,6 +57,17 @@ func main() {
 
 	if err := serve(ctx, a, dataDir, cfg); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// checkEmail logs, at startup, why email alerts cannot be sent, and which transport
+// wins when both SMTP and Resend are set up.
+func checkEmail(cfg config.Config) {
+	if cfg.SMTP.Host != "" && cfg.ResendAPIKey != "" {
+		log.Printf("PULSE_SMTP_HOST and RESEND_API_KEY are both set: email alerts go through SMTP and RESEND_API_KEY is ignored")
+	}
+	if err := alerter.CheckEmail(cfg); err != nil {
+		log.Printf("email alerts are set up but cannot be sent: %v", err)
 	}
 }
 
@@ -123,6 +134,56 @@ func runWorker(ctx context.Context, a *app.App, cfg config.Config) {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// openDatabase opens the database to serve. It returns nil when setup has not
+// run yet. When pulse.json says setup ran, it opens the recorded file. When
+// pulse.json is missing, it adopts the server's database file if that file
+// already has an admin (see adoptDatabase).
+func openDatabase(dataDir string, boot bootstrap.Config, cfg config.Config) (*sql.DB, error) {
+	if boot.Configured {
+		return db.Open(databaseFile(dataDir, boot, cfg))
+	}
+	return adoptDatabase(dataDir, cfg)
+}
+
+// adoptDatabase handles a database that outlived its pulse.json. That happens
+// when pulse.json is lost, when a backup is restored without it, or when
+// PULSE_DATA_DIR changes while PULSE_DB keeps pointing at the same file.
+// Setup cannot finish on such a database, because it already has an admin.
+//
+// If the file the server would set up (cfg.SQLitePath, from PULSE_DB or
+// PULSE_DATA_DIR) exists and has at least one user, Pulse adopts it: it
+// records the file in pulse.json and serves it. The existing accounts stay
+// the only way in, so adopting never creates or changes an account. A missing
+// file or a file without users leaves the instance in setup mode, and a file
+// that does not exist is not created.
+func adoptDatabase(dataDir string, cfg config.Config) (*sql.DB, error) {
+	path := cfg.SQLitePath
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	conn, err := db.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	users, err := generated.New(conn).CountUsers(context.Background())
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("count users in %s: %w", path, err), conn.Close())
+	}
+	if users == 0 {
+		return nil, conn.Close()
+	}
+	if err := bootstrap.Save(dataDir, bootstrap.Config{Configured: true, SQLitePath: path}); err != nil {
+		log.Printf("adopted the database %s, which already has an admin. Could not write %s: %v. Pulse adopts it again on the next start",
+			path, bootstrap.Path(dataDir), err)
+		return conn, nil
+	}
+	log.Printf("adopted the database %s, which already has an admin. Recorded it in %s. Log in with an existing account",
+		path, bootstrap.Path(dataDir))
+	return conn, nil
 }
 
 // databaseFile returns the SQLite file that serve and reset-password open.

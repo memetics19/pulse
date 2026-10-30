@@ -1,7 +1,7 @@
 // src/lib/api.ts
 import type {
   StatusResponse, Monitor, MonitorGroup, Incident,
-  IncidentUpdate, CheckResult, ThemeConfig, Notification, InfraAgent
+  IncidentUpdate, ThemeConfig, Notification, InfraAgent
 } from './types'
 
 // In production the static export is served by the Go binary on the same origin,
@@ -15,14 +15,8 @@ export async function fetchStatus(): Promise<StatusResponse> {
   return res.json()
 }
 
-// Check results and incident updates need a session or an API key. They
-// carry raw errors and update authors, so they are not public.
-export async function fetchCheckResults(monitorId: number, days: number): Promise<CheckResult[]> {
-  const res = await fetch(`${BASE}/api/monitors/${monitorId}/checks?days=${days}`, { cache: 'no-store', credentials: 'include' })
-  if (!res.ok) return []
-  return res.json()
-}
-
+// Incident updates need a session or an API key. They carry update
+// authors, so they are not public.
 export async function fetchIncidentUpdates(incidentId: number): Promise<IncidentUpdate[]> {
   const res = await fetch(`${BASE}/api/incidents/${incidentId}/updates`, { cache: 'no-store', credentials: 'include' })
   if (!res.ok) return []
@@ -144,6 +138,20 @@ export async function adminCreateNotification(data: {
 
 export async function adminDeleteNotification(id: number): Promise<void> {
   await fetch(`${BASE}/api/notifications/${id}`, { method: 'DELETE', credentials: 'include' })
+}
+
+export type NotificationTestResult = { ok: boolean; error?: string }
+
+// Sends a test alert through one notification's channel. The server answers
+// {"ok":true}, or {"ok":false,"error":"..."} with the channel's error.
+export async function adminTestNotification(id: number): Promise<NotificationTestResult> {
+  const res = await fetch(`${BASE}/api/notifications/${id}/test`, { method: 'POST', credentials: 'include' })
+  const text = await res.text()
+  try {
+    const body = JSON.parse(text)
+    if (typeof body.ok === 'boolean') return { ok: body.ok, error: body.error }
+  } catch { /* not JSON: a plain error from the server */ }
+  return res.ok ? { ok: true } : { ok: false, error: text.trim() || `HTTP ${res.status}` }
 }
 
 export async function adminListAgents(): Promise<InfraAgent[]> {

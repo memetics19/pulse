@@ -33,14 +33,63 @@ func Load(dataDir string) (Config, error) {
 	return c, nil
 }
 
-// Save writes the bootstrap config, creating the data dir if needed.
+// Save writes the bootstrap config, creating the data dir if needed. The file
+// is replaced in one rename, so a crash never leaves a half-written pulse.json.
 func Save(dataDir string, c Config) error {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(c, "", "  ")
+	s, err := Stage(dataDir, c)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(Path(dataDir), b, 0o600)
+	if err := s.Commit(); err != nil {
+		s.Discard()
+		return err
+	}
+	return nil
+}
+
+// Staged is a bootstrap config written to a temporary file next to
+// pulse.json. Commit moves it into place. Discard removes it. Setup stages the
+// file before it commits the admin, so a data directory that cannot be written
+// fails setup before anything is stored, and pulse.json appears only after the
+// admin is committed.
+type Staged struct {
+	tmp, dst string
+}
+
+// Stage writes c to a temporary file in dataDir, creating dataDir if needed.
+func Stage(dataDir string, c Config) (*Staged, error) {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, err
+	}
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.CreateTemp(dataDir, ".pulse.json-*")
+	if err != nil {
+		return nil, err
+	}
+	s := &Staged{tmp: f.Name(), dst: Path(dataDir)}
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		s.Discard()
+		return nil, err
+	}
+	return s, nil
+}
+
+// Commit renames the staged file to pulse.json.
+func (s *Staged) Commit() error {
+	return os.Rename(s.tmp, s.dst)
+}
+
+// Discard removes the staged file. It does nothing after Commit.
+func (s *Staged) Discard() {
+	_ = os.Remove(s.tmp)
 }

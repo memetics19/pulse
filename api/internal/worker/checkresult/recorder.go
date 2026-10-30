@@ -31,8 +31,9 @@ func New(db *sql.DB, d *incident.Detector, a *alerter.Dispatcher) *Recorder {
 }
 
 // Record applies monitor thresholds, persists the current result, then runs
-// incident detection. Persistence must happen first because Detector reads the
-// two latest rows and expects the current result to be among them.
+// incident detection and auto-resolve. Persistence must happen first because
+// Detector reads the two latest rows and expects the current result to be
+// among them.
 func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) error {
 	if in.Status != "up" && in.Status != "down" && in.Status != "degraded" {
 		return fmt.Errorf("status must be one of up, down, degraded")
@@ -86,6 +87,9 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 	created, err := r.detector.MaybeCreateIncidentWithQueries(ctx, q, monitor.ID)
 	if err != nil {
 		return fmt.Errorf("detect incident for monitor %d: %w", monitor.ID, err)
+	}
+	if _, err := r.detector.MaybeResolveIncidentsWithQueries(ctx, q, monitor.ID); err != nil {
+		return fmt.Errorf("resolve recovered incidents for monitor %d: %w", monitor.ID, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit check result transaction: %w", err)

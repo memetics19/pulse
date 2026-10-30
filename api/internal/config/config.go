@@ -82,6 +82,20 @@ func Env(name string) string {
 	return v
 }
 
+// SMTP holds the PULSE_SMTP_* settings: the relay that sends email alerts.
+type SMTP struct {
+	// Host is PULSE_SMTP_HOST. Empty means email goes through Resend, if set up.
+	Host string
+	// Port is PULSE_SMTP_PORT. Empty means the usual port for TLS.
+	Port string
+	// User and Password are PULSE_SMTP_USER and PULSE_SMTP_PASSWORD (or the
+	// contents of PULSE_SMTP_PASSWORD_FILE). An empty user sends without AUTH.
+	User     string
+	Password string
+	// TLS is PULSE_SMTP_TLS: starttls (the default), tls or none.
+	TLS string
+}
+
 type Config struct {
 	DatabaseURL string
 	// SQLitePath is the database file, resolved by DBPath.
@@ -96,7 +110,9 @@ type Config struct {
 	ResendAPIKey string
 	// EmailFrom (PULSE_EMAIL_FROM) is the sender of email alerts, on a domain verified
 	// in the Resend account of ResendAPIKey.
-	EmailFrom       string
+	EmailFrom string
+	// SMTP is the relay email alerts go through instead of Resend, when its host is set.
+	SMTP            SMTP
 	SlackWebhookURL string
 	Port            string
 	SecureCookies   bool
@@ -146,6 +162,7 @@ func Load() Config {
 		SetupToken:           strings.TrimSpace(os.Getenv("PULSE_SETUP_TOKEN")),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		EmailFrom:            Env("PULSE_EMAIL_FROM"),
+		SMTP:                 loadSMTP(),
 		SlackWebhookURL:      os.Getenv("SLACK_WEBHOOK_URL"),
 		Port:                 port,
 		SecureCookies:        envBool("PULSE_SECURE_COOKIES"),
@@ -153,6 +170,29 @@ func Load() Config {
 		AllowPrivateMonitors: envBool("PULSE_ALLOW_PRIVATE_MONITORS"),
 		TrustedProxies:       parseCIDRs(envList("PULSE_TRUSTED_PROXIES")),
 	}
+}
+
+// loadSMTP reads the PULSE_SMTP_* settings. PULSE_SMTP_PASSWORD_FILE names a
+// file that holds the password, such as a Docker or systemd secret. It is
+// read only when PULSE_SMTP_PASSWORD is unset, and one trailing line break is
+// dropped. A file that cannot be read is logged by name, never by content.
+func loadSMTP() SMTP {
+	s := SMTP{
+		Host:     strings.TrimSpace(os.Getenv("PULSE_SMTP_HOST")),
+		Port:     strings.TrimSpace(os.Getenv("PULSE_SMTP_PORT")),
+		User:     os.Getenv("PULSE_SMTP_USER"),
+		Password: os.Getenv("PULSE_SMTP_PASSWORD"),
+		TLS:      strings.ToLower(strings.TrimSpace(os.Getenv("PULSE_SMTP_TLS"))),
+	}
+	if file := os.Getenv("PULSE_SMTP_PASSWORD_FILE"); s.Password == "" && file != "" {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			log.Printf("config: cannot read PULSE_SMTP_PASSWORD_FILE %s: %v", file, err)
+		} else {
+			s.Password = strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r")
+		}
+	}
+	return s
 }
 
 // parseCIDRs converts CIDR strings (or bare IPs) into networks, skipping and

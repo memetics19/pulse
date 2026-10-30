@@ -28,13 +28,26 @@ Each incident has a timeline of updates. Updates support Markdown. There are two
 
 The monitoring worker auto-creates an incident after two consecutive down checks for a monitor. The incident is named after the monitor. While a [maintenance window](maintenance.md) is active for a monitor, auto-incidents are suppressed for it.
 
+## Auto-resolve
+
+Pulse also closes its own incidents. When the two latest checks for a monitor are up or degraded, the worker resolves the open auto-incident for that monitor. It sets an RCA that says when the monitor recovered and how long it was down. It also adds a `resolved` update, "Recovered by itself.", to the timeline. You can edit the RCA later if you find the cause. This also happens during a maintenance window.
+
+Pulse only resolves an incident that no person has touched. It leaves the incident open if any of these are true:
+
+- Someone moved it past `detected`.
+- Someone posted an update on it.
+- It was created by hand.
+- It covers more than one monitor.
+
+Those incidents wait for a person to resolve them with an RCA.
+
 ## The public timeline
 
 The public status page shows each incident with its full update timeline. Incident history is available on the page, and updates are also published through the [Atom feed](api.md#atom-feed). Times render in the visitor's local timezone.
 
 ## Notifications
 
-When configured, Pulse sends incident notifications by email (through Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
+When configured, Pulse sends incident notifications by email (through an SMTP relay or Resend) and Slack (through an incoming webhook). See [Configuration](configuration.md) for the variables that enable these channels.
 
 Each notification has a channel and a small JSON config, checked when it is saved:
 
@@ -53,3 +66,11 @@ A notification quotes text that the admin did not write: a push monitor's `msg`,
 a remote server returned, and monitor names set through the API. Pulse escapes all of it.
 An email has an HTML part, with every field escaped, and a plain text part. A Slack message
 escapes `&`, `<` and `>`, so no field can add a link or a mention such as `@channel`.
+
+### Test a notification
+
+Each row on the admin Notifications page has a **Send test** button. It sends a test alert
+through that channel and shows the result in the row: **Test sent**, or the channel's error,
+such as a wrong webhook URL or a sender the mail provider refuses. No one has to read the
+server log. Each notification can be tested once every 10 seconds. The API has the same
+action at [`POST /api/notifications/{id}/test`](api.md#test-a-notification).

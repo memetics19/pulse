@@ -41,6 +41,9 @@ func (t realTimer) C() <-chan time.Time { return t.Timer.C }
 const (
 	pushDeadlineGrace = 5 * time.Second
 	pushRetryDelay    = time.Second
+
+	// maxStartupJitter caps how long the startup pass delays a first check.
+	maxStartupJitter = 30 * time.Second
 )
 
 // Scheduler manages one goroutine per active monitor.
@@ -54,6 +57,7 @@ type Scheduler struct {
 	beat         func() // called after each successful reconcile (worker liveness)
 	mu           sync.RWMutex
 	running      map[int64]runningMonitor
+	started      bool // set after the first successful reconcile
 }
 
 // SetHeartbeat registers a callback invoked after every successful reconcile,
@@ -105,14 +109,23 @@ func (s *Scheduler) SetChecker(monType string, c checker.Checker) {
 // check immediately and then at each interval; push monitors wait for heartbeat
 // deadlines instead.
 func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
+	s.runMonitor(ctx, mon, false)
+}
+
+// runMonitor is RunMonitor with an optional startup jitter. With jitter set, a
+// polling monitor waits firstCheckDelay before its first check, so a restart
+// does not fire every monitor in the same instant.
+func (s *Scheduler) runMonitor(ctx context.Context, mon store.Monitor, jitter bool) {
 	if mon.Type == "push" {
 		s.runPushMonitor(ctx, mon)
 		return
 	}
 
-	interval := time.Duration(mon.IntervalSeconds) * time.Second
-	if interval <= 0 {
-		interval = 60 * time.Second
+	interval := pollInterval(mon)
+	if jitter {
+		if d := firstCheckDelay(mon.ID, interval); d > 0 && !s.wait(ctx, d) {
+			return
+		}
 	}
 	s.check(ctx, mon)
 	ticker := time.NewTicker(interval)
@@ -127,6 +140,29 @@ func (s *Scheduler) RunMonitor(ctx context.Context, mon store.Monitor) {
 	}
 }
 
+// pollInterval is the monitor's check interval, defaulting to one minute.
+func pollInterval(mon store.Monitor) time.Duration {
+	interval := time.Duration(mon.IntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	return interval
+}
+
+// firstCheckDelay is a stable offset in [0, min(interval, maxStartupJitter))
+// derived from the monitor ID. The same monitor keeps the same phase across
+// restarts, and monitors with the same interval spread across the window
+// instead of staying phase-locked.
+func firstCheckDelay(id int64, interval time.Duration) time.Duration {
+	window := min(interval, maxStartupJitter)
+	if window <= 0 {
+		return 0
+	}
+	// Fibonacci hashing scatters consecutive IDs across the window.
+	h := uint64(id) * 0x9E3779B97F4A7C15
+	return time.Duration(h % uint64(window))
+}
+
 func (s *Scheduler) runPushMonitor(ctx context.Context, mon store.Monitor) {
 	if s.q == nil {
 		log.Printf("scheduler: push watchdog has no database connection (monitor %d)", mon.ID)
@@ -137,10 +173,7 @@ func (s *Scheduler) runPushMonitor(ctx context.Context, mon store.Monitor) {
 		return
 	}
 
-	interval := time.Duration(mon.IntervalSeconds) * time.Second
-	if interval <= 0 {
-		interval = 60 * time.Second
-	}
+	interval := pollInterval(mon)
 
 	for {
 		select {
@@ -273,7 +306,9 @@ const reconcileInterval = 30 * time.Second
 
 // reconcile diffs the active monitors in the DB against the running
 // goroutines: it starts missing monitors, restarts changed ones, and cancels
-// removed or deactivated ones.
+// removed or deactivated ones. The first pass, at startup, spreads first checks
+// with firstCheckDelay. Later passes start a created or edited monitor at once,
+// so admin changes show a result right away.
 func (s *Scheduler) reconcile(ctx context.Context) error {
 	monitors, err := s.q.ListActiveMonitors(ctx)
 	if err != nil {
@@ -283,6 +318,7 @@ func (s *Scheduler) reconcile(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	jitter := !s.started
 	seen := make(map[int64]bool, len(monitors))
 	for _, mon := range monitors {
 		seen[mon.ID] = true
@@ -296,7 +332,7 @@ func (s *Scheduler) reconcile(ctx context.Context) error {
 		}
 		mCtx, cancel := context.WithCancel(ctx)
 		s.running[mon.ID] = runningMonitor{cancel: cancel, fingerprint: fp}
-		go s.RunMonitor(mCtx, mon)
+		go s.runMonitor(mCtx, mon, jitter)
 	}
 
 	for id, cur := range s.running {
@@ -306,6 +342,7 @@ func (s *Scheduler) reconcile(ctx context.Context) error {
 			log.Printf("scheduler: stopped monitor %d (deleted or deactivated)", id)
 		}
 	}
+	s.started = true
 	if s.beat != nil {
 		s.beat()
 	}
