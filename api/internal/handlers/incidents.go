@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,14 +11,36 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/memetics19/pulse/api/internal/generated"
+	"github.com/memetics19/pulse/api/internal/worker/alerter"
 )
 
 type Incidents struct {
-	q *generated.Queries
+	q      *generated.Queries
+	notify Notifier
 }
 
 func NewIncidents(q *generated.Queries) *Incidents {
 	return &Incidents{q: q}
+}
+
+// WithNotifier makes the handler alert the notification channels when an
+// incident is opened or changes status.
+func (h *Incidents) WithNotifier(n Notifier) *Incidents {
+	h.notify = n
+	return h
+}
+
+func (h *Incidents) alert(ctx context.Context, inc generated.Incident, msg string) {
+	if h.notify == nil {
+		return
+	}
+	h.notify.Notify(ctx, alerter.Alert{
+		IncidentID: inc.ID,
+		Title:      inc.Title,
+		Status:     inc.Status,
+		Severity:   inc.Severity,
+		Message:    msg,
+	}, alerter.MonitorIDs(inc.AffectedMonitorIds)...)
 }
 
 // canonicalMonitorIDs normalizes the incoming affected_monitor_ids value into a
@@ -85,6 +109,7 @@ func (h *Incidents) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.alert(r.Context(), incident, "A new incident was opened.")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	encodeJSON(w, incident)
@@ -130,6 +155,11 @@ func (h *Incidents) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	msg := fmt.Sprintf("The status changed to %s.", incident.Status)
+	if input.Status == "resolved" {
+		msg = "Resolved. Root cause: " + input.Rca
+	}
+	h.alert(r.Context(), incident, msg)
 	w.Header().Set("Content-Type", "application/json")
 	encodeJSON(w, incident)
 }
