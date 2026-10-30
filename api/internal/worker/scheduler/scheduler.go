@@ -78,9 +78,10 @@ func fingerprint(m store.Monitor) string {
 	if m.ExpectedStatus != nil {
 		expected = *m.ExpectedStatus
 	}
-	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d",
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d|%d|%d",
 		m.Url, m.Type, m.IntervalSeconds, m.TimeoutSeconds,
-		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs)
+		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs,
+		m.TlsWarnDays, m.TlsCriticalDays)
 }
 
 func New(db *sql.DB, recorder *checkresult.Recorder, allowPrivate bool) *Scheduler {
@@ -277,6 +278,10 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 		}
 		c = checker.NewHTTP(expected, mon.KeywordCheck, s.allowPrivate)
 	}
+	// SSL checks use the monitor's own certificate expiry thresholds.
+	if mon.Type == "ssl" {
+		c = checker.NewSSLThresholds(int(mon.TlsWarnDays), int(mon.TlsCriticalDays), s.allowPrivate)
+	}
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
 
@@ -294,6 +299,10 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 	if result.StatusCode > 0 {
 		code := int64(result.StatusCode)
 		input.StatusCode = &code
+	}
+	if result.CertDaysLeft != nil {
+		days := int64(*result.CertDaysLeft)
+		input.CertDaysLeft = &days
 	}
 	if err := s.recorder.Record(ctx, mon, input); err != nil {
 		log.Printf("scheduler: record check result (monitor %d): %v", mon.ID, err)
