@@ -15,11 +15,27 @@ export interface Monitor {
   recoveries_before_resolve: number
   retries: number
   retry_interval_ms: number
+  /** ssl only: degraded with this many days left or fewer. */
+  tls_warn_days: number
+  /** ssl only: down with this many days left or fewer. */
+  tls_critical_days: number
   is_active: boolean
   group_id: number | null
   source: string
   external_id: string
   created_at: string
+}
+
+export interface CheckResult {
+  id: number
+  monitor_id: number
+  checked_at: string
+  status: 'up' | 'down' | 'degraded'
+  response_time_ms: number | null
+  status_code: number | null
+  error_message: string
+  /** Days left on the certificate, for ssl checks that got one. */
+  cert_days_left: number | null
 }
 
 export interface MonitorGroup {

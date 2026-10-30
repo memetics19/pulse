@@ -11,8 +11,8 @@ import (
 )
 
 const insertCheckResult = `-- name: InsertCheckResult :one
-INSERT INTO check_results (monitor_id, checked_at, status, response_time_ms, status_code, error_message)
-VALUES (?, ?, ?, ?, ?, ?) RETURNING id, monitor_id, checked_at, status, response_time_ms, status_code, error_message
+INSERT INTO check_results (monitor_id, checked_at, status, response_time_ms, status_code, error_message, cert_days_left)
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, monitor_id, checked_at, status, response_time_ms, status_code, error_message, cert_days_left
 `
 
 type InsertCheckResultParams struct {
@@ -22,6 +22,7 @@ type InsertCheckResultParams struct {
 	ResponseTimeMs *int64    `json:"response_time_ms"`
 	StatusCode     *int64    `json:"status_code"`
 	ErrorMessage   string    `json:"error_message"`
+	CertDaysLeft   *int64    `json:"cert_days_left"`
 }
 
 func (q *Queries) InsertCheckResult(ctx context.Context, arg InsertCheckResultParams) (CheckResult, error) {
@@ -32,6 +33,7 @@ func (q *Queries) InsertCheckResult(ctx context.Context, arg InsertCheckResultPa
 		arg.ResponseTimeMs,
 		arg.StatusCode,
 		arg.ErrorMessage,
+		arg.CertDaysLeft,
 	)
 	var i CheckResult
 	err := row.Scan(
@@ -42,12 +44,13 @@ func (q *Queries) InsertCheckResult(ctx context.Context, arg InsertCheckResultPa
 		&i.ResponseTimeMs,
 		&i.StatusCode,
 		&i.ErrorMessage,
+		&i.CertDaysLeft,
 	)
 	return i, err
 }
 
 const latestCheckResult = `-- name: LatestCheckResult :one
-SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message FROM check_results WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1
+SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message, cert_days_left FROM check_results WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1
 `
 
 func (q *Queries) LatestCheckResult(ctx context.Context, monitorID int64) (CheckResult, error) {
@@ -61,6 +64,7 @@ func (q *Queries) LatestCheckResult(ctx context.Context, monitorID int64) (Check
 		&i.ResponseTimeMs,
 		&i.StatusCode,
 		&i.ErrorMessage,
+		&i.CertDaysLeft,
 	)
 	return i, err
 }
@@ -139,7 +143,7 @@ func (q *Queries) LatestStatuses(ctx context.Context) ([]LatestStatusesRow, erro
 }
 
 const latestTwoCheckResults = `-- name: LatestTwoCheckResults :many
-SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message FROM check_results
+SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message, cert_days_left FROM check_results
 WHERE monitor_id = ?
 ORDER BY checked_at DESC, id DESC
 LIMIT 2
@@ -162,6 +166,7 @@ func (q *Queries) LatestTwoCheckResults(ctx context.Context, monitorID int64) ([
 			&i.ResponseTimeMs,
 			&i.StatusCode,
 			&i.ErrorMessage,
+			&i.CertDaysLeft,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +182,7 @@ func (q *Queries) LatestTwoCheckResults(ctx context.Context, monitorID int64) ([
 }
 
 const listCheckResults = `-- name: ListCheckResults :many
-SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message FROM check_results
+SELECT id, monitor_id, checked_at, status, response_time_ms, status_code, error_message, cert_days_left FROM check_results
 WHERE monitor_id = ? AND checked_at >= ?
 ORDER BY checked_at DESC
 LIMIT ?
@@ -206,6 +211,7 @@ func (q *Queries) ListCheckResults(ctx context.Context, arg ListCheckResultsPara
 			&i.ResponseTimeMs,
 			&i.StatusCode,
 			&i.ErrorMessage,
+			&i.CertDaysLeft,
 		); err != nil {
 			return nil, err
 		}

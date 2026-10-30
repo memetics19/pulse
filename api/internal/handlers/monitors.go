@@ -30,9 +30,11 @@ func NewMonitors(q *generated.Queries, db func() *sql.DB, allowPrivate bool) *Mo
 // mirror the schema column defaults, which are otherwise bypassed because the
 // generated params struct always sends an explicit value in the INSERT.
 const (
-	defaultTimeoutSeconds = 30
-	defaultDegradedMs     = 500
-	defaultDownMs         = 2000
+	defaultTimeoutSeconds  = 30
+	defaultDegradedMs      = 500
+	defaultDownMs          = 2000
+	defaultTLSWarnDays     = 14
+	defaultTLSCriticalDays = 7
 
 	defaultFailuresBeforeIncident  = 2
 	defaultRecoveriesBeforeResolve = 2
@@ -63,6 +65,8 @@ type monitorRequest struct {
 	KeywordCheck        string `json:"keyword_check"`
 	DegradedThresholdMs *int64 `json:"degraded_threshold_ms"`
 	DownThresholdMs     *int64 `json:"down_threshold_ms"`
+	TLSWarnDays         *int64 `json:"tls_warn_days"`
+	TLSCriticalDays     *int64 `json:"tls_critical_days"`
 	IsActive            *bool  `json:"is_active"`
 	GroupID             *int64 `json:"group_id"`
 	Source              string `json:"source"`
@@ -75,13 +79,14 @@ type monitorRequest struct {
 }
 
 // resolved holds the request's fields with defaults filled in. It is the single
-// place defaults and cross-field rules (degraded < down) are applied, shared by
-// Create and Update.
+// place defaults and cross-field rules (degraded < down, TLS warn > critical)
+// are applied, shared by Create and Update.
 type resolvedMonitor struct {
 	req                      monitorRequest
 	timeout, degraded, down  int64
 	failures, recoveries     int64
 	retries, retryIntervalMs int64
+	tlsWarn, tlsCritical     int64
 	isActive                 bool
 }
 
@@ -128,6 +133,22 @@ func (m *Monitors) resolve(req monitorRequest) (resolvedMonitor, string) {
 	if r.retryIntervalMs, reason = inRange("retry_interval_ms", req.RetryIntervalMs,
 		defaultRetryIntervalMs, 0, maxRetryIntervalMs); reason != "" {
 		return resolvedMonitor{}, reason
+	}
+	// Unlike the latency thresholds, 0 is a valid TLS critical threshold
+	// (down only on the last day), so only nil takes the default.
+	r.tlsWarn = defaultTLSWarnDays
+	if req.TLSWarnDays != nil {
+		r.tlsWarn = *req.TLSWarnDays
+	}
+	r.tlsCritical = defaultTLSCriticalDays
+	if req.TLSCriticalDays != nil {
+		r.tlsCritical = *req.TLSCriticalDays
+	}
+	if r.tlsCritical < 0 {
+		return resolvedMonitor{}, "tls_critical_days must be 0 or more"
+	}
+	if r.tlsWarn <= r.tlsCritical {
+		return resolvedMonitor{}, "tls_warn_days must be greater than tls_critical_days"
 	}
 	return r, ""
 }
@@ -205,6 +226,8 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		RecoveriesBeforeResolve: res.recoveries,
 		Retries:                 res.retries,
 		RetryIntervalMs:         res.retryIntervalMs,
+		TlsWarnDays:             res.tlsWarn,
+		TlsCriticalDays:         res.tlsCritical,
 	}
 	if params.Type == "push" {
 		m.createPush(w, r, params)
@@ -368,6 +391,8 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		RecoveriesBeforeResolve: res.recoveries,
 		Retries:                 res.retries,
 		RetryIntervalMs:         res.retryIntervalMs,
+		TlsWarnDays:             res.tlsWarn,
+		TlsCriticalDays:         res.tlsCritical,
 		ID:                      id,
 	}
 	monitor, err := m.q.UpdateMonitor(r.Context(), params)

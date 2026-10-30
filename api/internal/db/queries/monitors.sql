@@ -11,8 +11,9 @@ SELECT * FROM monitors WHERE id = ?;
 INSERT INTO monitors (name, url, type, interval_seconds, timeout_seconds,
   expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms,
   is_active, group_id, source, external_id, failures_before_incident,
-  recoveries_before_resolve, retries, retry_interval_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  recoveries_before_resolve, retries, retry_interval_ms, tls_warn_days,
+  tls_critical_days)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateMonitor :one
@@ -21,7 +22,7 @@ UPDATE monitors SET
   expected_status = ?, keyword_check = ?, degraded_threshold_ms = ?,
   down_threshold_ms = ?, is_active = ?, group_id = ?,
   failures_before_incident = ?, recoveries_before_resolve = ?, retries = ?,
-  retry_interval_ms = ?
+  retry_interval_ms = ?, tls_warn_days = ?, tls_critical_days = ?
 WHERE id = ?
 RETURNING *;
 

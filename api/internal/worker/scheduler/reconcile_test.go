@@ -38,6 +38,17 @@ func TestFingerprintTracksSensitivity(t *testing.T) {
 	}
 }
 
+func TestFingerprintTracksTLSThresholds(t *testing.T) {
+	ssl := store.Monitor{ID: 1, Type: "ssl", IntervalSeconds: 3600, TlsWarnDays: 14, TlsCriticalDays: 7}
+	changedWarn := ssl
+	changedWarn.TlsWarnDays = 30
+	changedCritical := ssl
+	changedCritical.TlsCriticalDays = 0
+
+	require.NotEqual(t, fingerprint(ssl), fingerprint(changedWarn))
+	require.NotEqual(t, fingerprint(ssl), fingerprint(changedCritical))
+}
+
 func TestReconcileTracksMonitorLifecycle(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)

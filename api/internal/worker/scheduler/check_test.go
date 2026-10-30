@@ -174,6 +174,60 @@ func TestCheckHTTPTypeBuildsChecker(t *testing.T) {
 	}
 }
 
+func TestCheckStoresCertDaysLeftAndStatusCode(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon := makeMonitor(t, q)
+	s := New(db, checkresult.New(db, nil, nil), true)
+	days := 12
+	s.SetChecker("tcp", &stubChecker{res: checker.Result{
+		Status: "degraded", ResponseTimeMs: 10, StatusCode: days, CertDaysLeft: &days, CheckedAt: time.Now(),
+	}})
+
+	s.check(context.Background(), mon)
+
+	cr, err := q.LatestCheckResult(context.Background(), mon.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cr.CertDaysLeft == nil || *cr.CertDaysLeft != 12 {
+		t.Fatalf("cert_days_left = %v, want 12", cr.CertDaysLeft)
+	}
+	if cr.StatusCode == nil || *cr.StatusCode != 12 {
+		t.Fatalf("status_code = %v, want 12 (kept for one release)", cr.StatusCode)
+	}
+}
+
+func TestCheckSSLTypeBuildsChecker(t *testing.T) {
+	// httptest's certificate is not in the system roots, so the per-monitor
+	// SSL checker that check() builds fails verification and records down.
+	// The registered stub would have recorded up.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	m, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
+		Name: "cert", Url: srv.Listener.Addr().String(), Type: "ssl", IntervalSeconds: 3600, TimeoutSeconds: 5,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true, Source: "internal",
+		TlsWarnDays: 30, TlsCriticalDays: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(db, checkresult.New(db, nil, nil), true)
+	s.SetChecker("ssl", &stubChecker{res: checker.Result{Status: "up", CheckedAt: time.Now()}})
+	s.check(context.Background(), m)
+
+	cr, err := q.LatestCheckResult(context.Background(), m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cr.Status != "down" || cr.CertDaysLeft != nil {
+		t.Fatalf("ssl check = %q with cert_days_left %v, want down with none", cr.Status, cr.CertDaysLeft)
+	}
+}
+
 func TestStartLaunchesAndReconciles(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)

@@ -13,9 +13,10 @@ const createMonitor = `-- name: CreateMonitor :one
 INSERT INTO monitors (name, url, type, interval_seconds, timeout_seconds,
   expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms,
   is_active, group_id, source, external_id, failures_before_incident,
-  recoveries_before_resolve, retries, retry_interval_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms
+  recoveries_before_resolve, retries, retry_interval_ms, tls_warn_days,
+  tls_critical_days)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms
 `
 
 type CreateMonitorParams struct {
@@ -36,6 +37,8 @@ type CreateMonitorParams struct {
 	RecoveriesBeforeResolve int64  `json:"recoveries_before_resolve"`
 	Retries                 int64  `json:"retries"`
 	RetryIntervalMs         int64  `json:"retry_interval_ms"`
+	TlsWarnDays             int64  `json:"tls_warn_days"`
+	TlsCriticalDays         int64  `json:"tls_critical_days"`
 }
 
 func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error) {
@@ -57,6 +60,8 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		arg.RecoveriesBeforeResolve,
 		arg.Retries,
 		arg.RetryIntervalMs,
+		arg.TlsWarnDays,
+		arg.TlsCriticalDays,
 	)
 	var i Monitor
 	err := row.Scan(
@@ -75,6 +80,8 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.TlsWarnDays,
+		&i.TlsCriticalDays,
 		&i.FailuresBeforeIncident,
 		&i.RecoveriesBeforeResolve,
 		&i.Retries,
@@ -93,7 +100,7 @@ func (q *Queries) DeleteMonitor(ctx context.Context, id int64) error {
 }
 
 const getMonitor = `-- name: GetMonitor :one
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE id = ?
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE id = ?
 `
 
 func (q *Queries) GetMonitor(ctx context.Context, id int64) (Monitor, error) {
@@ -115,6 +122,8 @@ func (q *Queries) GetMonitor(ctx context.Context, id int64) (Monitor, error) {
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.TlsWarnDays,
+		&i.TlsCriticalDays,
 		&i.FailuresBeforeIncident,
 		&i.RecoveriesBeforeResolve,
 		&i.Retries,
@@ -124,7 +133,7 @@ func (q *Queries) GetMonitor(ctx context.Context, id int64) (Monitor, error) {
 }
 
 const getMonitorBySourceExternalID = `-- name: GetMonitorBySourceExternalID :one
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE source = ? AND external_id = ?
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE source = ? AND external_id = ?
 `
 
 type GetMonitorBySourceExternalIDParams struct {
@@ -151,6 +160,8 @@ func (q *Queries) GetMonitorBySourceExternalID(ctx context.Context, arg GetMonit
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.TlsWarnDays,
+		&i.TlsCriticalDays,
 		&i.FailuresBeforeIncident,
 		&i.RecoveriesBeforeResolve,
 		&i.Retries,
@@ -160,7 +171,7 @@ func (q *Queries) GetMonitorBySourceExternalID(ctx context.Context, arg GetMonit
 }
 
 const listActiveMonitors = `-- name: ListActiveMonitors :many
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE is_active = 1
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE is_active = 1
 `
 
 func (q *Queries) ListActiveMonitors(ctx context.Context) ([]Monitor, error) {
@@ -188,6 +199,8 @@ func (q *Queries) ListActiveMonitors(ctx context.Context) ([]Monitor, error) {
 			&i.Source,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.TlsWarnDays,
+			&i.TlsCriticalDays,
 			&i.FailuresBeforeIncident,
 			&i.RecoveriesBeforeResolve,
 			&i.Retries,
@@ -267,7 +280,7 @@ func (q *Queries) ListMonitorMetrics(ctx context.Context) ([]ListMonitorMetricsR
 }
 
 const listMonitors = `-- name: ListMonitors :many
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors ORDER BY created_at ASC
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors ORDER BY created_at ASC
 `
 
 func (q *Queries) ListMonitors(ctx context.Context) ([]Monitor, error) {
@@ -295,6 +308,8 @@ func (q *Queries) ListMonitors(ctx context.Context) ([]Monitor, error) {
 			&i.Source,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.TlsWarnDays,
+			&i.TlsCriticalDays,
 			&i.FailuresBeforeIncident,
 			&i.RecoveriesBeforeResolve,
 			&i.Retries,
@@ -314,7 +329,7 @@ func (q *Queries) ListMonitors(ctx context.Context) ([]Monitor, error) {
 }
 
 const listMonitorsByGroup = `-- name: ListMonitorsByGroup :many
-SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE group_id = ? ORDER BY created_at ASC
+SELECT id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms FROM monitors WHERE group_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListMonitorsByGroup(ctx context.Context, groupID *int64) ([]Monitor, error) {
@@ -342,6 +357,8 @@ func (q *Queries) ListMonitorsByGroup(ctx context.Context, groupID *int64) ([]Mo
 			&i.Source,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.TlsWarnDays,
+			&i.TlsCriticalDays,
 			&i.FailuresBeforeIncident,
 			&i.RecoveriesBeforeResolve,
 			&i.Retries,
@@ -366,9 +383,9 @@ UPDATE monitors SET
   expected_status = ?, keyword_check = ?, degraded_threshold_ms = ?,
   down_threshold_ms = ?, is_active = ?, group_id = ?,
   failures_before_incident = ?, recoveries_before_resolve = ?, retries = ?,
-  retry_interval_ms = ?
+  retry_interval_ms = ?, tls_warn_days = ?, tls_critical_days = ?
 WHERE id = ?
-RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms
+RETURNING id, name, url, type, interval_seconds, timeout_seconds, expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms, is_active, group_id, source, external_id, created_at, tls_warn_days, tls_critical_days, failures_before_incident, recoveries_before_resolve, retries, retry_interval_ms
 `
 
 type UpdateMonitorParams struct {
@@ -387,6 +404,8 @@ type UpdateMonitorParams struct {
 	RecoveriesBeforeResolve int64  `json:"recoveries_before_resolve"`
 	Retries                 int64  `json:"retries"`
 	RetryIntervalMs         int64  `json:"retry_interval_ms"`
+	TlsWarnDays             int64  `json:"tls_warn_days"`
+	TlsCriticalDays         int64  `json:"tls_critical_days"`
 	ID                      int64  `json:"id"`
 }
 
@@ -407,6 +426,8 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		arg.RecoveriesBeforeResolve,
 		arg.Retries,
 		arg.RetryIntervalMs,
+		arg.TlsWarnDays,
+		arg.TlsCriticalDays,
 		arg.ID,
 	)
 	var i Monitor
@@ -426,6 +447,8 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.Source,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.TlsWarnDays,
+		&i.TlsCriticalDays,
 		&i.FailuresBeforeIncident,
 		&i.RecoveriesBeforeResolve,
 		&i.Retries,

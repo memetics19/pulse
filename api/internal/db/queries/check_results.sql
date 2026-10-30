@@ -1,6 +1,6 @@
 -- name: InsertCheckResult :one
-INSERT INTO check_results (monitor_id, checked_at, status, response_time_ms, status_code, error_message)
-VALUES (?, ?, ?, ?, ?, ?) RETURNING *;
+INSERT INTO check_results (monitor_id, checked_at, status, response_time_ms, status_code, error_message, cert_days_left)
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: ListCheckResults :many
 SELECT * FROM check_results

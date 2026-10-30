@@ -9,7 +9,8 @@ import (
 type Result struct {
 	Status         string // "up", "down", "degraded"
 	ResponseTimeMs int64  // milliseconds; 0 if not applicable
-	StatusCode     int    // HTTP status code; reused for SSL days-until-expiry
+	StatusCode     int    // HTTP status code; SSL checks repeat CertDaysLeft here for one release
+	CertDaysLeft   *int   // days left on a TLS certificate; nil for other checks
 	ErrorMessage   string // empty on success
 	CheckedAt      time.Time
 }

@@ -16,6 +16,7 @@ type Input struct {
 	Status         string
 	ResponseTimeMs *int64
 	StatusCode     *int64
+	CertDaysLeft   *int64
 	ErrorMessage   string
 	CheckedAt      time.Time
 }
@@ -73,6 +74,7 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		ResponseTimeMs: in.ResponseTimeMs,
 		StatusCode:     in.StatusCode,
 		ErrorMessage:   errMsg,
+		CertDaysLeft:   in.CertDaysLeft,
 	})
 	if err != nil {
 		return fmt.Errorf("insert check result for monitor %d: %w", monitor.ID, err)
