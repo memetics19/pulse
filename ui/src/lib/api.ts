@@ -1,6 +1,6 @@
 // src/lib/api.ts
 import type {
-  StatusResponse, Monitor, MonitorGroup, Incident,
+  StatusResponse, Monitor, MonitorAuthInput, MonitorGroup, Incident,
   IncidentUpdate, ThemeConfig, Notification, InfraAgent
 } from './types'
 
@@ -31,7 +31,11 @@ export async function adminListMonitors(): Promise<Monitor[]> {
   return res.json()
 }
 
-export async function adminCreateMonitor(data: Partial<Monitor>): Promise<Monitor> {
+// MonitorInput is a monitor as the API accepts it: auth takes the write-only
+// secret instead of the secret_set flag.
+export type MonitorInput = Omit<Partial<Monitor>, 'auth'> & { auth?: MonitorAuthInput }
+
+export async function adminCreateMonitor(data: MonitorInput): Promise<Monitor> {
   const res = await fetch(`${BASE}/api/monitors`, {
     method: 'POST', credentials: 'include', headers: ADMIN_HEADERS, body: JSON.stringify(data)
   })
@@ -39,7 +43,7 @@ export async function adminCreateMonitor(data: Partial<Monitor>): Promise<Monito
   return res.json()
 }
 
-export async function adminUpdateMonitor(id: number, data: Partial<Monitor>): Promise<Monitor> {
+export async function adminUpdateMonitor(id: number, data: MonitorInput): Promise<Monitor> {
   const res = await fetch(`${BASE}/api/monitors/${id}`, {
     method: 'PUT', credentials: 'include', headers: ADMIN_HEADERS, body: JSON.stringify(data)
   })
