@@ -11,6 +11,10 @@ export interface Monitor {
   keyword_check: string
   degraded_threshold_ms: number
   down_threshold_ms: number
+  failures_before_incident: number
+  recoveries_before_resolve: number
+  retries: number
+  retry_interval_ms: number
   is_active: boolean
   group_id: number | null
   source: string
