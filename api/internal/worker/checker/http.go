@@ -50,18 +50,27 @@ type httpChecker struct {
 	expectedStatus int
 	keyword        string
 	allowPrivate   bool
+	retry          Retry
 }
 
 // NewHTTP creates a checker that GETs the target URL.
 // expectedStatus 0 means "any 2xx is up". keyword "" means no body check.
 // allowPrivate permits targets on private/internal networks (see netguard).
-func NewHTTP(expectedStatus int, keyword string, allowPrivate bool) Checker {
-	return &httpChecker{expectedStatus: expectedStatus, keyword: keyword, allowPrivate: allowPrivate}
+// It retries with DefaultRetry until WithRetry sets another policy.
+func NewHTTP(expectedStatus int, keyword string, allowPrivate bool) Retrier {
+	return &httpChecker{expectedStatus: expectedStatus, keyword: keyword, allowPrivate: allowPrivate, retry: DefaultRetry}
 }
 
-// Check performs the request, retrying once on a transient failure (network
-// error or 5xx) before concluding the target is down — this avoids flapping a
-// healthy site to "down" on a single blip.
+// WithRetry returns a copy of the checker that uses r.
+func (c *httpChecker) WithRetry(r Retry) Checker {
+	cp := *c
+	cp.retry = r
+	return &cp
+}
+
+// Check performs the request, retrying on a transient failure (network error
+// or 5xx) before concluding the target is down. This avoids flapping a healthy
+// site to "down" on a single blip.
 func (c *httpChecker) Check(ctx context.Context, target string, timeoutSec int64) Result {
 	timeout := time.Duration(timeoutSec) * time.Second
 	if timeout <= 0 {
@@ -72,26 +81,12 @@ func (c *httpChecker) Check(ctx context.Context, target string, timeoutSec int64
 	// context deadline per attempt (client.Timeout can't live on a shared client).
 	client := &http.Client{Transport: sharedTransport(c.allowPrivate)}
 
-	var res Result
-	for attempt := 0; attempt < 2; attempt++ {
-		res = c.attempt(ctx, client, target, timeout)
-		if res.Status == "up" {
-			return res
-		}
+	return c.retry.run(ctx, func() (Result, bool) {
+		res := c.attempt(ctx, client, target, timeout)
 		// Only retry transient failures: network errors (StatusCode 0) or 5xx.
 		// A 4xx or keyword mismatch is a real, stable failure — don't retry.
-		if res.StatusCode != 0 && res.StatusCode < 500 {
-			break
-		}
-		if attempt == 0 {
-			select {
-			case <-ctx.Done():
-				return res
-			case <-time.After(500 * time.Millisecond):
-			}
-		}
-	}
-	return res
+		return res, res.Status != "up" && (res.StatusCode == 0 || res.StatusCode >= 500)
+	})
 }
 
 func (c *httpChecker) attempt(ctx context.Context, client *http.Client, target string, timeout time.Duration) Result {

@@ -21,6 +21,72 @@ type stubChecker struct{ res checker.Result }
 
 func (s *stubChecker) Check(context.Context, string, int64) checker.Result { return s.res }
 
+// retryStub is a Retrier that records the policy the scheduler gives it.
+type retryStub struct {
+	stubChecker
+	got *checker.Retry
+}
+
+func (r *retryStub) WithRetry(p checker.Retry) checker.Checker {
+	*r.got = p
+	return &r.stubChecker
+}
+
+func TestCheckAppliesMonitorRetryPolicy(t *testing.T) {
+	tests := []struct {
+		name             string
+		retries, retryMs int64
+		want             checker.Retry
+	}{
+		{name: "defaults", retries: 1, retryMs: 500, want: checker.Retry{Count: 1, Interval: 500 * time.Millisecond}},
+		{name: "custom", retries: 4, retryMs: 2000, want: checker.Retry{Count: 4, Interval: 2 * time.Second}},
+		{name: "negative reads as zero", retries: -1, retryMs: -5, want: checker.Retry{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got checker.Retry
+			s := New(nil, nil, true)
+			s.SetChecker("tcp", &retryStub{stubChecker: stubChecker{res: checker.Result{Status: "up"}}, got: &got})
+			s.check(context.Background(), store.Monitor{Type: "tcp", Retries: tt.retries, RetryIntervalMs: tt.retryMs})
+			if got != tt.want {
+				t.Fatalf("retry = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckUsesMonitorFailuresAndRecoveries(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	q := store.New(db)
+	mon, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{
+		Name: "m", Url: "x:80", Type: "tcp", IntervalSeconds: 60, TimeoutSeconds: 5,
+		DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true, Source: "internal",
+		FailuresBeforeIncident: 3, RecoveriesBeforeResolve: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(db, checkresult.New(db, incident.NewDetector(q), nil), true)
+	ctx := context.Background()
+
+	s.SetChecker("tcp", &stubChecker{res: checker.Result{Status: "down", CheckedAt: time.Now()}})
+	for i := range 3 {
+		if incs, _ := q.ListActiveIncidents(ctx); len(incs) != 0 {
+			t.Fatalf("incident opened after %d of 3 failures", i)
+		}
+		s.check(ctx, mon)
+	}
+	if incs, _ := q.ListActiveIncidents(ctx); len(incs) != 1 {
+		t.Fatalf("3 failures opened %d incidents, want 1", len(incs))
+	}
+
+	s.SetChecker("tcp", &stubChecker{res: checker.Result{Status: "up", CheckedAt: time.Now()}})
+	s.check(ctx, mon)
+	if incs, _ := q.ListActiveIncidents(ctx); len(incs) != 0 {
+		t.Fatal("one recovery should resolve when recoveries_before_resolve is 1")
+	}
+}
+
 func makeMonitor(t *testing.T, q *store.Queries) store.Monitor {
 	t.Helper()
 	m, err := q.CreateMonitor(context.Background(), store.CreateMonitorParams{

@@ -72,15 +72,18 @@ type runningMonitor struct {
 	fingerprint string
 }
 
-// fingerprint serializes the monitor fields that affect how checks run.
+// fingerprint serializes the monitor fields that affect how checks run. The
+// failure and recovery counts are in it because the running goroutine hands
+// its copy of the monitor to the recorder, which passes them to the detector.
 func fingerprint(m store.Monitor) string {
 	expected := int64(0)
 	if m.ExpectedStatus != nil {
 		expected = *m.ExpectedStatus
 	}
-	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d",
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d|%d|%d|%d|%d",
 		m.Url, m.Type, m.IntervalSeconds, m.TimeoutSeconds,
-		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs)
+		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs,
+		m.FailuresBeforeIncident, m.RecoveriesBeforeResolve, m.Retries, m.RetryIntervalMs)
 }
 
 func New(db *sql.DB, recorder *checkresult.Recorder, allowPrivate bool) *Scheduler {
@@ -277,6 +280,10 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 		}
 		c = checker.NewHTTP(expected, mon.KeywordCheck, s.allowPrivate)
 	}
+	// HTTP, TCP and TLS checks retry a transient failure as the monitor says.
+	if r, ok := c.(checker.Retrier); ok {
+		c = r.WithRetry(retryPolicy(mon))
+	}
 
 	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
 
@@ -297,6 +304,15 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 	}
 	if err := s.recorder.Record(ctx, mon, input); err != nil {
 		log.Printf("scheduler: record check result (monitor %d): %v", mon.ID, err)
+	}
+}
+
+// retryPolicy is the monitor's retries and retry interval, with negative
+// values read as zero.
+func retryPolicy(mon store.Monitor) checker.Retry {
+	return checker.Retry{
+		Count:    int(max(mon.Retries, 0)),
+		Interval: time.Duration(max(mon.RetryIntervalMs, 0)) * time.Millisecond,
 	}
 }
 
