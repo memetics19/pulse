@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Monitor, MonitorGroup } from '@/lib/types'
 import {
   adminListMonitors, adminListGroups, adminCreateMonitor,
-  adminUpdateMonitor, adminDeleteMonitor, adminCreateGroup
+  adminUpdateMonitor, adminDeleteMonitor, adminCreateGroup,
+  adminListCheckResults
 } from '@/lib/api'
 
 const TYPES = ['http', 'tcp', 'ping', 'dns', 'ssl', 'infra']
@@ -11,6 +12,17 @@ const EMPTY: Partial<Monitor> = {
   name: '', url: '', type: 'http', interval_seconds: 60, timeout_seconds: 10,
   degraded_threshold_ms: 500, down_threshold_ms: 2000, is_active: true,
   keyword_check: '', source: 'internal', external_id: '',
+  tls_warn_days: 14, tls_critical_days: 7,
+}
+
+// CertExpiry shows the days left on an ssl monitor's certificate, colored by
+// the monitor's thresholds. 0 means less than a full day is left.
+function CertExpiry({ m, days }: { m: Monitor; days: number | null | undefined }) {
+  if (m.type !== 'ssl' || days == null) return null
+  const text = days === 0 ? 'expires in under a day' : `expires in ${days} ${days === 1 ? 'day' : 'days'}`
+  const color = days <= m.tls_critical_days ? 'var(--down)'
+    : days <= m.tls_warn_days ? 'var(--warn)' : 'var(--text-muted)'
+  return <span style={{ marginLeft: 8, fontSize: 12, color }}>{text}</span>
 }
 
 export default function MonitorsPage() {
@@ -22,9 +34,19 @@ export default function MonitorsPage() {
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
   const [groupModal,    setGroupModal]    = useState(false)
   const [groupName,     setGroupName]     = useState('')
+  // Days left on each ssl monitor's certificate, from its latest check.
+  const [certDays,      setCertDays]      = useState<Record<number, number | null>>({})
 
   const load = useCallback(() => {
-    adminListMonitors().then(setMonitors).catch(() => {})
+    adminListMonitors().then(ms => {
+      setMonitors(ms)
+      // A week of history covers ssl monitors that check once a day.
+      for (const m of ms.filter(x => x.type === 'ssl')) {
+        adminListCheckResults(m.id, 7)
+          .then(rs => setCertDays(p => ({ ...p, [m.id]: rs[0]?.cert_days_left ?? null })))
+          .catch(() => {})
+      }
+    }).catch(() => {})
     adminListGroups().then(setGroups).catch(() => {})
   }, [])
 
@@ -91,7 +113,10 @@ export default function MonitorsPage() {
           {monitors.map(m => (
             <tr key={m.id}>
               <td>{m.name}</td>
-              <td><code>{m.type}</code></td>
+              <td>
+                <code>{m.type}</code>
+                <CertExpiry m={m} days={certDays[m.id]} />
+              </td>
               <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.url}</td>
               <td>{m.interval_seconds}s</td>
               <td>{m.is_active ? '✓' : '—'}</td>
@@ -127,6 +152,12 @@ export default function MonitorsPage() {
             {field('timeout_seconds', 'Timeout (s)', 'number')}
             {field('degraded_threshold_ms', 'Degraded threshold (ms)', 'number')}
             {field('down_threshold_ms', 'Down threshold (ms)', 'number')}
+            {form.type === 'ssl' && (
+              <>
+                {field('tls_warn_days', 'Certificate degraded at (days left)', 'number')}
+                {field('tls_critical_days', 'Certificate down at (days left)', 'number')}
+              </>
+            )}
             {field('keyword_check', 'Keyword check (optional)')}
             <div className="form-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>

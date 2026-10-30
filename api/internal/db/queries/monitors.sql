@@ -10,15 +10,16 @@ SELECT * FROM monitors WHERE id = ?;
 -- name: CreateMonitor :one
 INSERT INTO monitors (name, url, type, interval_seconds, timeout_seconds,
   expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms,
-  is_active, group_id, source, external_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  is_active, group_id, source, external_id, tls_warn_days, tls_critical_days)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateMonitor :one
 UPDATE monitors SET
   name = ?, url = ?, type = ?, interval_seconds = ?, timeout_seconds = ?,
   expected_status = ?, keyword_check = ?, degraded_threshold_ms = ?,
-  down_threshold_ms = ?, is_active = ?, group_id = ?
+  down_threshold_ms = ?, is_active = ?, group_id = ?, tls_warn_days = ?,
+  tls_critical_days = ?
 WHERE id = ?
 RETURNING *;
 

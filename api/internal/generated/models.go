@@ -39,6 +39,7 @@ type CheckResult struct {
 	ResponseTimeMs *int64    `json:"response_time_ms"`
 	StatusCode     *int64    `json:"status_code"`
 	ErrorMessage   string    `json:"error_message"`
+	CertDaysLeft   *int64    `json:"cert_days_left"`
 }
 
 type ImportRun struct {
@@ -140,6 +141,8 @@ type Monitor struct {
 	Source              string    `json:"source"`
 	ExternalID          string    `json:"external_id"`
 	CreatedAt           time.Time `json:"created_at"`
+	TlsWarnDays         int64     `json:"tls_warn_days"`
+	TlsCriticalDays     int64     `json:"tls_critical_days"`
 }
 
 type MonitorGroup struct {
