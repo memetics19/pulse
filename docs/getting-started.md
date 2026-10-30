@@ -178,6 +178,21 @@ pulse-cli import uptime-kuma \
 
 The command reads the backup file and creates the monitors in Pulse under a single "Imported" group, through the REST API. `--server` is your Pulse base URL and `--token` is an API key with the `monitors:write` scope (create one under Admin → API keys). Historical check data is not imported, because Uptime Kuma backups do not include it.
 
+For HTTP and keyword monitors, the import also carries over the [HTTP options](monitors.md#http-options) Pulse supports:
+
+| Uptime Kuma | Pulse |
+| --- | --- |
+| `method` | `method`, when it is `GET`, `HEAD` or `POST` |
+| `body` | `body`, for `POST` only |
+| `headers` | `headers`. An `Authorization: Bearer` header becomes bearer `auth`. |
+| `basic_auth_user`, `basic_auth_pass` | basic `auth` |
+| `ignoreTls` | `tls_verify` set to `false` |
+| `maxredirects` of `0` | `follow_redirects` set to `false` |
+| `accepted_statuscodes` | `accepted_statuses` |
+| `invertKeyword` | `keyword_mode` set to `not_contains` |
+
+A monitor that needs something Pulse does not have is skipped and listed at the end. That covers other HTTP methods, NTLM, mTLS or OAuth auth, and an `Authorization` header that is not a bearer token.
+
 ## Next steps
 
 - Add [monitors](monitors.md) for the services you want to track.

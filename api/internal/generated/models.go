@@ -143,6 +143,17 @@ type Monitor struct {
 	CreatedAt           time.Time `json:"created_at"`
 	TlsWarnDays         int64     `json:"tls_warn_days"`
 	TlsCriticalDays     int64     `json:"tls_critical_days"`
+	Method              string    `json:"method"`
+	Headers             string    `json:"-"`
+	Body                string    `json:"body"`
+	AuthType            string    `json:"-"`
+	AuthUsername        string    `json:"-"`
+	AuthSecret          string    `json:"-"`
+	TlsVerify           *bool     `json:"tls_verify"`
+	CaPem               string    `json:"ca_pem"`
+	FollowRedirects     *bool     `json:"follow_redirects"`
+	AcceptedStatuses    string    `json:"-"`
+	KeywordMode         string    `json:"keyword_mode"`
 }
 
 type MonitorGroup struct {

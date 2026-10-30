@@ -1,0 +1,11 @@
+ALTER TABLE monitors DROP COLUMN keyword_mode;
+ALTER TABLE monitors DROP COLUMN accepted_statuses;
+ALTER TABLE monitors DROP COLUMN follow_redirects;
+ALTER TABLE monitors DROP COLUMN ca_pem;
+ALTER TABLE monitors DROP COLUMN tls_verify;
+ALTER TABLE monitors DROP COLUMN auth_secret;
+ALTER TABLE monitors DROP COLUMN auth_username;
+ALTER TABLE monitors DROP COLUMN auth_type;
+ALTER TABLE monitors DROP COLUMN body;
+ALTER TABLE monitors DROP COLUMN headers;
+ALTER TABLE monitors DROP COLUMN method;

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import type { Monitor, MonitorGroup } from '@/lib/types'
+import type { Monitor, MonitorAuthInput, MonitorGroup } from '@/lib/types'
 import {
   adminListMonitors, adminListGroups, adminCreateMonitor,
   adminUpdateMonitor, adminDeleteMonitor, adminCreateGroup,
@@ -12,6 +12,8 @@ const EMPTY: Partial<Monitor> = {
   name: '', url: '', type: 'http', interval_seconds: 60, timeout_seconds: 10,
   degraded_threshold_ms: 500, down_threshold_ms: 2000, is_active: true,
   keyword_check: '', source: 'internal', external_id: '',
+  method: 'GET', headers: {}, body: '', auth: null, tls_verify: true, ca_pem: '',
+  follow_redirects: true, accepted_statuses: [], keyword_mode: 'contains',
   tls_warn_days: 14, tls_critical_days: 7,
 }
 
@@ -24,6 +26,26 @@ function CertExpiry({ m, days }: { m: Monitor; days: number | null | undefined }
     : days <= m.tls_warn_days ? 'var(--warn)' : 'var(--text-muted)'
   return <span style={{ marginLeft: 8, fontSize: 12, color }}>{text}</span>
 }
+const METHODS: Monitor['method'][] = ['GET', 'HEAD', 'POST']
+
+// Headers are edited as one "Name: value" pair per line.
+function headersToText(headers?: Record<string, string>): string {
+  return Object.entries(headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n')
+}
+
+function parseHeaders(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    const i = line.indexOf(':')
+    if (i <= 0) throw new Error(`Header line "${line}" must look like Name: value`)
+    out[line.slice(0, i).trim()] = line.slice(i + 1).trim()
+  }
+  return out
+}
+
+type AuthType = MonitorAuthInput['type']
 
 export default function MonitorsPage() {
   const [monitors,      setMonitors]      = useState<Monitor[]>([])
@@ -36,6 +58,31 @@ export default function MonitorsPage() {
   const [groupName,     setGroupName]     = useState('')
   // Days left on each ssl monitor's certificate, from its latest check.
   const [certDays,      setCertDays]      = useState<Record<number, number | null>>({})
+
+  // HTTP option inputs that are not plain monitor fields.
+  const [headersText,   setHeadersText]   = useState('')
+  const [statusesText,  setStatusesText]  = useState('')
+  const [authType,      setAuthType]      = useState<AuthType>('none')
+  const [authUser,      setAuthUser]      = useState('')
+  const [authSecret,    setAuthSecret]    = useState('')
+
+  function openForm(m: Partial<Monitor>, mode: 'create' | 'edit') {
+    setForm(m)
+    setHeadersText(headersToText(m.headers))
+    setStatusesText((m.accepted_statuses ?? []).join(', '))
+    setAuthType(m.auth?.type ?? 'none')
+    setAuthUser(m.auth?.username ?? '')
+    setAuthSecret('')
+    setError('')
+    setModal(mode)
+  }
+
+  // The secret is write-only. An empty secret keeps the stored one.
+  function authInput(): MonitorAuthInput {
+    if (authType === 'none') return { type: 'none' }
+    if (authType === 'bearer') return { type: 'bearer', ...(authSecret ? { token: authSecret } : {}) }
+    return { type: 'basic', username: authUser, ...(authSecret ? { password: authSecret } : {}) }
+  }
 
   const load = useCallback(() => {
     adminListMonitors().then(ms => {
@@ -55,11 +102,17 @@ export default function MonitorsPage() {
   async function save() {
     setError('')
     try {
+      const payload = {
+        ...form,
+        headers: parseHeaders(headersText),
+        accepted_statuses: statusesText.split(',').map(s => s.trim()).filter(Boolean),
+        auth: authInput(),
+      }
       if (modal === 'create') {
-        const m = await adminCreateMonitor(form)
+        const m = await adminCreateMonitor(payload)
         setMonitors(p => [...p, m])
       } else if (modal === 'edit' && form.id) {
-        const m = await adminUpdateMonitor(form.id, form)
+        const m = await adminUpdateMonitor(form.id, payload)
         setMonitors(p => p.map(x => x.id === m.id ? m : x))
       }
       setModal(null); setForm(EMPTY)
@@ -102,7 +155,7 @@ export default function MonitorsPage() {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h1 className="admin-title" style={{ marginBottom: 0 }}>Monitors</h1>
-        <button className="btn primary" onClick={() => { setForm(EMPTY); setModal('create') }}>+ Add Monitor</button>
+        <button className="btn primary" onClick={() => openForm(EMPTY, 'create')}>+ Add Monitor</button>
       </div>
 
       <table className="admin-table">
@@ -121,7 +174,7 @@ export default function MonitorsPage() {
               <td>{m.interval_seconds}s</td>
               <td>{m.is_active ? '✓' : '—'}</td>
               <td style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn" onClick={() => { setForm(m); setModal('edit') }}>Edit</button>
+                <button className="btn" onClick={() => openForm(m, 'edit')}>Edit</button>
                 {pendingDelete === m.id ? (
                   <>
                     <button className="btn danger" onClick={() => del(m.id)}>Yes, delete</button>
@@ -138,7 +191,7 @@ export default function MonitorsPage() {
 
       {modal && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setModal(null) }}>
-          <div className="modal">
+          <div className="modal" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 className="modal-title">{modal === 'create' ? 'Add Monitor' : 'Edit Monitor'}</h2>
             {field('name', 'Name')}
             <div className="form-group">
@@ -159,6 +212,83 @@ export default function MonitorsPage() {
               </>
             )}
             {field('keyword_check', 'Keyword check (optional)')}
+            {form.type === 'http' && (
+              <details className="form-group">
+                <summary className="form-label" style={{ cursor: 'pointer' }}>HTTP options</summary>
+                <div className="form-group">
+                  <label className="form-label">Method</label>
+                  <select className="form-select" value={form.method ?? 'GET'} onChange={e => setForm(p => ({ ...p, method: e.target.value as Monitor['method'] }))}>
+                    {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                {form.method === 'POST' && (
+                  <div className="form-group">
+                    <label className="form-label">Request body</label>
+                    <textarea className="form-textarea" value={form.body ?? ''} onChange={e => setForm(p => ({ ...p, body: e.target.value }))} />
+                  </div>
+                )}
+                <div className="form-group">
+                  <label className="form-label">Headers (one Name: value per line)</label>
+                  <textarea className="form-textarea" value={headersText} onChange={e => setHeadersText(e.target.value)} placeholder="X-Api-Key: ..." />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Auth</label>
+                  <select className="form-select" value={authType} onChange={e => { setAuthType(e.target.value as AuthType); setAuthSecret('') }}>
+                    <option value="none">None</option>
+                    <option value="basic">Basic</option>
+                    <option value="bearer">Bearer token</option>
+                  </select>
+                </div>
+                {authType === 'basic' && (
+                  <div className="form-group">
+                    <label className="form-label">Username</label>
+                    <input className="form-input" value={authUser} onChange={e => setAuthUser(e.target.value)} />
+                  </div>
+                )}
+                {authType !== 'none' && (
+                  <div className="form-group">
+                    <label className="form-label">{authType === 'basic' ? 'Password' : 'Token'}</label>
+                    <input
+                      className="form-input"
+                      type="password"
+                      autoComplete="new-password"
+                      value={authSecret}
+                      onChange={e => setAuthSecret(e.target.value)}
+                      placeholder={form.auth?.secret_set && form.auth.type === authType ? 'Saved. Leave empty to keep it.' : ''}
+                    />
+                  </div>
+                )}
+                <div className="form-group">
+                  <label className="form-label">Accepted statuses (optional, e.g. 200-299, 301)</label>
+                  <input className="form-input" value={statusesText} onChange={e => setStatusesText(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Keyword mode</label>
+                  <select className="form-select" value={form.keyword_mode ?? 'contains'} onChange={e => setForm(p => ({ ...p, keyword_mode: e.target.value as Monitor['keyword_mode'] }))}>
+                    <option value="contains">Body must contain the keyword</option>
+                    <option value="not_contains">Body must not contain the keyword</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={form.follow_redirects ?? true} onChange={e => setForm(p => ({ ...p, follow_redirects: e.target.checked }))} />
+                    <span>Follow redirects</span>
+                  </label>
+                </div>
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={form.tls_verify ?? true} onChange={e => setForm(p => ({ ...p, tls_verify: e.target.checked }))} />
+                    <span>Verify TLS certificate</span>
+                  </label>
+                </div>
+                {(form.tls_verify ?? true) && (
+                  <div className="form-group">
+                    <label className="form-label">Private CA certificate (PEM, optional)</label>
+                    <textarea className="form-textarea" value={form.ca_pem ?? ''} onChange={e => setForm(p => ({ ...p, ca_pem: e.target.value }))} placeholder="-----BEGIN CERTIFICATE-----" />
+                  </div>
+                )}
+              </details>
+            )}
             <div className="form-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                 <label className="form-label" style={{ marginBottom: 0 }}>Group</label>

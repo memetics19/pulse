@@ -3,12 +3,15 @@ package scheduler
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/memetics19/pulse/api/internal/monitorvalidation"
 	"github.com/memetics19/pulse/api/internal/worker/checker"
 	"github.com/memetics19/pulse/api/internal/worker/checkresult"
 	"github.com/memetics19/pulse/api/store"
@@ -78,10 +81,51 @@ func fingerprint(m store.Monitor) string {
 	if m.ExpectedStatus != nil {
 		expected = *m.ExpectedStatus
 	}
-	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d|%d|%d",
+	// The HTTP options are free text, so they are quoted to keep one field
+	// from running into the next.
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%d|%d|%d|%q|%q|%q|%q|%q|%q|%t|%q|%t|%q|%q",
 		m.Url, m.Type, m.IntervalSeconds, m.TimeoutSeconds,
 		expected, m.KeywordCheck, m.DegradedThresholdMs, m.DownThresholdMs,
-		m.TlsWarnDays, m.TlsCriticalDays)
+		m.TlsWarnDays, m.TlsCriticalDays,
+		m.Method, m.Headers, m.Body, m.AuthType, m.AuthUsername, m.AuthSecret,
+		boolOrTrue(m.TlsVerify), m.CaPem, boolOrTrue(m.FollowRedirects),
+		m.AcceptedStatuses, m.KeywordMode)
+}
+
+// boolOrTrue reads a nullable flag whose NULL means true.
+func boolOrTrue(b *bool) bool { return b == nil || *b }
+
+// httpOptions turns a monitor row into checker options. It fails only when a
+// stored header map or status list does not parse, which the API prevents.
+func httpOptions(m store.Monitor) (checker.HTTPOptions, error) {
+	opts := checker.HTTPOptions{
+		Keyword:           m.KeywordCheck,
+		KeywordAbsent:     m.KeywordMode == monitorvalidation.KeywordNotContains,
+		Method:            m.Method,
+		Body:              m.Body,
+		AuthType:          m.AuthType,
+		AuthUsername:      m.AuthUsername,
+		AuthSecret:        m.AuthSecret,
+		SkipTLSVerify:     !boolOrTrue(m.TlsVerify),
+		CAPEM:             m.CaPem,
+		NoFollowRedirects: !boolOrTrue(m.FollowRedirects),
+	}
+	if m.ExpectedStatus != nil {
+		opts.ExpectedStatus = int(*m.ExpectedStatus)
+	}
+	if m.Headers != "" {
+		if err := json.Unmarshal([]byte(m.Headers), &opts.Headers); err != nil {
+			return checker.HTTPOptions{}, fmt.Errorf("stored headers: %w", err)
+		}
+	}
+	if m.AcceptedStatuses != "" {
+		ranges, err := monitorvalidation.ParseStatusRanges(strings.Split(m.AcceptedStatuses, ","))
+		if err != nil {
+			return checker.HTTPOptions{}, err
+		}
+		opts.AcceptedStatuses = ranges
+	}
+	return opts, nil
 }
 
 func New(db *sql.DB, recorder *checkresult.Recorder, allowPrivate bool) *Scheduler {
@@ -269,21 +313,25 @@ func (s *Scheduler) check(ctx context.Context, mon store.Monitor) {
 		return
 	}
 
-	// HTTP(S) checks honour the monitor's expected status and keyword, so build
-	// a per-monitor checker instead of using the shared default one.
+	// HTTP(S) checks honour the monitor's own options (status rules, keyword,
+	// method, headers, auth, TLS, redirects), so build a per-monitor checker
+	// instead of using the shared default one.
+	var result checker.Result
 	if mon.Type == "http" || mon.Type == "https" {
-		expected := 0
-		if mon.ExpectedStatus != nil {
-			expected = int(*mon.ExpectedStatus)
+		opts, err := httpOptions(mon)
+		if err != nil {
+			result = checker.Result{Status: "down", ErrorMessage: err.Error(), CheckedAt: time.Now()}
+		} else {
+			c = checker.NewHTTPWithOptions(opts, s.allowPrivate)
 		}
-		c = checker.NewHTTP(expected, mon.KeywordCheck, s.allowPrivate)
 	}
 	// SSL checks use the monitor's own certificate expiry thresholds.
 	if mon.Type == "ssl" {
 		c = checker.NewSSLThresholds(int(mon.TlsWarnDays), int(mon.TlsCriticalDays), s.allowPrivate)
 	}
-
-	result := c.Check(ctx, mon.Url, mon.TimeoutSeconds)
+	if result.Status == "" {
+		result = c.Check(ctx, mon.Url, mon.TimeoutSeconds)
+	}
 
 	if s.recorder == nil {
 		return

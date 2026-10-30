@@ -64,6 +64,11 @@ func TestCreateMonitor_Success(t *testing.T) {
 		assert.Equal(t, float64(60), body["interval_seconds"])
 		assert.Equal(t, float64(42), body["group_id"])
 		assert.Equal(t, "uptime-kuma", body["source"])
+		assert.Equal(t, "POST", body["method"])
+		assert.Equal(t, map[string]interface{}{"type": "bearer", "token": "tok"}, body["auth"])
+		assert.Equal(t, false, body["tls_verify"])
+		assert.Equal(t, []interface{}{"200-299"}, body["accepted_statuses"])
+		assert.NotContains(t, body, "follow_redirects", "unset options are left out")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -72,12 +77,17 @@ func TestCreateMonitor_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := pulseclient.New(srv.URL, "test-token")
+	off := false
 	m := uptimekuma.PulseMonitor{
-		Name:            "My API",
-		URL:             "https://api.example.com",
-		Type:            "http",
-		IntervalSeconds: 60,
-		KeywordCheck:    "ok",
+		Name:             "My API",
+		URL:              "https://api.example.com",
+		Type:             "http",
+		IntervalSeconds:  60,
+		KeywordCheck:     "ok",
+		Method:           "POST",
+		Auth:             &uptimekuma.PulseAuth{Type: "bearer", Token: "tok"},
+		TLSVerify:        &off,
+		AcceptedStatuses: []string{"200-299"},
 	}
 	err := c.CreateMonitor(m, 42)
 	assert.NoError(t, err)

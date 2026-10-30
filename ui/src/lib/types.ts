@@ -20,6 +20,33 @@ export interface Monitor {
   source: string
   external_id: string
   created_at: string
+  // HTTP options. They apply to http monitors only.
+  method: 'GET' | 'HEAD' | 'POST'
+  headers: Record<string, string>
+  body: string
+  auth: MonitorAuth | null
+  tls_verify: boolean
+  ca_pem: string
+  follow_redirects: boolean
+  accepted_statuses: string[]
+  keyword_mode: 'contains' | 'not_contains'
+}
+
+// MonitorAuth is the auth as the API returns it. The secret is write-only, so
+// only secret_set says whether one is stored.
+export interface MonitorAuth {
+  type: 'basic' | 'bearer'
+  username?: string
+  secret_set: boolean
+}
+
+// MonitorAuthInput is the auth as the API accepts it. Leave password or token
+// out to keep the stored secret. Type 'none' removes auth.
+export interface MonitorAuthInput {
+  type: 'basic' | 'bearer' | 'none'
+  username?: string
+  password?: string
+  token?: string
 }
 
 export interface CheckResult {
