@@ -46,6 +46,24 @@ curl https://status.shreeda.xyz/api/monitors \
   -H "Authorization: Bearer pulse_live_..."
 ```
 
+Create an SSL monitor that is degraded at 29 days left and down at 14. This requires the `monitors:write` scope.
+
+```bash
+curl -X POST https://status.shreeda.xyz/api/monitors \
+  -H "Authorization: Bearer pulse_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Website certificate",
+    "type": "ssl",
+    "url": "example.com:443",
+    "interval_seconds": 3600,
+    "tls_warn_days": 29,
+    "tls_critical_days": 14
+  }'
+```
+
+`tls_warn_days` defaults to 14 and `tls_critical_days` defaults to 7. `tls_warn_days` must be greater than `tls_critical_days`, and `tls_critical_days` must be 0 or more. Other values get 400. `PUT /api/monitors/{id}` takes the same fields. An omitted field gets its default again. Both fields are stored for every monitor type but only SSL checks use them. See [How an SSL check decides up, degraded, or down](monitors.md#how-an-ssl-check-decides-up-degraded-or-down).
+
 Create an incident. This requires the `incidents:write` scope.
 
 ```bash
@@ -65,6 +83,23 @@ Read the recent check results of a monitor. This requires the `monitors:read` sc
 curl "https://status.shreeda.xyz/api/monitors/12/checks?days=7" \
   -H "Authorization: Bearer pulse_live_..."
 ```
+
+Each result has `status`, `response_time_ms`, `status_code`, `error_message` and `cert_days_left`. `cert_days_left` is the days left on the certificate for an SSL monitor. It is `null` for other monitor types and for SSL checks that got no certificate.
+
+```json
+{
+  "id": 4031,
+  "monitor_id": 12,
+  "checked_at": "2026-10-30T04:30:00Z",
+  "status": "degraded",
+  "response_time_ms": 41,
+  "status_code": 12,
+  "error_message": "",
+  "cert_days_left": 12
+}
+```
+
+SSL results also carry the days left in `status_code` for one release, for older clients. This copy is deprecated and a later release removes it. Read `cert_days_left`.
 
 The same scope covers `/api/monitors/{id}/checks/uptime`, which returns the uptime percentage over `days` (default 90, capped at 90). Read the updates of an incident with `/api/incidents/{id}/updates` and the `incidents:read` scope. A request without a session or key gets 401. A key without the matching scope gets 403.
 
