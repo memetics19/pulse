@@ -26,11 +26,11 @@ Each incident has a timeline of updates. Updates support Markdown. There are two
 
 ## Auto-detection
 
-The monitoring worker auto-creates an incident after two consecutive down checks for a monitor. The incident is named after the monitor. While a [maintenance window](maintenance.md) is active for a monitor, auto-incidents are suppressed for it.
+The monitoring worker auto-creates an incident after a run of down checks for a monitor. The run is two checks by default. Each monitor sets its own count with failures before incident. See [Sensitivity](monitors.md#sensitivity). The incident is named after the monitor. While a [maintenance window](maintenance.md) is active for a monitor, auto-incidents are suppressed for it.
 
 ## Auto-resolve
 
-Pulse also closes its own incidents. When the two latest checks for a monitor are up or degraded, the worker resolves the open auto-incident for that monitor. It sets an RCA that says when the monitor recovered and how long it was down. It also adds a `resolved` update, "Recovered by itself.", to the timeline. You can edit the RCA later if you find the cause. This also happens during a maintenance window.
+Pulse also closes its own incidents. When the latest checks for a monitor are all up or degraded, the worker resolves the open auto-incident for that monitor. It looks at two checks by default. Each monitor sets its own count with recoveries before resolve. It sets an RCA that says when the monitor recovered and how long it was down. It also adds a `resolved` update, "Recovered by itself.", to the timeline. You can edit the RCA later if you find the cause. This also happens during a maintenance window.
 
 Pulse only resolves an incident that no person has touched. It leaves the incident open if any of these are true:
 

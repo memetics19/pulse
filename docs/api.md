@@ -46,6 +46,35 @@ curl https://status.shreeda.xyz/api/monitors \
   -H "Authorization: Bearer pulse_live_..."
 ```
 
+Create a monitor. This requires the `monitors:write` scope. `PUT /api/monitors/{id}` takes the same body and replaces the monitor.
+
+```bash
+curl -X POST https://status.shreeda.xyz/api/monitors \
+  -H "Authorization: Bearer pulse_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "API",
+    "type": "http",
+    "url": "https://api.example.com/health",
+    "interval_seconds": 30,
+    "failures_before_incident": 3,
+    "recoveries_before_resolve": 2,
+    "retries": 2,
+    "retry_interval_ms": 1000
+  }'
+```
+
+These fields set how sensitive the monitor is. See [Sensitivity](monitors.md#sensitivity) for what they do.
+
+| Field | Default | Range |
+| --- | --- | --- |
+| `failures_before_incident` | 2 | 1 to 10 |
+| `recoveries_before_resolve` | 2 | 1 to 10 |
+| `retries` | 1 | 0 to 5 |
+| `retry_interval_ms` | 500 | 0 to 60000 |
+
+A field you leave out gets its default, on create and on update. A value out of range returns 400 with a message that names the field. `0` retries turns retries off. The monitor JSON that the API returns carries all four fields.
+
 Create an incident. This requires the `incidents:write` scope.
 
 ```bash
