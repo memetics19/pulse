@@ -132,8 +132,9 @@ func TestHandlerExposesMonitorStateWithoutTargets(t *testing.T) {
 	assert.NotContains(t, body, "pulse_worker_last_beat_timestamp_seconds 0\n")
 	assert.Contains(t, body, "pulse_worker_last_beat_timestamp_seconds ")
 
-	// Targets never reach the output.
-	for _, leak := range []string{"secret", "hunter2", "10.9.8.7", "5432", "https://"} {
+	// Targets never reach the output. The port is matched with its colon: a
+	// bare "5432" also turns up inside runtime numbers such as 1.9335432e+07.
+	for _, leak := range []string{"secret", "hunter2", "10.9.8.7", ":5432", "https://"} {
 		assert.NotContains(t, body, leak)
 	}
 }
