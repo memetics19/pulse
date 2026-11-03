@@ -537,7 +537,7 @@ function MonitorDrawer({ mode, initial, groups, onGroupCreated, onClose, onSaved
               <button type="button" className="btn ghost" onClick={() => setNewGroup(null)}>Cancel</button>
             </div>
           )}
-          <div className="form-hint">Groups are the sections of the status page.</div>
+          <div className="form-hint">Groups are the sections of the status page. A monitor with no group is checked and alerts as usual, but it is not shown there.</div>
         </div>
       </section>
 
