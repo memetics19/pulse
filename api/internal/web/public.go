@@ -95,6 +95,7 @@ func barStatusText(class string) string {
 type monitorVM struct {
 	Name        string
 	StatusClass string
+	StatusText  string
 	UptimePct   string
 	AvgMs       string
 	Bars        []barVM
@@ -103,6 +104,9 @@ type monitorVM struct {
 type groupVM struct {
 	Name     string
 	Monitors []monitorVM
+	// Summary is the group's state in words, such as "1 down". SummaryClass
+	// is the worst state of its monitors.
+	Summary, SummaryClass string
 }
 
 type incUpdateVM struct {
@@ -111,8 +115,14 @@ type incUpdateVM struct {
 }
 
 type incidentVM struct {
-	Title, Status, Severity string
-	Updates                 []incUpdateVM
+	Title, Status, Severity  string
+	StatusText, SeverityText string
+	// StartISO and EndISO are RFC3339 and rendered via .localtime. EndISO is
+	// empty while the incident is open.
+	StartISO, EndISO string
+	Duration         string
+	Affected         []string
+	Updates          []incUpdateVM
 }
 
 type maintVM struct {
@@ -144,6 +154,8 @@ type statusVM struct {
 	CustomCSS                      template.CSS
 	OverallText, OverallClass      string
 	Ranges                         []rangeOpt
+	RangeStartText                 string // the left edge of the bars, such as "90 days ago"
+	UpdatedISO                     string
 	Groups                         []groupVM
 	ActiveIncidents, PastIncidents []incidentVM
 	InProgressMaint, UpcomingMaint []maintVM
@@ -262,6 +274,11 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 	for _, o := range rangeOrder {
 		vm.Ranges = append(vm.Ranges, rangeOpt{Key: o.Key, Label: o.Label, Active: o.Key == rng})
 	}
+	vm.RangeStartText = fmt.Sprintf("%d days ago", spec.days)
+	if spec.days == 1 {
+		vm.RangeStartText = "24 hours ago"
+	}
+	vm.UpdatedISO = now.UTC().Format(time.RFC3339)
 
 	const (
 		statusUp       = "up"
@@ -313,7 +330,7 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 		case statusDegraded:
 			anyDegraded = true
 		}
-		mvm := monitorVM{Name: m.Name, StatusClass: st}
+		mvm := monitorVM{Name: m.Name, StatusClass: st, StatusText: barStatusText(st)}
 		mvm.Bars, mvm.UptimePct, mvm.AvgMs = p.monitorSeries(ctx, m.ID, since, now, spec.buckets)
 		byGroup[*m.GroupID] = append(byGroup[*m.GroupID], mvm)
 	}
@@ -322,7 +339,9 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 		if !allowGroup(g.ID) {
 			continue
 		}
-		vm.Groups = append(vm.Groups, groupVM{Name: g.Name, Monitors: byGroup[g.ID]})
+		gvm := groupVM{Name: g.Name, Monitors: byGroup[g.ID]}
+		gvm.Summary, gvm.SummaryClass = groupSummary(gvm.Monitors)
+		vm.Groups = append(vm.Groups, gvm)
 	}
 
 	switch {
@@ -334,11 +353,38 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 		vm.OverallText, vm.OverallClass = "All systems operational", ""
 	}
 
+	monitorName := map[int64]string{}
+	for _, m := range snap.Monitors {
+		monitorName[m.ID] = m.Name
+	}
+	affectedNames := func(affectedJSON string) []string {
+		var ids []int64
+		if affectedJSON != "" {
+			_ = json.Unmarshal([]byte(affectedJSON), &ids)
+		}
+		var names []string
+		for _, id := range ids {
+			if n, ok := monitorName[id]; ok {
+				names = append(names, n)
+			}
+		}
+		return names
+	}
+
 	for _, inc := range snap.Incidents {
 		if !affectsPage(inc.AffectedMonitorIds, pageMonitors, allGroups) {
 			continue
 		}
-		ivm := incidentVM{Title: inc.Title, Status: inc.Status, Severity: inc.Severity}
+		ivm := incidentVM{
+			Title: inc.Title, Status: inc.Status, Severity: inc.Severity,
+			StatusText: capitalize(inc.Status), SeverityText: capitalize(inc.Severity),
+			StartISO: inc.StartedAt.UTC().Format(time.RFC3339),
+			Affected: affectedNames(inc.AffectedMonitorIds),
+		}
+		if inc.ResolvedAt != nil {
+			ivm.EndISO = inc.ResolvedAt.UTC().Format(time.RFC3339)
+			ivm.Duration = humanDuration(inc.ResolvedAt.Sub(inc.StartedAt))
+		}
 		if ups, err := p.q.ListIncidentUpdates(ctx, inc.ID); err == nil {
 			for _, u := range ups {
 				ivm.Updates = append(ivm.Updates, incUpdateVM{
@@ -355,10 +401,6 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 		}
 	}
 
-	monitorName := map[int64]string{}
-	for _, m := range snap.Monitors {
-		monitorName[m.ID] = m.Name
-	}
 	if windows, err := p.q.ListMaintenance(ctx); err == nil {
 		for _, win := range windows {
 			if win.Status != "in_progress" && win.Status != "scheduled" {
@@ -367,16 +409,7 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 			if !affectsPage(win.AffectedMonitorIds, pageMonitors, allGroups) {
 				continue
 			}
-			var ids []int64
-			if win.AffectedMonitorIds != "" {
-				_ = json.Unmarshal([]byte(win.AffectedMonitorIds), &ids)
-			}
-			var names []string
-			for _, id := range ids {
-				if n, ok := monitorName[id]; ok {
-					names = append(names, n)
-				}
-			}
+			names := affectedNames(win.AffectedMonitorIds)
 			mv := maintVM{
 				Title:       win.Title,
 				Description: renderMarkdown(win.Description),
@@ -393,6 +426,59 @@ func (p *Public) buildVM(ctx context.Context, rng string, rp ResolvedPage) (stat
 	}
 
 	return vm, nil
+}
+
+// groupSummary describes a group by its worst monitors, such as "1 down" or
+// "All operational", and returns that worst state as a CSS class.
+func groupSummary(ms []monitorVM) (string, string) {
+	counts := map[string]int{}
+	for _, m := range ms {
+		counts[m.StatusClass]++
+	}
+	switch {
+	case len(ms) == 0:
+		return "", ""
+	case counts["down"] > 0:
+		return fmt.Sprintf("%d down", counts["down"]), "down"
+	case counts["degraded"] > 0:
+		return fmt.Sprintf("%d degraded", counts["degraded"]), "degraded"
+	case counts["up"] == 0:
+		return "No data yet", "nodata"
+	default:
+		return "All operational", "up"
+	}
+}
+
+// capitalize upper-cases the first letter of a status or severity word.
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// humanDuration writes how long an incident lasted, such as "35 min" or
+// "2 h 5 min".
+func humanDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "under a minute"
+	}
+	m := int(d.Round(time.Minute) / time.Minute)
+	switch {
+	case m < 60:
+		return fmt.Sprintf("%d min", m)
+	case m < 24*60:
+		if m%60 == 0 {
+			return fmt.Sprintf("%d h", m/60)
+		}
+		return fmt.Sprintf("%d h %d min", m/60, m%60)
+	default:
+		days, h := m/(24*60), (m%(24*60))/60
+		if h == 0 {
+			return fmt.Sprintf("%d d", days)
+		}
+		return fmt.Sprintf("%d d %d h", days, h)
+	}
 }
 
 // monitorSeries builds uptime bars + uptime% + avg latency for one monitor over [since, now].
