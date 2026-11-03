@@ -31,7 +31,7 @@ func (h *CheckResults) List(w http.ResponseWriter, r *http.Request) {
 	results, err := h.q.ListCheckResults(r.Context(), generated.ListCheckResultsParams{
 		MonitorID: monitorID,
 		CheckedAt: since,
-		Limit:     int64(1000),
+		Limit:     int64(limitParam(r)),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -70,6 +70,20 @@ func (h *CheckResults) Uptime(w http.ResponseWriter, r *http.Request) {
 		"days":       days,
 		"uptime_pct": uptimePct,
 	})
+}
+
+// maxCheckResults caps how many rows one List call returns. ?limit can ask for
+// fewer, such as the admin monitor list, which only shows the latest checks.
+const maxCheckResults = 1000
+
+// limitParam reads ?limit, falling back to maxCheckResults when it is missing
+// or not a positive integer, and clamps it to maxCheckResults.
+func limitParam(r *http.Request) int {
+	n, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || n <= 0 {
+		return maxCheckResults
+	}
+	return min(n, maxCheckResults)
 }
 
 // maxCheckDays caps the ?days window. It matches the longest range the status

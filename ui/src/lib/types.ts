@@ -4,7 +4,7 @@ export interface Monitor {
   id: number
   name: string
   url: string
-  type: 'http' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'infra'
+  type: 'http' | 'https' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'infra' | 'push'
   interval_seconds: number
   timeout_seconds: number
   expected_status: number | null
@@ -24,7 +24,7 @@ export interface Monitor {
   source: string
   external_id: string
   created_at: string
-  // HTTP options. They apply to http monitors only.
+  // HTTP options. They apply to http and https monitors only.
   method: 'GET' | 'HEAD' | 'POST'
   headers: Record<string, string>
   body: string

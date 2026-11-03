@@ -47,3 +47,33 @@ func TestCheckResultsDaysIsClamped(t *testing.T) {
 		assert.Equal(t, want, body["days"], "uptime %q", query)
 	}
 }
+
+// ?limit returns only the newest rows, and a bad or huge value falls back to
+// the 1000 row cap.
+func TestCheckResultsLimit(t *testing.T) {
+	q := newQ(t)
+	ctx := t.Context()
+	mon, err := q.CreateMonitor(ctx, generated.CreateMonitorParams{
+		Name: "m", Url: "http://example.com", Type: "http", IntervalSeconds: 60,
+		TimeoutSeconds: 10, DegradedThresholdMs: 500, DownThresholdMs: 2000, IsActive: true, Source: "internal",
+	})
+	require.NoError(t, err)
+	for i := range 5 {
+		_, err = q.InsertCheckResult(ctx, generated.InsertCheckResultParams{
+			MonitorID: mon.ID, CheckedAt: time.Now().Add(-time.Duration(i) * time.Minute), Status: "up",
+		})
+		require.NoError(t, err)
+	}
+	h := handlers.NewCheckResults(q)
+	id := itoa(mon.ID)
+
+	for query, want := range map[string]int{"?limit=2": 2, "?limit=0": 5, "?limit=x": 5, "?limit=5000": 5, "": 5} {
+		res := do(func(w http.ResponseWriter, r *http.Request) {
+			h.List(w, withChiID(r, "monitorID", id))
+		}, "GET", "/x"+query, nil)
+		require.Equal(t, http.StatusOK, res.Code)
+		var rows []generated.CheckResult
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&rows))
+		assert.Len(t, rows, want, "limit %q", query)
+	}
+}
