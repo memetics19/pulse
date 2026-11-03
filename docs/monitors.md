@@ -12,6 +12,7 @@ A monitor defines a check that Pulse runs on a schedule. Each result records whe
 | `dns` | DNS resolution for a name. |
 | `ssl` | A TLS certificate on a host and port. |
 | `infra` | Host metrics pushed by the Pulse infra agent (CPU, memory, disk, network). |
+| `push` | A heartbeat. Your job calls the monitor's push URL, and the monitor is down when no call arrives within the interval. |
 
 ## Per-monitor options
 

@@ -145,7 +145,7 @@ curl -X POST https://status.shreeda.xyz/api/monitors \
 
 A request with an invalid option gets 400 and a message that names the option.
 
-Read the recent check results of a monitor. This requires the `monitors:read` scope. `days` defaults to 1 and is capped at 90.
+Read the recent check results of a monitor, newest first. This requires the `monitors:read` scope. `days` defaults to 1 and is capped at 90. `limit` caps how many results come back. It defaults to 1000, which is also the most it allows.
 
 ```bash
 curl "https://status.shreeda.xyz/api/monitors/12/checks?days=7" \

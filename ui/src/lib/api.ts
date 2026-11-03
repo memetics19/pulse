@@ -35,11 +35,34 @@ export async function adminListMonitors(): Promise<Monitor[]> {
 // secret instead of the secret_set flag.
 export type MonitorInput = Omit<Partial<Monitor>, 'auth'> & { auth?: MonitorAuthInput }
 
-export async function adminCreateMonitor(data: MonitorInput): Promise<Monitor> {
+// errorText reads an API error body. Most handlers answer {"error": "..."},
+// some answer plain text, so both are handled.
+async function errorText(res: Response): Promise<string> {
+  const text = (await res.text()).trim()
+  try {
+    const body = JSON.parse(text)
+    if (body && typeof body.error === 'string') return body.error
+  } catch { /* plain text */ }
+  return text || `Request failed (${res.status})`
+}
+
+// A push monitor's URL is only returned when it is created or rotated. The
+// server keeps a hash, so it cannot be shown again later.
+export type CreatedMonitor = Monitor & { push_token?: string; push_url?: string }
+
+export async function adminCreateMonitor(data: MonitorInput): Promise<CreatedMonitor> {
   const res = await fetch(`${BASE}/api/monitors`, {
     method: 'POST', credentials: 'include', headers: ADMIN_HEADERS, body: JSON.stringify(data)
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) throw new Error(await errorText(res))
+  return res.json()
+}
+
+export async function adminRotatePushToken(id: number): Promise<{ token: string; push_url: string }> {
+  const res = await fetch(`${BASE}/api/monitors/${id}/push-token/rotate`, {
+    method: 'POST', credentials: 'include', headers: ADMIN_HEADERS,
+  })
+  if (!res.ok) throw new Error(await errorText(res))
   return res.json()
 }
 
@@ -47,14 +70,15 @@ export async function adminUpdateMonitor(id: number, data: MonitorInput): Promis
   const res = await fetch(`${BASE}/api/monitors/${id}`, {
     method: 'PUT', credentials: 'include', headers: ADMIN_HEADERS, body: JSON.stringify(data)
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) throw new Error(await errorText(res))
   return res.json()
 }
 
 // Check results come newest first. days widens the window for monitors with
-// a long interval, such as daily ssl checks.
-export async function adminListCheckResults(monitorId: number, days = 1): Promise<CheckResult[]> {
-  const res = await fetch(`${BASE}/api/monitors/${monitorId}/checks?days=${days}`, { credentials: 'include', cache: 'no-store' })
+// a long interval, such as daily ssl checks. limit caps the rows returned.
+export async function adminListCheckResults(monitorId: number, days = 1, limit?: number): Promise<CheckResult[]> {
+  const q = `days=${days}${limit ? `&limit=${limit}` : ''}`
+  const res = await fetch(`${BASE}/api/monitors/${monitorId}/checks?${q}`, { credentials: 'include', cache: 'no-store' })
   if (!res.ok) throw new Error(`${res.status}`)
   return res.json()
 }

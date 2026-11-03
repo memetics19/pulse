@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
 import { getSettings, updateSettings, authStatus, twoFASetup, twoFAEnable, twoFADisable } from '@/lib/api'
 
@@ -97,9 +98,8 @@ export default function SettingsPage() {
         <div className="card">
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Instance</div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Pulse — single-binary status page. Your admin account, branding, and database
-            were configured during first-run setup. Branding (logo, site name, theme) can be
-            changed under <a href="/admin/theme">Theme</a>.
+            Your admin account, branding and database were set up on first run. Change the
+            logo, site name and colors under <Link className="text-link" href="/admin/theme">Theme</Link>.
           </p>
         </div>
         <div className="card">

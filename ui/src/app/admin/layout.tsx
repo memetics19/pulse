@@ -5,18 +5,31 @@ import { usePathname } from 'next/navigation'
 import { authStatus, authSetup, authLogin, authLogout, type AuthStatus } from '@/lib/api'
 import { ConfirmProvider } from '@/components/ConfirmDialog'
 
-const NAV = [
-  { href: '/admin',               label: 'Overview' },
-  { href: '/admin/pages',         label: 'Pages' },
-  { href: '/admin/monitors',      label: 'Monitors' },
-  { href: '/admin/incidents',     label: 'Incidents' },
-  { href: '/admin/maintenance',   label: 'Maintenance' },
-  { href: '/admin/agents',        label: 'Agents' },
-  { href: '/admin/theme',         label: 'Theme' },
-  { href: '/admin/notifications', label: 'Notifications' },
-  { href: '/admin/api-keys',      label: 'API Keys' },
-  { href: '/admin/settings',      label: 'Settings' },
+const NAV: { section?: string; items: { href: string; label: string }[] }[] = [
+  { items: [{ href: '/admin', label: 'Overview' }] },
+  { section: 'Monitoring', items: [
+    { href: '/admin/monitors',    label: 'Monitors' },
+    { href: '/admin/incidents',   label: 'Incidents' },
+    { href: '/admin/maintenance', label: 'Maintenance' },
+    { href: '/admin/agents',      label: 'Agents' },
+  ] },
+  { section: 'Status page', items: [
+    { href: '/admin/pages', label: 'Pages' },
+    { href: '/admin/theme', label: 'Theme' },
+  ] },
+  { section: 'Configure', items: [
+    { href: '/admin/notifications', label: 'Notifications' },
+    { href: '/admin/api-keys',      label: 'API keys' },
+    { href: '/admin/settings',      label: 'Settings' },
+  ] },
 ]
+
+// isActive matches the current page. The static export uses trailing slashes,
+// so /admin/monitors/ must match /admin/monitors.
+function isActive(pathname: string, href: string): boolean {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  return href === '/admin' ? path === '/admin' : path === href || path.startsWith(href + '/')
+}
 
 function Logo({ size = 30 }: { size?: number }) {
   const ring = Math.round(size * 1.3)
@@ -137,12 +150,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="admin-layout">
       <aside className="admin-sidebar">
         <div className="admin-sidebar-title"><Logo size={20} /></div>
-        {NAV.map(n => (
-          <Link key={n.href} href={n.href} className={`admin-nav-link${pathname === n.href ? ' active' : ''}`}>{n.label}</Link>
-        ))}
-        <button className="admin-nav-link" style={{ border: 'none', background: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', marginTop: 20, color: 'var(--down)' }} onClick={signOut}>
-          Sign out{status.username ? ` (${status.username})` : ''}
-        </button>
+        <nav aria-label="Admin">
+          {NAV.map((g, i) => (
+            <div key={g.section ?? i}>
+              {g.section && <div className="admin-nav-section">{g.section}</div>}
+              {g.items.map(n => {
+                const active = isActive(pathname, n.href)
+                return (
+                  <Link key={n.href} href={n.href} className={`admin-nav-link${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
+                    {n.label}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
+        </nav>
+        <div className="admin-sidebar-foot">
+          <a className="admin-nav-link" href="/" target="_blank" rel="noopener">View status page ↗</a>
+          {status.username && <div className="admin-user">Signed in as {status.username}</div>}
+          <button className="admin-nav-link" style={{ border: 'none', background: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', font: 'inherit' }} onClick={signOut}>
+            Sign out
+          </button>
+        </div>
       </aside>
       <div className="admin-content">
         <ConfirmProvider>{children}</ConfirmProvider>
