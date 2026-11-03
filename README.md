@@ -72,7 +72,7 @@ flowchart TD
     DOWN --> WRITE
     DEG --> WRITE
     UP --> WRITE["INSERT check_results"]
-    WRITE --> DETECT{"2 consecutive<br/>down?"}
+    WRITE --> DETECT{"N consecutive<br/>down? (default 2)"}
     DETECT -->|no| DONE([wait next tick])
     DETECT -->|"yes, no active incident,<br/>not in maintenance"| INC["open incident"]
     INC --> NOTIFY["alerter → email / slack"]

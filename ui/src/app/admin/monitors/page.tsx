@@ -8,10 +8,13 @@ import {
 } from '@/lib/api'
 
 const TYPES = ['http', 'tcp', 'ping', 'dns', 'ssl', 'infra']
+// Only these checkers retry a failed attempt within one check.
+const RETRY_TYPES = ['http', 'tcp', 'ssl']
 const EMPTY: Partial<Monitor> = {
   name: '', url: '', type: 'http', interval_seconds: 60, timeout_seconds: 10,
   degraded_threshold_ms: 500, down_threshold_ms: 2000, is_active: true,
   keyword_check: '', source: 'internal', external_id: '',
+  failures_before_incident: 2, recoveries_before_resolve: 2, retries: 1, retry_interval_ms: 500,
   method: 'GET', headers: {}, body: '', auth: null, tls_verify: true, ca_pem: '',
   follow_redirects: true, accepted_statuses: [], keyword_mode: 'contains',
   tls_warn_days: 14, tls_critical_days: 7,
@@ -212,6 +215,14 @@ export default function MonitorsPage() {
               </>
             )}
             {field('keyword_check', 'Keyword check (optional)')}
+            {field('failures_before_incident', 'Failures before incident (1-10)', 'number')}
+            {field('recoveries_before_resolve', 'Recoveries before resolve (1-10)', 'number')}
+            {RETRY_TYPES.includes(form.type ?? 'http') && (
+              <>
+                {field('retries', 'Retries per check (0-5)', 'number')}
+                {field('retry_interval_ms', 'Retry interval (ms)', 'number')}
+              </>
+            )}
             {form.type === 'http' && (
               <details className="form-group">
                 <summary className="form-label" style={{ cursor: 'pointer' }}>HTTP options</summary>

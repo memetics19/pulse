@@ -33,8 +33,9 @@ func New(db *sql.DB, d *incident.Detector, a *alerter.Dispatcher) *Recorder {
 
 // Record applies monitor thresholds, persists the current result, then runs
 // incident detection and auto-resolve. Persistence must happen first because
-// Detector reads the two latest rows and expects the current result to be
-// among them.
+// Detector reads the latest rows and expects the current result to be among
+// them. The monitor's failures_before_incident and recoveries_before_resolve
+// say how many rows it reads.
 func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) error {
 	if in.Status != "up" && in.Status != "down" && in.Status != "degraded" {
 		return fmt.Errorf("status must be one of up, down, degraded")
@@ -86,11 +87,11 @@ func (r *Recorder) Record(ctx context.Context, monitor store.Monitor, in Input) 
 		metrics.ObserveCheck(monitor.Name, status)
 		return nil
 	}
-	created, err := r.detector.MaybeCreateIncidentWithQueries(ctx, q, monitor.ID)
+	created, err := r.detector.MaybeCreateIncidentWithQueries(ctx, q, monitor.ID, monitor.FailuresBeforeIncident)
 	if err != nil {
 		return fmt.Errorf("detect incident for monitor %d: %w", monitor.ID, err)
 	}
-	resolved, err := r.detector.MaybeResolveIncidentsWithQueries(ctx, q, monitor.ID)
+	resolved, err := r.detector.MaybeResolveIncidentsWithQueries(ctx, q, monitor.ID, monitor.RecoveriesBeforeResolve)
 	if err != nil {
 		return fmt.Errorf("resolve recovered incidents for monitor %d: %w", monitor.ID, err)
 	}

@@ -31,7 +31,7 @@ func openAutoIncident(t *testing.T, q *store.Queries, mon store.Monitor, at time
 // worker would, so only persisted rows drive the decision.
 func resolve(t *testing.T, q *store.Queries, monitorID int64) int {
 	t.Helper()
-	resolved, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, monitorID)
+	resolved, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), q, monitorID, incident.DefaultRecoveriesBeforeResolve)
 	require.NoError(t, err)
 	for _, inc := range resolved {
 		require.Equal(t, "resolved", inc.Status)
@@ -268,7 +268,7 @@ func TestResolve_ReturnsDatabaseErrors(t *testing.T) {
 			insertResult(t, q, mon.ID, "up", now.Add(3*time.Second))
 
 			faulty := store.New(testutil.FailAfter(db, tt.failAfter))
-			_, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), faulty, mon.ID)
+			_, err := incident.NewDetector(q).MaybeResolveIncidentsWithQueries(context.Background(), faulty, mon.ID, incident.DefaultRecoveriesBeforeResolve)
 
 			require.ErrorContains(t, err, tt.want)
 		})

@@ -17,6 +17,15 @@ WHERE monitor_id = ?
 ORDER BY checked_at DESC, id DESC
 LIMIT 2;
 
+-- LatestCheckStatuses returns the statuses of a monitor's newest results,
+-- newest first. The incident detector asks for as many as the monitor's
+-- failures_before_incident or recoveries_before_resolve setting.
+-- name: LatestCheckStatuses :many
+SELECT status FROM check_results
+WHERE monitor_id = sqlc.arg(monitor_id)
+ORDER BY checked_at DESC, id DESC
+LIMIT sqlc.arg(n);
+
 -- name: UptimePercent :one
 -- COUNT(*)=0 (no checks in range) would divide by zero -> NULL; COALESCE keeps
 -- the result a non-null REAL (100.0 = "no failures observed") so it scans into

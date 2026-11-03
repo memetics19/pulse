@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,6 +36,20 @@ const (
 	defaultDownMs          = 2000
 	defaultTLSWarnDays     = 14
 	defaultTLSCriticalDays = 7
+
+	defaultFailuresBeforeIncident  = 2
+	defaultRecoveriesBeforeResolve = 2
+	defaultRetries                 = 1
+	defaultRetryIntervalMs         = 500
+)
+
+// Allowed ranges for the sensitivity settings. The retry limits keep a single
+// check from running for minutes when a target times out.
+const (
+	minSensitivityCount = 1
+	maxSensitivityCount = 10
+	maxRetries          = 5
+	maxRetryIntervalMs  = 60000
 )
 
 // monitorRequest is the decode target for Create/Update. Pointer fields let the
@@ -57,6 +72,11 @@ type monitorRequest struct {
 	GroupID             *int64 `json:"group_id"`
 	Source              string `json:"source"`
 	ExternalID          string `json:"external_id"`
+
+	FailuresBeforeIncident  *int64 `json:"failures_before_incident"`
+	RecoveriesBeforeResolve *int64 `json:"recoveries_before_resolve"`
+	Retries                 *int64 `json:"retries"`
+	RetryIntervalMs         *int64 `json:"retry_interval_ms"`
 
 	// HTTP options. They apply to http and https monitors only and are
 	// stored as their defaults for every other type.
@@ -214,11 +234,13 @@ func resolveAuth(req *monitorAuthRequest, existing *generated.Monitor) (authType
 // place defaults and cross-field rules (degraded < down, TLS warn > critical)
 // are applied, shared by Create and Update.
 type resolvedMonitor struct {
-	req                     monitorRequest
-	timeout, degraded, down int64
-	tlsWarn, tlsCritical    int64
-	isActive                bool
-	http                    httpColumns
+	req                      monitorRequest
+	timeout, degraded, down  int64
+	failures, recoveries     int64
+	retries, retryIntervalMs int64
+	tlsWarn, tlsCritical     int64
+	isActive                 bool
+	http                     httpColumns
 }
 
 // resolve validates the request and fills defaults. reason is non-empty on a
@@ -250,6 +272,22 @@ func (m *Monitors) resolve(req monitorRequest, existing *generated.Monitor) (res
 	if r.degraded >= r.down {
 		return resolvedMonitor{}, "degraded_threshold_ms must be less than down_threshold_ms"
 	}
+	var reason string
+	if r.failures, reason = inRange("failures_before_incident", req.FailuresBeforeIncident,
+		defaultFailuresBeforeIncident, minSensitivityCount, maxSensitivityCount); reason != "" {
+		return resolvedMonitor{}, reason
+	}
+	if r.recoveries, reason = inRange("recoveries_before_resolve", req.RecoveriesBeforeResolve,
+		defaultRecoveriesBeforeResolve, minSensitivityCount, maxSensitivityCount); reason != "" {
+		return resolvedMonitor{}, reason
+	}
+	if r.retries, reason = inRange("retries", req.Retries, defaultRetries, 0, maxRetries); reason != "" {
+		return resolvedMonitor{}, reason
+	}
+	if r.retryIntervalMs, reason = inRange("retry_interval_ms", req.RetryIntervalMs,
+		defaultRetryIntervalMs, 0, maxRetryIntervalMs); reason != "" {
+		return resolvedMonitor{}, reason
+	}
 	// Unlike the latency thresholds, 0 is a valid TLS critical threshold
 	// (down only on the last day), so only nil takes the default.
 	r.tlsWarn = defaultTLSWarnDays
@@ -272,6 +310,20 @@ func (m *Monitors) resolve(req monitorRequest, existing *generated.Monitor) (res
 	}
 	r.http = cols
 	return r, ""
+}
+
+// inRange returns def when v is omitted, or v when it lies in [lo, hi]. reason
+// is non-empty when v is out of range. Unlike the latency thresholds, an
+// explicit 0 is not read as "use the default", since 0 retries is a real
+// setting.
+func inRange(name string, v *int64, def, lo, hi int64) (int64, string) {
+	if v == nil {
+		return def, ""
+	}
+	if *v < lo || *v > hi {
+		return 0, fmt.Sprintf("%s must be between %d and %d", name, lo, hi)
+	}
+	return *v, ""
 }
 
 func (m *Monitors) List(w http.ResponseWriter, r *http.Request) {
@@ -342,6 +394,11 @@ func (m *Monitors) Create(w http.ResponseWriter, r *http.Request) {
 		FollowRedirects:     res.http.followRedirects,
 		AcceptedStatuses:    res.http.acceptedStatuses,
 		KeywordMode:         res.http.keywordMode,
+
+		FailuresBeforeIncident:  res.failures,
+		RecoveriesBeforeResolve: res.recoveries,
+		Retries:                 res.retries,
+		RetryIntervalMs:         res.retryIntervalMs,
 	}
 	if params.Type == "push" {
 		m.createPush(w, r, params)
@@ -513,7 +570,12 @@ func (m *Monitors) Update(w http.ResponseWriter, r *http.Request) {
 		FollowRedirects:     res.http.followRedirects,
 		AcceptedStatuses:    res.http.acceptedStatuses,
 		KeywordMode:         res.http.keywordMode,
-		ID:                  id,
+
+		FailuresBeforeIncident:  res.failures,
+		RecoveriesBeforeResolve: res.recoveries,
+		Retries:                 res.retries,
+		RetryIntervalMs:         res.retryIntervalMs,
+		ID:                      id,
 	}
 	monitor, err := m.q.UpdateMonitor(r.Context(), params)
 	if err != nil {

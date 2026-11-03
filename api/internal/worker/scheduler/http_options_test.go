@@ -94,7 +94,9 @@ func TestCheckUsesMonitorHTTPOptions(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	q := store.New(db)
 	ctx := context.Background()
-	s := New(db, checkresult.New(db, incident.NewDetector(q), alerter.NewDispatcher(q, config.Config{})), true)
+	disp := alerter.NewDispatcher(q, config.Config{})
+	t.Cleanup(disp.Wait)
+	s := New(db, checkresult.New(db, incident.NewDetector(q), disp), true)
 	s.SetChecker("http", checker.NewHTTP(0, "", true))
 
 	mon, err := q.CreateMonitor(ctx, store.CreateMonitorParams{

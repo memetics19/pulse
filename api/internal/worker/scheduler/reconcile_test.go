@@ -20,6 +20,24 @@ func TestPushFingerprintTracksWatchdogConfiguration(t *testing.T) {
 	require.NotEqual(t, fingerprint(push), fingerprint(changedType))
 }
 
+func TestFingerprintTracksSensitivity(t *testing.T) {
+	base := store.Monitor{
+		ID: 1, Type: "http", IntervalSeconds: 60, FailuresBeforeIncident: 2,
+		RecoveriesBeforeResolve: 2, Retries: 1, RetryIntervalMs: 500,
+	}
+	changes := map[string]func(*store.Monitor){
+		"failures_before_incident":  func(m *store.Monitor) { m.FailuresBeforeIncident = 3 },
+		"recoveries_before_resolve": func(m *store.Monitor) { m.RecoveriesBeforeResolve = 3 },
+		"retries":                   func(m *store.Monitor) { m.Retries = 2 },
+		"retry_interval_ms":         func(m *store.Monitor) { m.RetryIntervalMs = 1000 },
+	}
+	for field, change := range changes {
+		changed := base
+		change(&changed)
+		require.NotEqual(t, fingerprint(base), fingerprint(changed), field)
+	}
+}
+
 func TestFingerprintTracksTLSThresholds(t *testing.T) {
 	ssl := store.Monitor{ID: 1, Type: "ssl", IntervalSeconds: 3600, TlsWarnDays: 14, TlsCriticalDays: 7}
 	changedWarn := ssl
