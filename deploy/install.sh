@@ -138,6 +138,10 @@ PULSE_SMTP_PASSWORD=
 PULSE_SMTP_PASSWORD_FILE=
 PULSE_SMTP_TLS=
 SLACK_WEBHOOK_URL=
+# Daily database snapshots, such as ${DATADIR}/backups. Empty turns them off.
+# PULSE_BACKUP_KEEP is how many to keep (default 7).
+PULSE_BACKUP_DIR=
+PULSE_BACKUP_KEEP=
 EOF
 }
 

@@ -84,6 +84,16 @@ type createMonitorRequest struct {
 	GroupID             int64  `json:"group_id"`
 	Source              string `json:"source"`
 	ExternalID          string `json:"external_id"`
+
+	// HTTP options. Empty values keep the Pulse defaults.
+	Method           string                `json:"method,omitempty"`
+	Headers          map[string]string     `json:"headers,omitempty"`
+	Body             string                `json:"body,omitempty"`
+	Auth             *uptimekuma.PulseAuth `json:"auth,omitempty"`
+	TLSVerify        *bool                 `json:"tls_verify,omitempty"`
+	FollowRedirects  *bool                 `json:"follow_redirects,omitempty"`
+	AcceptedStatuses []string              `json:"accepted_statuses,omitempty"`
+	KeywordMode      string                `json:"keyword_mode,omitempty"`
 }
 
 // CreateMonitor POSTs a single monitor to /api/monitors under the given groupID.
@@ -102,6 +112,14 @@ func (c *Client) CreateMonitor(m uptimekuma.PulseMonitor, groupID int64) error {
 		GroupID:             groupID,
 		Source:              "uptime-kuma",
 		ExternalID:          "",
+		Method:              m.Method,
+		Headers:             m.Headers,
+		Body:                m.Body,
+		Auth:                m.Auth,
+		TLSVerify:           m.TLSVerify,
+		FollowRedirects:     m.FollowRedirects,
+		AcceptedStatuses:    m.AcceptedStatuses,
+		KeywordMode:         m.KeywordMode,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

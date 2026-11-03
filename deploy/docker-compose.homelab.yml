@@ -27,6 +27,10 @@ services:
       # Homelab monitors target LAN hosts, so the SSRF guard must be relaxed
       # explicitly (see docs/configuration.md).
       PULSE_ALLOW_PRIVATE_MONITORS: ${PULSE_ALLOW_PRIVATE_MONITORS:-false}
+      # Daily snapshots of the database, such as /data/backups. Unset turns them
+      # off. PULSE_BACKUP_KEEP is how many to keep (default 7).
+      PULSE_BACKUP_DIR: ${PULSE_BACKUP_DIR:-}
+      PULSE_BACKUP_KEEP: ${PULSE_BACKUP_KEEP:-}
     # Allow unprivileged ICMP (ping monitors) without privileged mode.
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647

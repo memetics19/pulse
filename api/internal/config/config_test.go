@@ -330,3 +330,29 @@ func TestLoadSMTP(t *testing.T) {
 		t.Errorf("log = %q, want the setting named", buf.String())
 	}
 }
+
+func TestLoadBackupSettings(t *testing.T) {
+	t.Setenv("PULSE_BACKUP_DIR", "")
+	t.Setenv("PULSE_BACKUP_KEEP", "")
+	if c := Load(); c.BackupDir != "" || c.BackupKeep != DefaultBackupKeep {
+		t.Errorf("defaults: dir %q keep %d, want off and %d", c.BackupDir, c.BackupKeep, DefaultBackupKeep)
+	}
+	t.Setenv("PULSE_BACKUP_DIR", " /data/backups ")
+	t.Setenv("PULSE_BACKUP_KEEP", "14")
+	if c := Load(); c.BackupDir != "/data/backups" || c.BackupKeep != 14 {
+		t.Errorf("set: dir %q keep %d, want /data/backups and 14", c.BackupDir, c.BackupKeep)
+	}
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	for _, bad := range []string{"0", "-3", "seven"} {
+		t.Setenv("PULSE_BACKUP_KEEP", bad)
+		if got := backupKeep(); got != DefaultBackupKeep {
+			t.Errorf("PULSE_BACKUP_KEEP=%q gives %d, want %d", bad, got, DefaultBackupKeep)
+		}
+	}
+	if !strings.Contains(buf.String(), "PULSE_BACKUP_KEEP") {
+		t.Errorf("log = %q, want the setting named", buf.String())
+	}
+}

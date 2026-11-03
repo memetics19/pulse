@@ -67,7 +67,7 @@ func runImport(file, server, token string) error {
 
 	fmt.Printf("Import complete: %d monitors imported, %d skipped\n", importedCount, len(skipped))
 	if len(skipped) > 0 {
-		fmt.Println("Skipped monitors (unsupported type):")
+		fmt.Println("Skipped monitors (unsupported type or HTTP option):")
 		for _, name := range skipped {
 			fmt.Printf("  - %s\n", name)
 		}

@@ -106,6 +106,9 @@ func TestCheckPersistsAndAppliesThresholds(t *testing.T) {
 
 	det := incident.NewDetector(q)
 	disp := alerter.NewDispatcher(q, config.Config{})
+	// Alerts go out in the background. Let them finish before the test
+	// database is closed and its directory removed.
+	t.Cleanup(disp.Wait)
 	s := New(db, checkresult.New(db, det, disp), true)
 
 	var beats int

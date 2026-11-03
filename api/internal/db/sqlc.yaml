@@ -18,3 +18,26 @@ sql:
             go_type: "bool"
           - column: "infra_agents.is_active"
             go_type: "bool"
+          # NULL means true, so a zero-value params struct keeps TLS
+          # verification and redirects on.
+          - column: "monitors.tls_verify"
+            go_type:
+              type: "bool"
+              pointer: true
+          - column: "monitors.follow_redirects"
+            go_type:
+              type: "bool"
+              pointer: true
+          # These columns never reach JSON as stored. The monitors handler
+          # returns headers and accepted_statuses decoded, and auth without
+          # its secret.
+          - column: "monitors.headers"
+            go_struct_tag: 'json:"-"'
+          - column: "monitors.accepted_statuses"
+            go_struct_tag: 'json:"-"'
+          - column: "monitors.auth_type"
+            go_struct_tag: 'json:"-"'
+          - column: "monitors.auth_username"
+            go_struct_tag: 'json:"-"'
+          - column: "monitors.auth_secret"
+            go_struct_tag: 'json:"-"'

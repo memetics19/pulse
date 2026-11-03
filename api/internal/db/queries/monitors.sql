@@ -10,19 +10,26 @@ SELECT * FROM monitors WHERE id = ?;
 -- name: CreateMonitor :one
 INSERT INTO monitors (name, url, type, interval_seconds, timeout_seconds,
   expected_status, keyword_check, degraded_threshold_ms, down_threshold_ms,
-  is_active, group_id, source, external_id, failures_before_incident,
-  recoveries_before_resolve, retries, retry_interval_ms, tls_warn_days,
-  tls_critical_days)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  is_active, group_id, source, external_id, tls_warn_days, tls_critical_days,
+  method, headers, body, auth_type, auth_username, auth_secret,
+  tls_verify, ca_pem, follow_redirects, accepted_statuses, keyword_mode,
+  failures_before_incident, recoveries_before_resolve, retries,
+  retry_interval_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateMonitor :one
 UPDATE monitors SET
   name = ?, url = ?, type = ?, interval_seconds = ?, timeout_seconds = ?,
   expected_status = ?, keyword_check = ?, degraded_threshold_ms = ?,
-  down_threshold_ms = ?, is_active = ?, group_id = ?,
+  down_threshold_ms = ?, is_active = ?, group_id = ?, tls_warn_days = ?,
+  tls_critical_days = ?,
+  method = ?, headers = ?, body = ?, auth_type = ?, auth_username = ?,
+  auth_secret = ?, tls_verify = ?, ca_pem = ?, follow_redirects = ?,
+  accepted_statuses = ?, keyword_mode = ?,
   failures_before_incident = ?, recoveries_before_resolve = ?, retries = ?,
-  retry_interval_ms = ?, tls_warn_days = ?, tls_critical_days = ?
+  retry_interval_ms = ?
 WHERE id = ?
 RETURNING *;
 

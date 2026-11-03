@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/memetics19/pulse/api/internal/backup"
+	"github.com/memetics19/pulse/api/internal/bootstrap"
 	"github.com/memetics19/pulse/api/internal/config"
 	"github.com/memetics19/pulse/api/internal/worker/alerter"
 	"github.com/memetics19/pulse/api/internal/worker/checker"
@@ -19,7 +21,8 @@ import (
 )
 
 // Run starts the monitor scheduler plus the rollup/pruner loop and blocks
-// until ctx is cancelled. beat, if non-nil, is called after each successful
+// until ctx is cancelled. With PULSE_BACKUP_DIR set, the same loop takes the
+// daily snapshot. beat, if non-nil, is called after each successful
 // reconcile so the caller can track worker liveness (see /healthz).
 func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error {
 	q := store.New(db)
@@ -43,6 +46,11 @@ func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error 
 		return err
 	}
 
+	var bk *backup.Schedule
+	if cfg.BackupDir != "" {
+		bk = backup.NewSchedule(db, cfg.BackupDir, cfg.BackupKeep, bootstrap.Path(config.DataDir()))
+	}
+
 	go func() {
 		r := rollup.New(q)
 		p := pruner.New(q)
@@ -62,6 +70,11 @@ func Run(ctx context.Context, db *sql.DB, cfg config.Config, beat func()) error 
 				}
 				if err := m.Run(ctx, time.Now().UTC()); err != nil {
 					log.Printf("maintenance: %v", err)
+				}
+				if bk != nil {
+					if err := bk.Run(ctx, time.Now().UTC()); err != nil {
+						log.Printf("backup: %v", err)
+					}
 				}
 			}
 		}

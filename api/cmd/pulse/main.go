@@ -24,14 +24,32 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
-		runResetPassword(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "reset-password":
+			runResetPassword(os.Args[2:])
+			return
+		case "backup":
+			runCommand(backupDatabase, os.Args[2:])
+			return
+		case "restore":
+			runCommand(restoreDatabase, os.Args[2:])
+			return
+		}
 	}
 
 	cfg := config.Load()
 	dataDir := config.DataDir()
 	checkEmail(cfg)
+
+	// The lock only tells pulse restore that the server runs. Without it the
+	// server still starts, and restore still refuses while the database is
+	// open (see backup.Restore).
+	if lock, err := lockDataDir(dataDir); err != nil {
+		log.Printf("could not lock %s: %v. pulse restore cannot tell that this server is running", lockPath(dataDir), err)
+	} else {
+		defer func() { _ = lock.Close() }()
+	}
 
 	boot, err := bootstrap.Load(dataDir)
 	if err != nil {
